@@ -3,6 +3,7 @@ package com.example.rhythmbox.data
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongCodec
 import com.example.rhythmbox.core.SongLibrary
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +25,8 @@ import java.util.UUID
 class SongRepository(
     private val file: File,
     private val scope: CoroutineScope,
+    /** ファイル入出力を行うディスパッチャ（テストでは仮想時間のものに差し替える）。 */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val _library = MutableStateFlow(SongLibrary())
@@ -34,7 +37,7 @@ class SongRepository(
 
     /** 起動時の読み込み。ファイルが無い／壊れている場合は新しい曲を 1 つ用意する。 */
     suspend fun load() {
-        val loaded = withContext(Dispatchers.IO) {
+        val loaded = withContext(ioDispatcher) {
             if (!file.exists()) return@withContext null
             val text = runCatching { file.readText() }.getOrNull() ?: return@withContext null
             val decoded = SongCodec.decode(text)
@@ -100,7 +103,7 @@ class SongRepository(
     /** 画面を離れるときなど、確実に書き込みたいときに使う。 */
     suspend fun saveNow() {
         val snapshot = _library.value
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             writeMutex.withLock {
                 runCatching {
                     file.parentFile?.mkdirs()

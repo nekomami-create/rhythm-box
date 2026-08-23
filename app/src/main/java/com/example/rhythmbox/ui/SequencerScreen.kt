@@ -27,8 +27,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -185,7 +185,7 @@ private fun TransportPanel(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.VolumeUp, contentDescription = "音量", modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "音量", modifier = Modifier.size(20.dp))
                 Slider(
                     value = state.song.masterVolume,
                     onValueChange = onVolumeChange,
@@ -364,7 +364,7 @@ private fun TrackLabel(
         }
         IconButton(onClick = onToggleMute, modifier = Modifier.size(28.dp)) {
             Icon(
-                imageVector = if (muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                imageVector = if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = if (muted) "${voice.label}のミュートを解除" else "${voice.label}をミュート",
                 tint = if (muted) {
                     MaterialTheme.colorScheme.error

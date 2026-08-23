@@ -22,8 +22,9 @@ class SongRepositoryTest {
     @get:Rule
     val folder = TemporaryFolder()
 
+    // ファイル入出力も仮想時間の下で走らせて、書き込み完了を advanceUntilIdle() で待てるようにする。
     private fun repository(scope: TestScope, file: File = File(folder.root, "songs.json")) =
-        SongRepository(file, scope, now = { 1_000L })
+        SongRepository(file, scope, StandardTestDispatcher(scope.testScheduler), now = { 1_000L })
 
     @Test
     fun `first launch creates a starter song and saves it`() = runTest(StandardTestDispatcher()) {

@@ -18,8 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -251,7 +251,7 @@ fun MixerDialog(
                         )
                         IconButton(onClick = { onToggleMute(index) }, modifier = Modifier.size(36.dp)) {
                             Icon(
-                                imageVector = if (track.muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                imageVector = if (track.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = if (track.muted) "ミュート解除" else "ミュート",
                                 tint = if (track.muted) {
                                     MaterialTheme.colorScheme.error
