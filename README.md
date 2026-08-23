@@ -64,7 +64,8 @@ Android SDK のパスは `local.properties` に `sdk.dir=/path/to/Android/sdk` �
 `ANDROID_HOME` 環境変数で指定してください（このファイルは Git 管理外）。
 
 GitHub Actions (`.github/workflows/android.yml`) でも単体テストと APK ビルドを行い、
-`app-debug` という名前で APK を成果物としてアップロードします。
+`rhythmbox-latest` タグの **GitHub Release** に `RhythmBox.apk` を公開します
+（Actions の成果物ストレージ枠を消費しないため）。最新版はいつも同じ URL から取得できます。
 
 ## アップデート（データを維持したまま更新）
 

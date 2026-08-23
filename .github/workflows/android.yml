@@ -7,6 +7,9 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,9 +37,20 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk RhythmBox.apk
+
+      # 配布は GitHub Release で行う。actions/upload-artifact は Actions の
+      # ストレージ枠を消費して枠切れの原因になるため使わない
+      # （Release のアセットはこの枠とは別に保存される）。
+      - name: Publish APK to "rhythmbox-latest" release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          tag_name: rhythmbox-latest
+          name: "リズムボックス 最新APK (v1.0.${{ github.run_number }})"
+          body: |
+            バージョン: 1.0.${{ github.run_number }} (コミット ${{ github.sha }})
+            Android の「提供元不明のアプリ」を許可してインストールしてください。
+          prerelease: true
+          files: RhythmBox.apk
