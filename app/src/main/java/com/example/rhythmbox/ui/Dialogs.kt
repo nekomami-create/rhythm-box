@@ -235,6 +235,8 @@ fun ChordPickerDialog(
     current: Chord,
     suggestions: List<ChordSuggestion> = emptyList(),
     keyName: String? = null,
+    /** 前後のコード。「Am → ? → F」のように、何に挟まれているかを見せる。 */
+    neighbours: Pair<Chord?, Chord?> = null to null,
     onPreview: (Chord) -> Unit,
     onPick: (Chord) -> Unit,
     onDismiss: () -> Unit,
@@ -268,8 +270,15 @@ fun ChordPickerDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (suggestions.isNotEmpty()) {
+                    val (before, after) = neighbours
+                    val heading = when {
+                        before != null && after != null -> "${before.name} と ${after.name} の間に合うコード"
+                        before != null -> "${before.name} のつぎに合うコード"
+                        after != null -> "${after.name} の前に合うコード"
+                        else -> "このキーでよく使うコード"
+                    }
                     Text(
-                        text = "つぎに合うコード" + if (keyName != null) "（$keyName のキー）" else "",
+                        text = heading + if (keyName != null) "（$keyName）" else "",
                         style = MaterialTheme.typography.labelMedium,
                     )
                     FlowRow(

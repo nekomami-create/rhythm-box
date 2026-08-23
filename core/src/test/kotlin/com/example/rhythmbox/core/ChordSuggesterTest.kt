@@ -117,4 +117,36 @@ class ChordSuggesterTest {
         assertEquals(first, second)
         assertEquals(6, first.size)
     }
+
+    @Test
+    fun `suggestions fit between the chords on both sides`() {
+        val key = MusicKey(0, minor = false)
+
+        // C から C へ戻る 1 小節。行って帰ってこられる V が最有力。
+        val between = ChordSuggester.suggest(c, key, next = c)
+        assertEquals(g, between.first().chord)
+
+        // C から G へ向かう 1 小節。C - F - G の流れが自然。
+        val towardG = ChordSuggester.suggest(c, key, next = g)
+        assertEquals(f, towardG.first().chord)
+
+        // ii - V - I の真ん中
+        val cadence = ChordSuggester.suggest(dm, key, next = c)
+        assertTrue(cadence.first().chord.name, cadence.first().chord.root == g.root)
+    }
+
+    @Test
+    fun `the chords on both sides are not suggested again`() {
+        val suggestions = ChordSuggester.suggest(f, MusicKey(0, minor = false), next = g, limit = 8)
+        assertFalse(f in suggestions.map { it.chord })
+        assertFalse(g in suggestions.map { it.chord })
+    }
+
+    @Test
+    fun `only knowing what comes next is still useful`() {
+        // 先頭の小節を選び直すとき（前が無く、次だけある）。
+        val suggestions = ChordSuggester.suggest(null, MusicKey(0, minor = false), next = c)
+        assertTrue(suggestions.map { it.chord }.contains(g))
+        assertTrue("$suggestions", suggestions.first().chord in listOf(g, f, em))
+    }
 }

@@ -39,7 +39,7 @@ data class RhythmUiState(
     val library: List<Song> = emptyList(),
     val selectedPattern: Int = 0,
     val mode: PlayMode = PlayMode.PATTERN,
-    val loopSong: Boolean = false,
+    val loopSong: Boolean = true,
     val isPlaying: Boolean = false,
     /** 鳴っているステップ（0..15、止まっていれば -1）。 */
     val playingStep: Int = -1,
@@ -265,18 +265,31 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** 曲全体のコードから調を推定する。おすすめの基準になる。 */
     fun detectedKey(): MusicKey = ChordSuggester.detectKey(songChords())
 
-    /** [previous] の次に置くと繋がりやすいコード。previous が null なら調の定番コード。 */
-    fun chordSuggestions(previous: Chord?): List<ChordSuggestion> =
-        ChordSuggester.suggest(previous, detectedKey())
+    /**
+     * [previous] のあと・[next] の前に置いて馴染むコード。
+     * どちらも null なら、その調でよく使うコードを返す。
+     */
+    fun chordSuggestions(previous: Chord?, next: Chord? = null): List<ChordSuggestion> =
+        ChordSuggester.suggest(previous, detectedKey(), next)
 
-    /** 曲構成の [stepIndex] 番目・[barInBlock] 小節目の、1 つ前の小節のコード。 */
-    fun previousChordInSong(stepIndex: Int, barInBlock: Int): Chord? {
+    /** 曲構成の [stepIndex] 番目・[barInBlock] 小節目から見た、前後の小節のコード。 */
+    fun neighbourChordsInSong(stepIndex: Int, barInBlock: Int): Pair<Chord?, Chord?> {
         val song = _uiState.value.song
-        if (stepIndex !in song.arrangement.indices) return null
+        if (stepIndex !in song.arrangement.indices) return null to null
         var absolute = barInBlock
         for (i in 0 until stepIndex) absolute += song.arrangement[i].repeat
-        if (absolute <= 0) return null
-        return PlaybackPlan.arrangement(song).bars.getOrNull(absolute - 1)?.chord
+        val bars = PlaybackPlan.arrangement(song).bars
+        return bars.getOrNull(absolute - 1)?.chord to bars.getOrNull(absolute + 1)?.chord
+    }
+
+    /**
+     * パターン [index] のコードを選ぶときの手がかり。
+     * パターンは A → B → C の順に使われることが多いので、1 つ前のパターンのコードを「前のコード」とみなす。
+     */
+    fun neighbourChordsForPattern(index: Int): Pair<Chord?, Chord?> {
+        val song = _uiState.value.song
+        val previous = if (index > 0) song.patternChord(index - 1) else null
+        return previous to null
     }
 
     /** リズムを自動生成する。[style] が null ならスタイルもおまかせ。リードは触らない。 */

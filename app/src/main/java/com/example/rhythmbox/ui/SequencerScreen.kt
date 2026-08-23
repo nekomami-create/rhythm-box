@@ -162,11 +162,13 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         )
     }
     if (chordPickerOpen) {
+        val neighbours = viewModel.neighbourChordsForPattern(state.selectedPattern)
         ChordPickerDialog(
             title = "パターン ${state.pattern.name} のコード",
             current = state.patternChord,
-            suggestions = viewModel.chordSuggestions(null),
+            suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
             keyName = viewModel.detectedKey().name,
+            neighbours = neighbours,
             onPreview = viewModel::previewChord,
             onPick = {
                 viewModel.setPatternChord(it)

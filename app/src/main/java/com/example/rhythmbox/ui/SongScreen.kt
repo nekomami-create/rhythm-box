@@ -36,7 +36,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,7 +69,6 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         SongTransport(
             state = state,
             onPlayToggle = { viewModel.toggle(PlayMode.SONG) },
-            onLoopChange = viewModel::setLoopSong,
         )
 
         if (song.arrangement.isNotEmpty()) {
@@ -177,13 +175,13 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         if (step == null) {
             editingChord = null
         } else {
+            val neighbours = viewModel.neighbourChordsInSong(target.stepIndex, target.barInBlock)
             ChordPickerDialog(
                 title = "${target.stepIndex + 1}-${target.barInBlock + 1} 小節目",
                 current = step.chordAt(target.barInBlock, song.patternChord(step.patternIndex)),
-                suggestions = viewModel.chordSuggestions(
-                    viewModel.previousChordInSong(target.stepIndex, target.barInBlock),
-                ),
+                suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
                 keyName = viewModel.detectedKey().name,
+                neighbours = neighbours,
                 onPreview = viewModel::previewChord,
                 onPick = {
                     viewModel.setArrangementChord(target.stepIndex, target.barInBlock, it)
@@ -199,7 +197,6 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 private fun SongTransport(
     state: RhythmUiState,
     onPlayToggle: () -> Unit,
-    onLoopChange: (Boolean) -> Unit,
 ) {
     val song = state.song
     val playing = state.isPlaying && state.mode == PlayMode.SONG
@@ -238,14 +235,15 @@ private fun SongTransport(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "${song.bpm} BPM" + if (playing) " ・ ${state.playingBar + 1} 小節目" else "",
+                    text = buildString {
+                        append("${song.bpm} BPM")
+                        append(" ・ ループ ")
+                        append(if (state.loopSong) "オン" else "オフ")
+                        if (playing) append(" ・ ${state.playingBar + 1} 小節目")
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("ループ", style = MaterialTheme.typography.labelSmall)
-                Switch(checked = state.loopSong, onCheckedChange = onLoopChange)
             }
         }
     }

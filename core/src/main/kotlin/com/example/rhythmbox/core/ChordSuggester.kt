@@ -1,5 +1,6 @@
 package com.example.rhythmbox.core
 
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** 調（キー）。[tonic] は C=0 の半音番号。 */
@@ -146,28 +147,21 @@ object ChordSuggester {
 
     /**
      * [previous] の次に置くと繋がりやすいコードを、良い順に [limit] 個返す。
-     * [previous] が null なら、その調でよく使うコードを順に返す。
+     *
+     * [next] を渡すと「前のコードから来て、次のコードへ繋がる」両側の馴染みで並べ替える
+     * （曲の途中の小節を差し替えるとき用）。[previous] が null なら、その調でよく使うコードを順に返す。
      */
     fun suggest(
         previous: Chord?,
         key: MusicKey,
+        next: Chord? = null,
         limit: Int = 6,
     ): List<ChordSuggestion> {
         val diatonic = key.diatonicChords()
         val labels = key.degreeLabels()
-        val fromDegree = previous?.let { key.degreeOf(it) }
-
-        val weights = DoubleArray(diatonic.size) { degree ->
-            when {
-                fromDegree != null -> transitions(key)[fromDegree][degree]
-                // 調の外のコードから戻るときは、主和音まわりを厚めに。
-                previous != null -> if (degree == 0 || degree == 4 || degree == 3) 0.8 else 0.4
-                else -> 1.0 - startOrder(key).indexOf(degree) * 0.1
-            }
-        }
 
         val suggestions = diatonic.indices
-            .map { ChordSuggestion(diatonic[it], labels[it], weights[it]) }
+            .map { ChordSuggestion(diatonic[it], labels[it], affinity(diatonic[it], it, previous, next, key)) }
             .toMutableList()
 
         // ドミナントセブンスは終止感が強いので、メジャーキーでは V7 も出す。
@@ -182,14 +176,45 @@ object ChordSuggester {
         // マイナーキーでは、和声的短音階のメジャー V もよく使う。
         if (key.minor) {
             val fifth = Chord((key.tonic + 7).mod(12), ChordQuality.MAJOR)
-            val base = if (fromDegree == null) 0.7 else transitions(key)[fromDegree][4] + 0.15
-            suggestions += ChordSuggestion(fifth, "V", base)
+            suggestions += ChordSuggestion(fifth, "V", affinity(fifth, 4, previous, next, key) + 0.12)
         }
 
+        // 前後と同じコードは、繰り返しになるので候補から外す。
         return suggestions
-            .filter { it.chord != previous } // 同じコードの繰り返しは出さない
+            .filter { it.chord != previous && it.chord != next }
             .sortedByDescending { it.weight }
             .take(limit)
+    }
+
+    /**
+     * [chord]（この調の [degree] 度）が、[previous] のあと・[next] の前にどれだけ馴染むか。
+     * 両側が分かっているときは相乗平均を取り、片側だけに寄り過ぎないようにする。
+     */
+    private fun affinity(
+        chord: Chord,
+        degree: Int,
+        previous: Chord?,
+        next: Chord?,
+        key: MusicKey,
+    ): Double {
+        val fromPrevious = when {
+            previous == null -> null
+            else -> key.degreeOf(previous)?.let { transitions(key)[it][degree] }
+                // 調の外のコードから戻るときは、主和音まわりを厚めに。
+                ?: if (degree == 0 || degree == 4 || degree == 3) 0.8 else 0.4
+        }
+        val toNext = when {
+            next == null -> null
+            else -> key.degreeOf(next)?.let { transitions(key)[degree][it] }
+                ?: 0.5 // 調の外のコードへは、どれから行ってもそこそこ
+        }
+        val order = 1.0 - startOrder(key).indexOf(degree) * 0.1
+        return when {
+            fromPrevious != null && toNext != null -> sqrt(fromPrevious * toNext)
+            fromPrevious != null -> fromPrevious
+            toNext != null -> toNext
+            else -> order
+        }
     }
 
     /** [length] 小節ぶんのコード進行を作る。[start] から始めて、最後は主和音に戻す。 */

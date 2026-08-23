@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +49,20 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
                 actions = {
+                    // 曲構成を最後まで再生したあと頭に戻るかどうか。どの画面からでも切り替えられる。
+                    FilledIconToggleButton(
+                        checked = state.loopSong,
+                        onCheckedChange = viewModel::setLoopSong,
+                    ) {
+                        Icon(
+                            Icons.Filled.Repeat,
+                            contentDescription = if (state.loopSong) {
+                                "曲全体のループを解除"
+                            } else {
+                                "曲全体をループ再生"
+                            },
+                        )
+                    }
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "曲メニュー")
                     }
