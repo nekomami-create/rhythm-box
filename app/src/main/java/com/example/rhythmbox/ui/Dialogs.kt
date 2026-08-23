@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -41,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
+import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.Song
@@ -221,11 +224,17 @@ fun PatternPickerDialog(
     )
 }
 
-/** ルート音と種類を選んでコードを決めるダイアログ。選ぶたびに試聴できる。 */
+/**
+ * ルート音と種類を選んでコードを決めるダイアログ。選ぶたびに試聴できる。
+ * [suggestions] には「この流れなら次はこれ」というおすすめが入る。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChordPickerDialog(
     title: String,
     current: Chord,
+    suggestions: List<ChordSuggestion> = emptyList(),
+    keyName: String? = null,
     onPreview: (Chord) -> Unit,
     onPick: (Chord) -> Unit,
     onDismiss: () -> Unit,
@@ -258,6 +267,57 @@ fun ChordPickerDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (suggestions.isNotEmpty()) {
+                    Text(
+                        text = "つぎに合うコード" + if (keyName != null) "（$keyName のキー）" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        suggestions.forEach { suggestion ->
+                            val picked = suggestion.chord.root.mod(12) == root &&
+                                suggestion.chord.quality == quality
+                            Surface(
+                                color = if (picked) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                                },
+                                contentColor = if (picked) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(40.dp).clickable {
+                                    root = suggestion.chord.root.mod(12)
+                                    quality = suggestion.chord.quality
+                                    onPreview(suggestion.chord)
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = suggestion.chord.name,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = suggestion.degree,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                }
                 Text("ルート音", style = MaterialTheme.typography.labelMedium)
                 Chord.ROOT_NAMES.chunked(4).forEachIndexed { rowIndex, names ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

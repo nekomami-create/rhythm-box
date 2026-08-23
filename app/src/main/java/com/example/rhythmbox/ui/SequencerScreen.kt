@@ -23,12 +23,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.ROW_BASS
+import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
@@ -116,10 +121,13 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             patterns = state.song.patterns,
             selected = state.selectedPattern,
             chordName = state.patternChord.name,
+            canUndo = state.canUndo,
             onSelect = viewModel::selectPattern,
             onClear = viewModel::clearPattern,
             onCopy = { copyTargetOpen = true },
             onChordClick = { chordPickerOpen = true },
+            onGenerate = viewModel::generateRhythm,
+            onUndo = viewModel::undoGenerate,
         )
 
         StepGrid(
@@ -157,6 +165,8 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         ChordPickerDialog(
             title = "パターン ${state.pattern.name} のコード",
             current = state.patternChord,
+            suggestions = viewModel.chordSuggestions(null),
+            keyName = viewModel.detectedKey().name,
             onPreview = viewModel::previewChord,
             onPick = {
                 viewModel.setPatternChord(it)
@@ -259,11 +269,15 @@ private fun PatternSelector(
     patterns: List<Pattern>,
     selected: Int,
     chordName: String,
+    canUndo: Boolean,
     onSelect: (Int) -> Unit,
     onClear: () -> Unit,
     onCopy: () -> Unit,
     onChordClick: () -> Unit,
+    onGenerate: (RhythmStyle?) -> Unit,
+    onUndo: () -> Unit,
 ) {
+    var styleMenuOpen by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -324,6 +338,37 @@ private fun PatternSelector(
                     )
                 }
             }
+            // リズムの自動生成。スタイルを選べる。
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { styleMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("ランダム")
+                }
+                DropdownMenu(expanded = styleMenuOpen, onDismissRequest = { styleMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("おまかせ") },
+                        onClick = {
+                            styleMenuOpen = false
+                            onGenerate(null)
+                        },
+                    )
+                    RhythmStyle.entries.forEach { style ->
+                        DropdownMenuItem(
+                            text = { Text(style.label) },
+                            onClick = {
+                                styleMenuOpen = false
+                                onGenerate(style)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -333,6 +378,11 @@ private fun PatternSelector(
                 Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("コピー")
+            }
+            OutlinedButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("戻す")
             }
         }
     }

@@ -20,12 +20,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -70,6 +72,29 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onPlayToggle = { viewModel.toggle(PlayMode.SONG) },
             onLoopChange = viewModel::setLoopSong,
         )
+
+        if (song.arrangement.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = viewModel::fillProgression, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("コード進行おまかせ")
+                }
+                OutlinedButton(
+                    onClick = viewModel::undoGenerate,
+                    enabled = state.canUndo,
+                    modifier = Modifier.width(110.dp),
+                ) {
+                    Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("戻す")
+                }
+            }
+        }
 
         if (song.arrangement.isEmpty()) {
             Surface(
@@ -155,6 +180,10 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             ChordPickerDialog(
                 title = "${target.stepIndex + 1}-${target.barInBlock + 1} 小節目",
                 current = step.chordAt(target.barInBlock, song.patternChord(step.patternIndex)),
+                suggestions = viewModel.chordSuggestions(
+                    viewModel.previousChordInSong(target.stepIndex, target.barInBlock),
+                ),
+                keyName = viewModel.detectedKey().name,
                 onPreview = viewModel::previewChord,
                 onPick = {
                     viewModel.setArrangementChord(target.stepIndex, target.barInBlock, it)

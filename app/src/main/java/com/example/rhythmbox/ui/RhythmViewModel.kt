@@ -7,11 +7,16 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordSuggester
+import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.EngineConfig
 import com.example.rhythmbox.core.Instrument
+import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.Pattern
+import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
+import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.ROW_BASS
 import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.Song
@@ -23,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /** 再生モード。パターン単体のループか、曲構成の通し再生か。 */
 enum class PlayMode { PATTERN, SONG }
@@ -39,6 +45,8 @@ data class RhythmUiState(
     val playingStep: Int = -1,
     /** 曲構成のうち鳴っている小節（止まっていれば -1）。 */
     val playingBar: Int = -1,
+    /** 自動生成の直前の状態に戻せるか。 */
+    val canUndo: Boolean = false,
 ) {
     val pattern: Pattern get() = song.pattern(selectedPattern)
 
@@ -56,6 +64,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     val uiState: StateFlow<RhythmUiState> = _uiState.asStateFlow()
 
     private var positionJob: Job? = null
+
+    /** 自動生成をやり直すための直前の状態。 */
+    private var undoSnapshot: Pair<Int, Pattern>? = null
+    private var undoArrangement: List<ArrangementStep>? = null
 
     init {
         audio.onPlaybackFinished = {
@@ -186,6 +198,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     // --- パターン編集 -------------------------------------------------------
 
     fun selectPattern(index: Int) {
+        clearUndo()
         _uiState.update { it.copy(selectedPattern = index.coerceIn(it.song.patterns.indices)) }
         syncEngine()
     }
@@ -245,6 +258,91 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val index = _uiState.value.selectedPattern
         repository.updateCurrentSong { song -> song.withPatternChord(index, chord) }
         if (!_uiState.value.isPlaying) previewChord(chord)
+    }
+
+    // --- 自動生成・レコメンド -----------------------------------------------
+
+    /** 曲全体のコードから調を推定する。おすすめの基準になる。 */
+    fun detectedKey(): MusicKey = ChordSuggester.detectKey(songChords())
+
+    /** [previous] の次に置くと繋がりやすいコード。previous が null なら調の定番コード。 */
+    fun chordSuggestions(previous: Chord?): List<ChordSuggestion> =
+        ChordSuggester.suggest(previous, detectedKey())
+
+    /** 曲構成の [stepIndex] 番目・[barInBlock] 小節目の、1 つ前の小節のコード。 */
+    fun previousChordInSong(stepIndex: Int, barInBlock: Int): Chord? {
+        val song = _uiState.value.song
+        if (stepIndex !in song.arrangement.indices) return null
+        var absolute = barInBlock
+        for (i in 0 until stepIndex) absolute += song.arrangement[i].repeat
+        if (absolute <= 0) return null
+        return PlaybackPlan.arrangement(song).bars.getOrNull(absolute - 1)?.chord
+    }
+
+    /** リズムを自動生成する。[style] が null ならスタイルもおまかせ。リードは触らない。 */
+    fun generateRhythm(style: RhythmStyle?) {
+        val index = _uiState.value.selectedPattern
+        val current = _uiState.value.song.pattern(index)
+        undoSnapshot = index to current
+        val generated = if (style == null) {
+            PatternGenerator.generateAny(Random, current.name)
+        } else {
+            PatternGenerator.generate(style, Random, current.name)
+        }
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).copy(rows = generated.rows))
+        }
+        _uiState.update { it.copy(canUndo = true) }
+    }
+
+    /** 曲構成のコードを、調に沿った進行で埋める。 */
+    fun fillProgression() {
+        val song = _uiState.value.song
+        if (song.arrangement.isEmpty()) return
+        val key = detectedKey()
+        val bars = song.totalBars()
+        val progression = ChordSuggester.generateProgression(
+            length = bars,
+            key = key,
+            start = song.arrangement.first().chords.firstOrNull(),
+            random = Random,
+        )
+        undoArrangement = song.arrangement
+        var index = 0
+        val arrangement = song.arrangement.map { step ->
+            val slice = List(step.repeat) { progression.getOrElse(index++) { Chord() } }
+            step.copy(chords = slice)
+        }
+        repository.updateCurrentSong { it.copy(arrangement = arrangement) }
+        _uiState.update { it.copy(canUndo = true) }
+    }
+
+    /** 直前の自動生成を取り消す。 */
+    fun undoGenerate() {
+        val patternSnapshot = undoSnapshot
+        val arrangementSnapshot = undoArrangement
+        if (patternSnapshot != null) {
+            repository.updateCurrentSong { it.withPattern(patternSnapshot.first, patternSnapshot.second) }
+        }
+        if (arrangementSnapshot != null) {
+            repository.updateCurrentSong { it.copy(arrangement = arrangementSnapshot) }
+        }
+        undoSnapshot = null
+        undoArrangement = null
+        _uiState.update { it.copy(canUndo = false) }
+    }
+
+    private fun clearUndo() {
+        undoSnapshot = null
+        undoArrangement = null
+        if (_uiState.value.canUndo) _uiState.update { it.copy(canUndo = false) }
+    }
+
+    /** 調の推定に使うコード。曲構成があればその並び、無ければパターンのコード。 */
+    private fun songChords(): List<Chord> {
+        val song = _uiState.value.song
+        val fromArrangement = PlaybackPlan.arrangement(song).bars.map { it.chord }
+        return fromArrangement.ifEmpty { song.patternChords }
     }
 
     // --- 音量・テンポ -------------------------------------------------------
