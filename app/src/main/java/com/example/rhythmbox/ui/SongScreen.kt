@@ -1,13 +1,17 @@
 package com.example.rhythmbox.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,10 +49,14 @@ import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.formatDuration
 
+/** どの小節のコードを編集しているか。 */
+private data class ChordTarget(val stepIndex: Int, val barInBlock: Int)
+
 @Composable
 fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     var addOpen by remember { mutableStateOf(false) }
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var editingPattern by remember { mutableStateOf<Int?>(null) }
+    var editingChord by remember { mutableStateOf<ChordTarget?>(null) }
     val song = state.song
     // 各ブロックが曲の何小節目から始まるか。再生位置の表示に使う。
     val startBars = song.arrangement.runningFold(0) { acc, step -> acc + step.repeat }
@@ -70,7 +78,9 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "パターンを並べて曲を組み立てます。\n下の「パターンを追加」から始めてください。",
+                    text = "パターンを並べて曲を組み立てます。\n" +
+                        "下の「パターンを追加」から始めてください。\n" +
+                        "小節ごとのコードは各行の下に並ぶボタンで変えられます。",
                     modifier = Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -83,16 +93,24 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             itemsIndexed(song.arrangement) { index, step ->
-                val playingHere = state.isPlaying && state.mode == PlayMode.SONG &&
-                    state.playingBar >= startBars[index] && state.playingBar < startBars[index] + step.repeat
+                val playingBarInBlock = if (
+                    state.isPlaying && state.mode == PlayMode.SONG &&
+                    state.playingBar >= startBars[index] &&
+                    state.playingBar < startBars[index] + step.repeat
+                ) {
+                    state.playingBar - startBars[index]
+                } else {
+                    -1
+                }
                 ArrangementRow(
                     order = index + 1,
                     step = step,
                     song = song,
-                    playing = playingHere,
+                    playingBarInBlock = playingBarInBlock,
                     canMoveUp = index > 0,
                     canMoveDown = index < song.arrangement.lastIndex,
-                    onPatternClick = { editingIndex = index },
+                    onPatternClick = { editingPattern = index },
+                    onChordClick = { bar -> editingChord = ChordTarget(index, bar) },
                     onRepeatChange = { viewModel.setArrangementRepeat(index, it) },
                     onMove = { viewModel.moveArrangementStep(index, it) },
                     onRemove = { viewModel.removeArrangementStep(index) },
@@ -118,16 +136,33 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onDismiss = { addOpen = false },
         )
     }
-    editingIndex?.let { index ->
+    editingPattern?.let { index ->
         PatternPickerDialog(
             title = "${index + 1} 番目のパターン",
             patterns = song.patterns,
             onPick = {
                 viewModel.setArrangementPattern(index, it)
-                editingIndex = null
+                editingPattern = null
             },
-            onDismiss = { editingIndex = null },
+            onDismiss = { editingPattern = null },
         )
+    }
+    editingChord?.let { target ->
+        val step = song.arrangement.getOrNull(target.stepIndex)
+        if (step == null) {
+            editingChord = null
+        } else {
+            ChordPickerDialog(
+                title = "${target.stepIndex + 1}-${target.barInBlock + 1} 小節目",
+                current = step.chordAt(target.barInBlock, song.patternChord(step.patternIndex)),
+                onPreview = viewModel::previewChord,
+                onPick = {
+                    viewModel.setArrangementChord(target.stepIndex, target.barInBlock, it)
+                    editingChord = null
+                },
+                onDismiss = { editingChord = null },
+            )
+        }
     }
 }
 
@@ -187,21 +222,24 @@ private fun SongTransport(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ArrangementRow(
     order: Int,
     step: ArrangementStep,
     song: Song,
-    playing: Boolean,
+    playingBarInBlock: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onPatternClick: () -> Unit,
+    onChordClick: (Int) -> Unit,
     onRepeatChange: (Int) -> Unit,
     onMove: (Int) -> Unit,
     onRemove: () -> Unit,
 ) {
+    val fallback = song.patternChord(step.patternIndex)
     Surface(
-        color = if (playing) {
+        color = if (playingBarInBlock >= 0) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
         } else {
             MaterialTheme.colorScheme.surfaceContainerLow
@@ -209,46 +247,97 @@ private fun ArrangementRow(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "$order",
-                modifier = Modifier.width(22.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(
-                onClick = onPatternClick,
-                modifier = Modifier.width(56.dp),
-                contentPadding = PaddingValues(0.dp),
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$order",
+                    modifier = Modifier.width(22.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = onPatternClick,
+                    modifier = Modifier.width(56.dp),
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Text(song.pattern(step.patternIndex).name, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = { onRepeatChange(step.repeat - 1) },
+                    enabled = step.repeat > 1,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Remove,
+                        contentDescription = "繰り返しを減らす",
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Box(modifier = Modifier.width(46.dp), contentAlignment = Alignment.Center) {
+                    Text("${step.repeat} 小節", style = MaterialTheme.typography.labelMedium)
+                }
+                IconButton(onClick = { onRepeatChange(step.repeat + 1) }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "繰り返しを増やす",
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { onMove(-1) }, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowUp,
+                        contentDescription = "上へ",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                IconButton(onClick = { onMove(1) }, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "下へ",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Filled.Delete, contentDescription = "削除", modifier = Modifier.size(18.dp))
+                }
+            }
+            // 小節ごとのコード。押すと変更できる。
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(song.pattern(step.patternIndex).name, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(4.dp))
-            IconButton(
-                onClick = { onRepeatChange(step.repeat - 1) },
-                enabled = step.repeat > 1,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(Icons.Filled.Remove, contentDescription = "繰り返しを減らす", modifier = Modifier.size(16.dp))
-            }
-            Box(modifier = Modifier.width(46.dp), contentAlignment = Alignment.Center) {
-                Text("${step.repeat} 小節", style = MaterialTheme.typography.labelMedium)
-            }
-            IconButton(onClick = { onRepeatChange(step.repeat + 1) }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = "繰り返しを増やす", modifier = Modifier.size(16.dp))
-            }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = { onMove(-1) }, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上へ", modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = { onMove(1) }, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "下へ", modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Delete, contentDescription = "削除", modifier = Modifier.size(18.dp))
+                repeat(step.repeat) { bar ->
+                    val chord = step.chordAt(bar, fallback)
+                    val playing = bar == playingBarInBlock
+                    Surface(
+                        color = if (playing) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.30f)
+                        },
+                        contentColor = if (playing) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(30.dp).clickable { onChordClick(bar) },
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = chord.name,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

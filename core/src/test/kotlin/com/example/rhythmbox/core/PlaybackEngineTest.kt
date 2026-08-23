@@ -4,8 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class PlaybackEngineTest {
 
@@ -13,7 +18,7 @@ class PlaybackEngineTest {
     private val bpm = 120
 
     /** 音色ごとに違う値を持つ 1 フレームだけのテスト用サンプル。 */
-    private fun impulses() = List(VOICE_COUNT) { voice -> floatArrayOf((voice + 1) / 10f) }
+    private fun impulses() = List(DRUM_COUNT) { voice -> floatArrayOf((voice + 1) / 10f) }
 
     private fun engine() = PlaybackEngine(sampleRate, impulses())
 
@@ -26,10 +31,29 @@ class PlaybackEngineTest {
         plan = plan,
         bpm = song.bpm,
         masterVolume = 1f,
-        trackVolumes = List(VOICE_COUNT) { 1f },
-        mutes = List(VOICE_COUNT) { false },
+        trackVolumes = List(TRACK_COUNT) { 1f },
+        mutes = List(TRACK_COUNT) { false },
         loop = loop,
     )
+
+    /** [buffer] の一部を切り出した実効値。 */
+    private fun rms(buffer: FloatArray, from: Int, to: Int): Double {
+        var sum = 0.0
+        for (i in from until minOf(to, buffer.size)) sum += buffer[i].toDouble() * buffer[i]
+        return sqrt(sum / (to - from))
+    }
+
+    /** [frequency] Hz 成分の強さ（素朴な離散フーリエ変換）。 */
+    private fun magnitudeAt(buffer: FloatArray, frequency: Double, from: Int, to: Int): Double {
+        var real = 0.0
+        var imaginary = 0.0
+        for (i in from until minOf(to, buffer.size)) {
+            val angle = 2 * PI * frequency * (i - from) / sampleRate
+            real += buffer[i] * cos(angle)
+            imaginary += buffer[i] * sin(angle)
+        }
+        return hypot(real, imaginary) / (to - from)
+    }
 
     @Test
     fun `steps fire on the beat`() {
@@ -49,7 +73,6 @@ class PlaybackEngineTest {
             val expected = (framesPerStep() * step).roundToInt()
             assertTrue("step $step: ${hits[index]} != ~$expected", abs(hits[index] - expected) <= 2)
         }
-        // キック（音色 0）の振幅が出ていること
         assertEquals(0.1f, buffer[hits[0]], 1e-6f)
     }
 
@@ -113,7 +136,7 @@ class PlaybackEngineTest {
             .withPattern(0, Pattern.of("A", "x...x...x...x...", "..x...x...x...x."))
         val engine = engine()
         engine.config = config(song, PlaybackPlan.single(song, 0))
-            .copy(mutes = List(VOICE_COUNT) { it == 0 })
+            .copy(mutes = List(TRACK_COUNT) { it == 0 })
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
@@ -129,7 +152,7 @@ class PlaybackEngineTest {
         val song = Song("s", "test", bpm = bpm).withPattern(0, Pattern.of("A", "x..............."))
         val engine = engine()
         engine.config = config(song, PlaybackPlan.single(song, 0))
-            .copy(masterVolume = 0.5f, trackVolumes = List(VOICE_COUNT) { 0.5f })
+            .copy(masterVolume = 0.5f, trackVolumes = List(TRACK_COUNT) { 0.5f })
         engine.start()
 
         val buffer = FloatArray(64)
@@ -154,8 +177,7 @@ class PlaybackEngineTest {
 
     @Test
     fun `closed hat chokes the open hat`() {
-        // 開いたハイハットの余韻が、次のクローズドで止まることを確認する。
-        val samples = List(VOICE_COUNT) { voice ->
+        val samples = List(DRUM_COUNT) { voice ->
             when (voice) {
                 Voice.OPEN_HAT.ordinal -> FloatArray(sampleRate) { 0.5f } // 1 秒鳴り続ける
                 else -> floatArrayOf(0.25f)
@@ -192,7 +214,6 @@ class PlaybackEngineTest {
         engine.start()
         engine.render(FloatArray(500))
         assertEquals(1_500L, engine.framePosition)
-        // 再生開始位置（1000 フレーム目）のステップが記録されている
         assertEquals(StepTimeline.Position(0, 0), engine.timeline.positionAt(1_200))
         assertEquals(null, engine.timeline.positionAt(999))
     }
@@ -220,5 +241,189 @@ class PlaybackEngineTest {
         assertTrue(PlaybackEngine.limit(1.6f) > 0.85f)
         assertTrue(PlaybackEngine.limit(-40f) > -1f)
         assertEquals(-PlaybackEngine.limit(3f), PlaybackEngine.limit(-3f), 1e-6f)
+    }
+
+    // --- コード / ベース / リード -------------------------------------------
+
+    /** ドラムを鳴らさず、音程のある楽器だけを検証するためのエンジン。 */
+    private fun silentDrumEngine() =
+        PlaybackEngine(sampleRate, List(DRUM_COUNT) { FloatArray(1) })
+
+    private fun chordSong(chord: Chord, vararg rowSpecs: String): Song =
+        Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.of("A", *rowSpecs))
+            .withPatternChord(0, chord)
+
+    @Test
+    fun `the bass plays the root of the bar's chord`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_BASS] = "x..............."
+        val song = chordSong(Chord(9, ChordQuality.MINOR), *rows) // Am -> A2 = 110Hz
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val buffer = FloatArray((framesPerStep() * 4).roundToInt())
+        engine.render(buffer)
+
+        val window = 0 until (framesPerStep() * 3).toInt()
+        val atRoot = magnitudeAt(buffer, 110.0, window.first, window.last)
+        val offRoot = magnitudeAt(buffer, 146.83, window.first, window.last) // D3（違う音）
+        assertTrue("root=$atRoot off=$offRoot", atRoot > offRoot * 8)
+    }
+
+    @Test
+    fun `the chord row sounds all the chord tones`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows) // C: C4 E4 G4
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val buffer = FloatArray((framesPerStep() * 8).roundToInt())
+        engine.render(buffer)
+
+        val to = (framesPerStep() * 6).toInt()
+        val c4 = magnitudeAt(buffer, ToneSynth.frequency(60), 0, to)
+        val e4 = magnitudeAt(buffer, ToneSynth.frequency(64), 0, to)
+        val g4 = magnitudeAt(buffer, ToneSynth.frequency(67), 0, to)
+        val d4 = magnitudeAt(buffer, ToneSynth.frequency(62), 0, to) // コードに含まれない音
+        assertTrue("C4=$c4 D4=$d4", c4 > d4 * 8)
+        assertTrue("E4=$e4 D4=$d4", e4 > d4 * 8)
+        assertTrue("G4=$g4 D4=$d4", g4 > d4 * 8)
+    }
+
+    @Test
+    fun `the chord follows the bar in an arrangement`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        rows[ROW_BASS] = "x..............."
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.of("A", *rows))
+            .copy(
+                arrangement = listOf(
+                    ArrangementStep(0, 2, listOf(Chord(0, ChordQuality.MAJOR), Chord(5, ChordQuality.MAJOR))),
+                ),
+            )
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.arrangement(song), loop = false)
+        engine.start()
+
+        val bar = (framesPerStep() * STEPS_PER_BAR).toInt()
+        val buffer = FloatArray(bar * 2)
+        engine.render(buffer)
+
+        // 1 小節目は C（ベース C2 = 65.4Hz）、2 小節目は F（F2 = 87.3Hz）
+        val firstC = magnitudeAt(buffer, 65.41, 0, bar / 2)
+        val firstF = magnitudeAt(buffer, 87.31, 0, bar / 2)
+        val secondC = magnitudeAt(buffer, 65.41, bar, bar + bar / 2)
+        val secondF = magnitudeAt(buffer, 87.31, bar, bar + bar / 2)
+        assertTrue("1小節目 C=$firstC F=$firstF", firstC > firstF * 5)
+        assertTrue("2小節目 F=$secondF C=$secondC", secondF > secondC * 5)
+    }
+
+    @Test
+    fun `lead notes play the pitch that was punched in`() {
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.empty("A").withLead(0, 72)) // C5
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val buffer = FloatArray((framesPerStep() * 4).roundToInt())
+        engine.render(buffer)
+
+        val to = (framesPerStep() * 3).toInt()
+        val c5 = magnitudeAt(buffer, ToneSynth.frequency(72), 0, to)
+        val c4 = magnitudeAt(buffer, ToneSynth.frequency(60), 0, to)
+        assertTrue("C5=$c5 C4=$c4", c5 > c4 * 8)
+    }
+
+    @Test
+    fun `notes stop after their gate instead of droning on`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_BASS] = "x..............." // 次の音が無いので上限（4 ステップ）まで
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val buffer = FloatArray((framesPerStep() * 8).roundToInt())
+        engine.render(buffer)
+
+        val step = framesPerStep().toInt()
+        val whilePlaying = rms(buffer, step / 2, step * 2)
+        val afterGate = rms(buffer, step * 6, step * 7)
+        assertTrue("鳴っている間 $whilePlaying", whilePlaying > 0.02)
+        assertTrue("ゲート後 $afterGate", afterGate < whilePlaying * 0.2)
+    }
+
+    @Test
+    fun `muting the chord track silences it without touching the bass`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        rows[ROW_BASS] = "x..............."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+
+        fun render(muteChord: Boolean): FloatArray {
+            val engine = silentDrumEngine()
+            engine.config = config(song, PlaybackPlan.single(song, 0))
+                .copy(mutes = List(TRACK_COUNT) { muteChord && it == Instrument.CHORD.trackIndex })
+            engine.start()
+            return FloatArray((framesPerStep() * 4).roundToInt()).also { engine.render(it) }
+        }
+
+        val to = (framesPerStep() * 3).toInt()
+        val plain = render(muteChord = false)
+        val muted = render(muteChord = true)
+
+        // コードの構成音（E4）はミュートで消え、ベース（C2）はそのまま残る。
+        val e4Plain = magnitudeAt(plain, ToneSynth.frequency(64), 0, to)
+        val e4Muted = magnitudeAt(muted, ToneSynth.frequency(64), 0, to)
+        assertTrue("E4 通常=$e4Plain ミュート=$e4Muted", e4Muted < e4Plain * 0.02)
+
+        val c2Plain = magnitudeAt(plain, 65.41, 0, to)
+        val c2Muted = magnitudeAt(muted, 65.41, 0, to)
+        assertEquals(c2Plain, c2Muted, c2Plain * 0.05)
+        assertTrue("ベース C2=$c2Muted", c2Muted > 1e-3)
+    }
+
+    @Test
+    fun `stopping releases sustained chords`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val head = FloatArray((framesPerStep() * 2).roundToInt())
+        engine.render(head)
+        assertTrue(rms(head, 0, head.size) > 0.02)
+
+        val sustained = rms(head, head.size / 2, head.size)
+
+        engine.stop()
+        val tail = FloatArray(sampleRate * 4) // 4 秒
+        engine.render(tail)
+        // 離鍵後は指数的に減衰する（コードの減衰時定数は 0.34 秒）
+        val justAfterStop = rms(tail, 0, sampleRate / 20)
+        val oneSecondLater = rms(tail, sampleRate, sampleRate + sampleRate / 20)
+        assertTrue("停止直後 $justAfterStop", justAfterStop > sustained * 0.5)
+        assertTrue("1 秒後 $oneSecondLater", oneSecondLater < justAfterStop * 0.1)
+        // 十分に小さくなった音は解放される（鳴りっぱなしの発振器が残らない）
+        assertEquals(0.0, rms(tail, tail.size - sampleRate / 20, tail.size), 0.0)
+    }
+
+    @Test
+    fun `preview sounds can be triggered while stopped`() {
+        val engine = silentDrumEngine()
+        engine.config = config(Song("s", "test"), PlaybackPlan(emptyList(), emptyList()))
+        engine.previewChord(Chord(0, ChordQuality.MAJOR))
+
+        val buffer = FloatArray(sampleRate / 4)
+        assertFalse(engine.render(buffer)) // 再生はしていない
+        assertTrue(rms(buffer, 0, buffer.size) > 0.01)
     }
 }

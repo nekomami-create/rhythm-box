@@ -6,8 +6,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArrangementStep
+import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.EngineConfig
+import com.example.rhythmbox.core.Instrument
+import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.PlaybackPlan
+import com.example.rhythmbox.core.ROW_BASS
+import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.Song
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,7 +39,12 @@ data class RhythmUiState(
     val playingStep: Int = -1,
     /** 曲構成のうち鳴っている小節（止まっていれば -1）。 */
     val playingBar: Int = -1,
-)
+) {
+    val pattern: Pattern get() = song.pattern(selectedPattern)
+
+    /** 編集中のパターンを試聴するときのコード。 */
+    val patternChord: Chord get() = song.patternChord(selectedPattern)
+}
 
 class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -111,10 +122,24 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         syncEngine()
     }
 
-    /** パッドやトラック名をタップしたときの単発プレビュー。 */
-    fun preview(voice: Int) {
+    /** グリッドの行（ドラム / コード / ベース）を単発で試聴する。 */
+    fun previewRow(row: Int) {
         audio.resume()
-        engine.trigger(voice)
+        when (row) {
+            ROW_CHORD -> engine.previewChord(_uiState.value.patternChord)
+            ROW_BASS -> engine.previewNote(Instrument.BASS, _uiState.value.patternChord.bassMidi())
+            else -> if (row < DRUM_COUNT) engine.trigger(row)
+        }
+    }
+
+    fun previewChord(chord: Chord) {
+        audio.resume()
+        engine.previewChord(chord)
+    }
+
+    fun previewLead(midi: Int) {
+        audio.resume()
+        engine.previewNote(Instrument.LEAD, midi)
     }
 
     private fun handlePlaybackFinished() {
@@ -165,14 +190,31 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         syncEngine()
     }
 
-    fun toggleStep(voice: Int, step: Int) {
+    fun toggleStep(row: Int, step: Int) {
         val state = _uiState.value
         val index = state.selectedPattern
-        val turningOn = !state.song.pattern(index).isOn(voice, step)
+        val turningOn = !state.song.pattern(index).isOn(row, step)
         repository.updateCurrentSong { song ->
-            song.withPattern(index, song.pattern(index).toggle(voice, step))
+            song.withPattern(index, song.pattern(index).toggle(row, step))
         }
-        if (turningOn && !state.isPlaying) preview(voice)
+        if (turningOn && !state.isPlaying) previewRow(row)
+    }
+
+    /** ピアノロールの 1 マス。同じ音を押し直したら消す。 */
+    fun toggleLead(step: Int, midi: Int) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val current = state.song.pattern(index).leadAt(step)
+        val next = if (current == midi) Pattern.REST else midi
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withLead(step, next))
+        }
+        if (next != Pattern.REST && !state.isPlaying) previewLead(midi)
+    }
+
+    fun clearLead() {
+        val index = _uiState.value.selectedPattern
+        repository.updateCurrentSong { song -> song.withPattern(index, song.pattern(index).clearLead()) }
     }
 
     fun clearPattern() {
@@ -180,21 +222,29 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song -> song.withPattern(index, song.pattern(index).cleared()) }
     }
 
-    fun clearVoice(voice: Int) {
+    fun clearRow(row: Int) {
         val index = _uiState.value.selectedPattern
         repository.updateCurrentSong { song ->
-            song.withPattern(index, song.pattern(index).clearVoice(voice))
+            song.withPattern(index, song.pattern(index).clearRow(row))
         }
     }
 
-    /** 選択中のパターンを別のパターンへコピーする。 */
+    /** 選択中のパターンを別のパターンへコピーする（コードも一緒に持っていく）。 */
     fun copyPatternTo(target: Int) {
         val source = _uiState.value.selectedPattern
         if (source == target) return
         repository.updateCurrentSong { song ->
             song.withPattern(target, song.pattern(source).copy(name = song.pattern(target).name))
+                .withPatternChord(target, song.patternChord(source))
         }
         selectPattern(target)
+    }
+
+    /** パターンを単体で鳴らすときのコード。 */
+    fun setPatternChord(chord: Chord) {
+        val index = _uiState.value.selectedPattern
+        repository.updateCurrentSong { song -> song.withPatternChord(index, chord) }
+        if (!_uiState.value.isPlaying) previewChord(chord)
     }
 
     // --- 音量・テンポ -------------------------------------------------------
@@ -208,19 +258,19 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { it.copy(masterVolume = volume.coerceIn(0f, 1f)) }
     }
 
-    fun setTrackVolume(voice: Int, volume: Float) {
+    fun setTrackVolume(track: Int, volume: Float) {
         repository.updateCurrentSong { song ->
-            song.withTrack(voice, song.tracks[voice].copy(volume = volume.coerceIn(0f, 1f)))
+            song.withTrack(track, song.track(track).copy(volume = volume.coerceIn(0f, 1f)))
         }
     }
 
-    fun toggleMute(voice: Int) {
+    fun toggleMute(track: Int) {
         repository.updateCurrentSong { song ->
-            song.withTrack(voice, song.tracks[voice].copy(muted = !song.tracks[voice].muted))
+            song.withTrack(track, song.track(track).copy(muted = !song.track(track).muted))
         }
     }
 
-    fun soloOff() {
+    fun unmuteAll() {
         repository.updateCurrentSong { song ->
             song.copy(tracks = song.tracks.map { it.copy(muted = false) })
         }
@@ -230,7 +280,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     fun addArrangementStep(patternIndex: Int) {
         repository.updateCurrentSong { song ->
-            song.copy(arrangement = song.arrangement + ArrangementStep(patternIndex, 1))
+            val chord = song.patternChord(patternIndex)
+            song.copy(
+                arrangement = song.arrangement + ArrangementStep(patternIndex, 1, listOf(chord)),
+            )
         }
     }
 
@@ -238,7 +291,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song ->
             val next = song.arrangement.toMutableList()
             if (index !in next.indices) return@updateCurrentSong song
-            next[index] = next[index].copy(repeat = repeat.coerceIn(1, PlaybackPlan.MAX_REPEAT))
+            val fallback = song.patternChord(next[index].patternIndex)
+            next[index] = next[index]
+                .copy(repeat = repeat.coerceIn(1, PlaybackPlan.MAX_REPEAT))
+                .withChordSlots(fallback)
             song.copy(arrangement = next)
         }
     }
@@ -250,6 +306,18 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             next[index] = next[index].copy(patternIndex = patternIndex)
             song.copy(arrangement = next)
         }
+    }
+
+    /** 曲構成の [index] 番目のブロックの、[barInBlock] 小節目のコードを変える。 */
+    fun setArrangementChord(index: Int, barInBlock: Int, chord: Chord) {
+        repository.updateCurrentSong { song ->
+            val next = song.arrangement.toMutableList()
+            if (index !in next.indices) return@updateCurrentSong song
+            val fallback = song.patternChord(next[index].patternIndex)
+            next[index] = next[index].withChord(barInBlock, chord, fallback)
+            song.copy(arrangement = next)
+        }
+        if (!_uiState.value.isPlaying) previewChord(chord)
     }
 
     fun moveArrangementStep(index: Int, offset: Int) {

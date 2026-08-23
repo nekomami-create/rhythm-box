@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.ContentCopy
@@ -27,8 +29,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,15 +50,52 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
+import com.example.rhythmbox.core.ROW_BASS
+import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.Voice
+
+/** グリッドの 1 行ぶんの情報。ドラムの後ろにコードとベースが並ぶ。 */
+data class StepRowInfo(
+    val row: Int,
+    val label: String,
+    val fullLabel: String,
+    val trackIndex: Int,
+    val melodic: Boolean,
+)
+
+val stepRows: List<StepRowInfo> = buildList {
+    Voice.entries.forEachIndexed { index, voice ->
+        add(StepRowInfo(index, voice.shortLabel, voice.label, index, melodic = false))
+    }
+    add(
+        StepRowInfo(
+            ROW_CHORD,
+            Instrument.CHORD.shortLabel,
+            Instrument.CHORD.label,
+            Instrument.CHORD.trackIndex,
+            melodic = true,
+        ),
+    )
+    add(
+        StepRowInfo(
+            ROW_BASS,
+            Instrument.BASS.shortLabel,
+            Instrument.BASS.label,
+            Instrument.BASS.trackIndex,
+            melodic = true,
+        ),
+    )
+}
 
 @Composable
 fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     var mixerOpen by remember { mutableStateOf(false) }
     var copyTargetOpen by remember { mutableStateOf(false) }
+    var chordPickerOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -78,17 +115,19 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         PatternSelector(
             patterns = state.song.patterns,
             selected = state.selectedPattern,
+            chordName = state.patternChord.name,
             onSelect = viewModel::selectPattern,
             onClear = viewModel::clearPattern,
             onCopy = { copyTargetOpen = true },
+            onChordClick = { chordPickerOpen = true },
         )
 
         StepGrid(
-            pattern = state.song.pattern(state.selectedPattern),
+            pattern = state.pattern,
             song = state.song,
             playingStep = if (state.isPlaying && state.mode == PlayMode.PATTERN) state.playingStep else -1,
             onToggle = viewModel::toggleStep,
-            onPreview = viewModel::preview,
+            onPreview = viewModel::previewRow,
             onToggleMute = viewModel::toggleMute,
         )
     }
@@ -98,8 +137,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             song = state.song,
             onVolumeChange = viewModel::setTrackVolume,
             onToggleMute = viewModel::toggleMute,
-            onClearVoice = viewModel::clearVoice,
-            onUnmuteAll = viewModel::soloOff,
+            onUnmuteAll = viewModel::unmuteAll,
             onDismiss = { mixerOpen = false },
         )
     }
@@ -113,6 +151,18 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 copyTargetOpen = false
             },
             onDismiss = { copyTargetOpen = false },
+        )
+    }
+    if (chordPickerOpen) {
+        ChordPickerDialog(
+            title = "パターン ${state.pattern.name} のコード",
+            current = state.patternChord,
+            onPreview = viewModel::previewChord,
+            onPick = {
+                viewModel.setPatternChord(it)
+                chordPickerOpen = false
+            },
+            onDismiss = { chordPickerOpen = false },
         )
     }
 }
@@ -185,7 +235,11 @@ private fun TransportPanel(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "音量", modifier = Modifier.size(20.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = "音量",
+                    modifier = Modifier.size(20.dp),
+                )
                 Slider(
                     value = state.song.masterVolume,
                     onValueChange = onVolumeChange,
@@ -199,14 +253,16 @@ private fun TransportPanel(
     }
 }
 
-/** A〜H のパターン切り替えと、クリア／コピー。 */
+/** A〜H のパターン切り替え、パターンのコード、クリア／コピー。 */
 @Composable
 private fun PatternSelector(
     patterns: List<Pattern>,
     selected: Int,
+    chordName: String,
     onSelect: (Int) -> Unit,
     onClear: () -> Unit,
     onCopy: () -> Unit,
+    onChordClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -244,22 +300,45 @@ private fun PatternSelector(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // このパターンを単体で鳴らすときのコード。曲構成に足すときの初期値にもなる。
+            Surface(
+                color = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(40.dp).clickable { onChordClick() },
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("コード", style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        chordName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
             OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(4.dp))
                 Text("クリア")
             }
             OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(4.dp))
                 Text("コピー")
             }
         }
     }
 }
 
-/** 8 音色 x 16 ステップの打ち込みグリッド。 */
+/** 8 音色 + コード + ベース x 16 ステップの打ち込みグリッド。 */
 @Composable
 private fun StepGrid(
     pattern: Pattern,
@@ -300,15 +379,15 @@ private fun StepGrid(
                 }
             }
 
-            Voice.entries.forEachIndexed { voiceIndex, voice ->
-                val track = song.tracks[voiceIndex]
+            stepRows.forEach { info ->
+                val track = song.track(info.trackIndex)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TrackLabel(
-                        voice = voice,
+                        info = info,
                         muted = track.muted,
                         width = labelWidth,
-                        onPreview = { onPreview(voiceIndex) },
-                        onToggleMute = { onToggleMute(voiceIndex) },
+                        onPreview = { onPreview(info.row) },
+                        onToggleMute = { onToggleMute(info.trackIndex) },
                     )
                     Spacer(Modifier.width(gap))
                     Row(
@@ -317,12 +396,13 @@ private fun StepGrid(
                     ) {
                         repeat(STEPS_PER_BAR) { step ->
                             StepCell(
-                                on = pattern.isOn(voiceIndex, step),
+                                on = pattern.isOn(info.row, step),
                                 playing = step == playingStep,
                                 onBeat = step % 4 == 0,
                                 dimmed = track.muted,
+                                melodic = info.melodic,
                                 width = cellWidth,
-                                onClick = { onToggle(voiceIndex, step) },
+                                onClick = { onToggle(info.row, step) },
                             )
                         }
                     }
@@ -334,7 +414,7 @@ private fun StepGrid(
 
 @Composable
 private fun TrackLabel(
-    voice: Voice,
+    info: StepRowInfo,
     muted: Boolean,
     width: Dp,
     onPreview: () -> Unit,
@@ -345,13 +425,17 @@ private fun TrackLabel(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = if (info.melodic) {
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.weight(1f).height(CELL_HEIGHT).clickable { onPreview() },
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = voice.shortLabel,
+                    text = info.label,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = if (muted) {
@@ -364,8 +448,16 @@ private fun TrackLabel(
         }
         IconButton(onClick = onToggleMute, modifier = Modifier.size(28.dp)) {
             Icon(
-                imageVector = if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = if (muted) "${voice.label}のミュートを解除" else "${voice.label}をミュート",
+                imageVector = if (muted) {
+                    Icons.AutoMirrored.Filled.VolumeOff
+                } else {
+                    Icons.AutoMirrored.Filled.VolumeUp
+                },
+                contentDescription = if (muted) {
+                    "${info.fullLabel}のミュートを解除"
+                } else {
+                    "${info.fullLabel}をミュート"
+                },
                 tint = if (muted) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -383,13 +475,15 @@ private fun StepCell(
     playing: Boolean,
     onBeat: Boolean,
     dimmed: Boolean,
+    melodic: Boolean,
     width: Dp,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val activeColor = if (melodic) scheme.secondary else scheme.primary
     val color = when {
         on && playing -> scheme.tertiary
-        on -> scheme.primary
+        on -> activeColor
         playing -> scheme.outline
         onBeat -> scheme.surfaceContainerHigh
         else -> scheme.surfaceVariant.copy(alpha = 0.45f)

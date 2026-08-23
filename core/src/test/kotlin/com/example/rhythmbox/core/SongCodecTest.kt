@@ -11,7 +11,8 @@ class SongCodecTest {
     private val library = SongLibrary(
         songs = listOf(
             Song.newSong("id-1", "はじめての曲", now = 1_000L)
-                .withPattern(2, Pattern.of("C", "x.x.x.x.x.x.x.x.")),
+                .withPattern(2, Pattern.of("C", "x.x.x.x.x.x.x.x.").withLead(4, 67))
+                .withPatternChord(2, Chord(9, ChordQuality.MINOR_SEVENTH)),
             Song.newSong("id-2", "2 曲目", now = 2_000L),
         ),
         currentId = "id-2",
@@ -21,6 +22,14 @@ class SongCodecTest {
     fun `round trips through json`() {
         val restored = SongCodec.decode(SongCodec.encode(library))
         assertEquals(library, restored)
+    }
+
+    @Test
+    fun `chords and lead notes survive the round trip`() {
+        val song = SongCodec.decode(SongCodec.encode(library))!!.songs.first()
+        assertEquals(Chord(9, ChordQuality.MINOR_SEVENTH), song.patternChord(2))
+        assertEquals(67, song.pattern(2).leadAt(4))
+        assertEquals(Chord(0, ChordQuality.MAJOR), song.arrangement.first().chords.first())
     }
 
     @Test
@@ -53,8 +62,42 @@ class SongCodecTest {
         assertEquals(Song.MAX_BPM, song.bpm)
         assertEquals(1f, song.masterVolume, 1e-6f)
         assertEquals(Song.PATTERN_COUNT, song.patterns.size)
-        assertEquals(VOICE_COUNT, song.tracks.size)
+        assertEquals(TRACK_COUNT, song.tracks.size)
         assertEquals(listOf(ArrangementStep(1, 2)), song.arrangement)
+    }
+
+    @Test
+    fun `songs saved before chords were added still load`() {
+        // ドラム 8 行だけ・コードもリードも無い、以前のバージョンの保存データ。
+        val json = """
+            {
+              "songs": [
+                {
+                  "id": "old",
+                  "name": "むかしの曲",
+                  "bpm": 100,
+                  "patterns": [
+                    {"name": "A", "rows": [1, 0, 0, 0, 0, 0, 0, 0]}
+                  ],
+                  "arrangement": [{"patternIndex": 0, "repeat": 2}],
+                  "tracks": [{"volume": 0.5, "muted": false}]
+                }
+              ],
+              "currentId": "old"
+            }
+        """.trimIndent()
+        val song = SongCodec.decode(json)?.current()
+        assertNotNull(song)
+        requireNotNull(song)
+        assertEquals(100, song.bpm)
+        assertTrue(song.pattern(0).isOn(0, 0))
+        assertEquals(STEP_ROW_COUNT, song.pattern(0).rows.size)
+        assertEquals(STEPS_PER_BAR, song.pattern(0).lead.size)
+        assertEquals(TRACK_COUNT, song.tracks.size)
+        assertEquals(0.5f, song.track(0).volume, 1e-6f)
+        assertEquals(Song.PATTERN_COUNT, song.patternChords.size)
+        // コード指定の無い小節でも、パターンの試聴コードで鳴らせる
+        assertEquals(song.patternChord(0), PlaybackPlan.arrangement(song).chordAt(0))
     }
 
     @Test

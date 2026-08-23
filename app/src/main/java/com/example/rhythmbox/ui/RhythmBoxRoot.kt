@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class Screen(val label: String) {
     SEQUENCER("パターン"),
+    LEAD("リード"),
     SONG("曲構成"),
 }
 
@@ -84,6 +85,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
             if (!state.ready) return@Column
             when (screen) {
                 Screen.SEQUENCER -> SequencerScreen(state, viewModel)
+                Screen.LEAD -> LeadScreen(state, viewModel)
                 Screen.SONG -> SongScreen(state, viewModel)
             }
         }

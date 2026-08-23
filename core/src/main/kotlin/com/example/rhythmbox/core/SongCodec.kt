@@ -17,24 +17,47 @@ object SongCodec {
         json.decodeFromString(SongLibrary.serializer(), text)
     }.getOrNull()?.let(::sanitize)
 
-    /** 想定外の値（トラック数不足・範囲外の BPM など）を安全な形に整える。 */
+    /**
+     * 想定外の値（トラック数不足・範囲外の BPM など）を安全な形に整える。
+     * 音程まわりを足す前の古い保存データも、ここで今の形に揃える。
+     */
     private fun sanitize(library: SongLibrary): SongLibrary {
         val songs = library.songs.map { song ->
             song.copy(
                 bpm = song.bpm.coerceIn(Song.MIN_BPM, Song.MAX_BPM),
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
                 patterns = List(Song.PATTERN_COUNT) { index ->
-                    song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
+                    val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
+                    pattern.normalized().copy(
+                        lead = List(STEPS_PER_BAR) { step ->
+                            val midi = pattern.leadAt(step)
+                            if (midi in MIN_MIDI..MAX_MIDI) midi else Pattern.REST
+                        },
+                    )
                 },
-                tracks = List(VOICE_COUNT) { index ->
+                patternChords = List(Song.PATTERN_COUNT) { index ->
+                    sanitizeChord(song.patternChords.getOrNull(index))
+                },
+                tracks = List(TRACK_COUNT) { index ->
                     val track = song.tracks.getOrNull(index) ?: TrackSetting()
                     track.copy(volume = track.volume.coerceIn(0f, 1f))
                 },
                 arrangement = song.arrangement
                     .filter { it.patternIndex in 0 until Song.PATTERN_COUNT }
-                    .map { it.copy(repeat = it.repeat.coerceIn(1, PlaybackPlan.MAX_REPEAT)) },
+                    .map { step ->
+                        step.copy(
+                            repeat = step.repeat.coerceIn(1, PlaybackPlan.MAX_REPEAT),
+                            chords = step.chords.map { sanitizeChord(it) },
+                        )
+                    },
             )
         }
         return library.copy(songs = songs)
     }
+
+    private fun sanitizeChord(chord: Chord?): Chord =
+        if (chord == null) Chord() else chord.copy(root = chord.root.mod(12))
+
+    private const val MIN_MIDI = 24
+    private const val MAX_MIDI = 108
 }

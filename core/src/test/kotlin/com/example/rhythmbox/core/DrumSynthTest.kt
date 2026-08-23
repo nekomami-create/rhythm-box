@@ -41,6 +41,6 @@ class DrumSynthTest {
 
     @Test
     fun `renderAll returns one buffer per voice`() {
-        assertTrue(DrumSynth.renderAll(sampleRate).size == VOICE_COUNT)
+        assertTrue(DrumSynth.renderAll(sampleRate).size == DRUM_COUNT)
     }
 }

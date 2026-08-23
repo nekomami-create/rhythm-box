@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,10 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ClearAll
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,7 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordQuality
+import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.Voice
@@ -217,16 +221,128 @@ fun PatternPickerDialog(
     )
 }
 
-/** 音色ごとの音量・ミュート。 */
+/** ルート音と種類を選んでコードを決めるダイアログ。選ぶたびに試聴できる。 */
+@Composable
+fun ChordPickerDialog(
+    title: String,
+    current: Chord,
+    onPreview: (Chord) -> Unit,
+    onPick: (Chord) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var root by remember { mutableStateOf(current.root.mod(12)) }
+    var quality by remember { mutableStateOf(current.quality) }
+    val chord = Chord(root, quality)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(10.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = chord.name,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("ルート音", style = MaterialTheme.typography.labelMedium)
+                Chord.ROOT_NAMES.chunked(4).forEachIndexed { rowIndex, names ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        names.forEachIndexed { columnIndex, name ->
+                            val value = rowIndex * 4 + columnIndex
+                            PickerChip(
+                                label = name,
+                                selected = value == root,
+                                width = 58.dp,
+                                onClick = {
+                                    root = value
+                                    onPreview(Chord(value, quality))
+                                },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text("種類", style = MaterialTheme.typography.labelMedium)
+                ChordQuality.entries.chunked(4).forEach { qualities ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        qualities.forEach { value ->
+                            PickerChip(
+                                label = value.suffix.ifEmpty { "maj" },
+                                selected = value == quality,
+                                width = 58.dp,
+                                onClick = {
+                                    quality = value
+                                    onPreview(Chord(root, value))
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(chord) }) { Text("決定") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun PickerChip(
+    label: String,
+    selected: Boolean,
+    width: Dp,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondary
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onSecondary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.width(width).height(40.dp).clickable { onClick() },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+/** トラックごとの音量・ミュート（ドラム 8 音色 + コード / ベース / リード）。 */
 @Composable
 fun MixerDialog(
     song: Song,
     onVolumeChange: (Int, Float) -> Unit,
     onToggleMute: (Int) -> Unit,
-    onClearVoice: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val channels = buildList {
+        Voice.entries.forEachIndexed { index, voice -> add(index to voice.shortLabel) }
+        Instrument.entries.forEach { add(it.trackIndex to it.shortLabel) }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("ミキサー") },
@@ -235,37 +351,33 @@ fun MixerDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Voice.entries.forEachIndexed { index, voice ->
-                    val track = song.tracks[index]
+                channels.forEach { (track, label) ->
+                    val setting = song.track(track)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = voice.shortLabel,
-                            modifier = Modifier.width(34.dp),
+                            text = label,
+                            modifier = Modifier.width(42.dp),
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Slider(
-                            value = track.volume,
-                            onValueChange = { onVolumeChange(index, it) },
+                            value = setting.volume,
+                            onValueChange = { onVolumeChange(track, it) },
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(onClick = { onToggleMute(index) }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { onToggleMute(track) }, modifier = Modifier.size(36.dp)) {
                             Icon(
-                                imageVector = if (track.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = if (track.muted) "ミュート解除" else "ミュート",
-                                tint = if (track.muted) {
+                                imageVector = if (setting.muted) {
+                                    Icons.AutoMirrored.Filled.VolumeOff
+                                } else {
+                                    Icons.AutoMirrored.Filled.VolumeUp
+                                },
+                                contentDescription = if (setting.muted) "ミュート解除" else "ミュート",
+                                tint = if (setting.muted) {
                                     MaterialTheme.colorScheme.error
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        IconButton(onClick = { onClearVoice(index) }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                Icons.Filled.ClearAll,
-                                contentDescription = "${voice.label}の打ち込みを消す",
                                 modifier = Modifier.size(18.dp),
                             )
                         }
