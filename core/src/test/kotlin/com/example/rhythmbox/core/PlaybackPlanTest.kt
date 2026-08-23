@@ -79,4 +79,20 @@ class PlaybackPlanTest {
         assertEquals(12.0, song.totalSeconds(), 1e-9)
         assertEquals("0:12", formatDuration(song.totalSeconds()))
     }
+
+    @Test
+    fun `a chain plays the patterns one bar each, in order`() {
+        val tuned = song.withPatternChord(0, c).withPatternChord(1, am).withPatternChord(4, f)
+        val plan = PlaybackPlan.chain(tuned, listOf(0, 1, 4))
+        assertEquals(listOf(0, 1, 4), plan.bars.map { it.patternIndex })
+        assertEquals(listOf(c, am, f), plan.bars.map { it.chord })
+        assertEquals(3, plan.barCount)
+    }
+
+    @Test
+    fun `a chain ignores patterns that do not exist`() {
+        val plan = PlaybackPlan.chain(song, listOf(0, 99, 2, -1))
+        assertEquals(listOf(0, 2), plan.bars.map { it.patternIndex })
+        assertTrue(PlaybackPlan.chain(song, emptyList()).isEmpty)
+    }
 }

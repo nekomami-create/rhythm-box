@@ -30,8 +30,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
-/** 再生モード。パターン単体のループか、曲構成の通し再生か。 */
-enum class PlayMode { PATTERN, SONG }
+/**
+ * 再生モード。
+ * [PATTERN] は選んでいるパターン 1 小節のループ、[CHAIN] は中身のあるパターンを
+ * A→B→C… と 1 小節ずつ繋げたループ、[SONG] は曲構成の通し再生。
+ */
+enum class PlayMode { PATTERN, CHAIN, SONG }
 
 data class RhythmUiState(
     val ready: Boolean = false,
@@ -45,10 +49,42 @@ data class RhythmUiState(
     val playingStep: Int = -1,
     /** 曲構成のうち鳴っている小節（止まっていれば -1）。 */
     val playingBar: Int = -1,
+    /** いま鳴っているパターン（止まっていれば -1）。チェーン再生の表示に使う。 */
+    val playingPattern: Int = -1,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
 ) {
     val pattern: Pattern get() = song.pattern(selectedPattern)
+
+    /** チェーン再生で回すパターン。中身のあるものを A→H の順に並べる。 */
+    val chain: List<Int>
+        get() = song.patterns.indices
+            .filter { !song.pattern(it).isEmpty() }
+            .ifEmpty { listOf(selectedPattern) }
+
+    /** "A→B→C" のような表示用のラベル。長くなりすぎたら省略する。 */
+    val chainLabel: String
+        get() = if (chain.size <= 5) {
+            chain.joinToString("→") { song.pattern(it).name }
+        } else {
+            chain.take(4).joinToString("→") { song.pattern(it).name } + "→…"
+        }
+
+    /** グリッドで光らせるステップ。今そのパターンが鳴っているときだけ光る。 */
+    val gridStep: Int
+        get() = if (isPlaying && (mode == PlayMode.PATTERN || playingPattern == selectedPattern)) {
+            playingStep
+        } else {
+            -1
+        }
+
+    /** いま何をどう回しているかの説明（再生ボタンの下に出す）。 */
+    val scopeLabel: String
+        get() = when (mode) {
+            PlayMode.PATTERN -> "パターン ${pattern.name} を 1 小節ループ"
+            PlayMode.CHAIN -> "チェーン $chainLabel を" + if (loopSong) "ループ" else "1 回だけ"
+            PlayMode.SONG -> "曲を通しで" + if (loopSong) "ループ" else "1 回だけ"
+        }
 
     /** 編集中のパターンを試聴するときのコード。 */
     val patternChord: Chord get() = song.patternChord(selectedPattern)
@@ -64,6 +100,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     val uiState: StateFlow<RhythmUiState> = _uiState.asStateFlow()
 
     private var positionJob: Job? = null
+
+    /** 今エンジンに渡しているプラン。鳴っているパターンを割り出すのに使う。 */
+    private var currentPlan: PlaybackPlan? = null
 
     /** 自動生成をやり直すための直前の状態。 */
     private var undoSnapshot: Pair<Int, Pattern>? = null
@@ -110,6 +149,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun play(mode: PlayMode) {
         val state = _uiState.value
         if (mode == PlayMode.SONG && state.song.arrangement.isEmpty()) return
+        if (mode == PlayMode.CHAIN && state.chain.isEmpty()) return
         _uiState.update { it.copy(mode = mode, isPlaying = true) }
         syncEngine()
         audio.resume()
@@ -121,7 +161,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         engine.stop()
         positionJob?.cancel()
         positionJob = null
-        _uiState.update { it.copy(isPlaying = false, playingStep = -1, playingBar = -1) }
+        _uiState.update {
+            it.copy(isPlaying = false, playingStep = -1, playingBar = -1, playingPattern = -1)
+        }
     }
 
     fun toggle(mode: PlayMode) {
@@ -157,7 +199,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     private fun handlePlaybackFinished() {
         positionJob?.cancel()
         positionJob = null
-        _uiState.update { it.copy(isPlaying = false, playingStep = -1, playingBar = -1) }
+        _uiState.update {
+            it.copy(isPlaying = false, playingStep = -1, playingBar = -1, playingPattern = -1)
+        }
     }
 
     private fun startPositionUpdates() {
@@ -165,10 +209,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         positionJob = viewModelScope.launch {
             while (isActive) {
                 val position = audio.currentPosition()
+                val pattern = position?.let { currentPlan?.bars?.getOrNull(it.bar)?.patternIndex }
                 _uiState.update {
                     it.copy(
                         playingStep = position?.step ?: -1,
                         playingBar = position?.bar ?: -1,
+                        playingPattern = pattern ?: -1,
                     )
                 }
                 delay(POSITION_POLL_MS)
@@ -183,8 +229,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         if (song.patterns.isEmpty()) return
         val plan = when (state.mode) {
             PlayMode.PATTERN -> PlaybackPlan.single(song, state.selectedPattern)
+            PlayMode.CHAIN -> PlaybackPlan.chain(song, state.chain)
             PlayMode.SONG -> PlaybackPlan.arrangement(song)
         }
+        currentPlan = plan
         engine.config = EngineConfig(
             plan = plan,
             bpm = song.bpm,

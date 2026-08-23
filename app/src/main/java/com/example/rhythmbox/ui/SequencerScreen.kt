@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         TransportPanel(
             state = state,
             onPlayToggle = { viewModel.toggle(PlayMode.PATTERN) },
+            onChainToggle = { viewModel.toggle(PlayMode.CHAIN) },
             onBpmChange = viewModel::setBpm,
             onVolumeChange = viewModel::setMasterVolume,
             onOpenMixer = { mixerOpen = true },
@@ -120,6 +122,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         PatternSelector(
             patterns = state.song.patterns,
             selected = state.selectedPattern,
+            playing = state.playingPattern,
             chordName = state.patternChord.name,
             canUndo = state.canUndo,
             onSelect = viewModel::selectPattern,
@@ -133,7 +136,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         StepGrid(
             pattern = state.pattern,
             song = state.song,
-            playingStep = if (state.isPlaying && state.mode == PlayMode.PATTERN) state.playingStep else -1,
+            playingStep = state.gridStep,
             onToggle = viewModel::toggleStep,
             onPreview = viewModel::previewRow,
             onToggleMute = viewModel::toggleMute,
@@ -184,6 +187,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 private fun TransportPanel(
     state: RhythmUiState,
     onPlayToggle: () -> Unit,
+    onChainToggle: () -> Unit,
     onBpmChange: (Int) -> Unit,
     onVolumeChange: (Float) -> Unit,
     onOpenMixer: () -> Unit,
@@ -261,6 +265,25 @@ private fun TransportPanel(
                     Icon(Icons.Filled.Tune, contentDescription = "ミキサー")
                 }
             }
+            // 今どの範囲を回しているのかを言葉で出す。ループの効き方が分かるように。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = state.scopeLabel,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val chaining = state.isPlaying && state.mode == PlayMode.CHAIN
+                TextButton(onClick = onChainToggle) {
+                    Icon(
+                        imageVector = if (chaining) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("チェーン ${state.chainLabel}")
+                }
+            }
         }
     }
 }
@@ -270,6 +293,7 @@ private fun TransportPanel(
 private fun PatternSelector(
     patterns: List<Pattern>,
     selected: Int,
+    playing: Int,
     chordName: String,
     canUndo: Boolean,
     onSelect: (Int) -> Unit,
@@ -287,19 +311,22 @@ private fun PatternSelector(
         ) {
             patterns.forEachIndexed { index, pattern ->
                 val isSelected = index == selected
+                val isPlaying = index == playing
                 Surface(
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = when {
+                        isPlaying -> MaterialTheme.colorScheme.tertiary
+                        isSelected -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
                     },
-                    contentColor = if (isSelected) {
+                    contentColor = if (isSelected || isPlaying) {
                         MaterialTheme.colorScheme.onPrimary
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
                     shape = RoundedCornerShape(10.dp),
-                    border = if (!isSelected && !pattern.isEmpty()) {
+                    border = if (isSelected && isPlaying) {
+                        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    } else if (!isSelected && !pattern.isEmpty()) {
                         BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                     } else {
                         null

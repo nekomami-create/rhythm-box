@@ -31,6 +31,14 @@ class PlaybackPlan(
             return PlaybackPlan(song.patterns, listOf(Bar(index, song.patternChord(index))))
         }
 
+        /** 複数のパターンを 1 小節ずつ順に鳴らす（A→B→C…のチェーン再生）。 */
+        fun chain(song: Song, patternIndices: List<Int>): PlaybackPlan {
+            val bars = patternIndices
+                .filter { it in song.patterns.indices }
+                .map { Bar(it, song.patternChord(it)) }
+            return PlaybackPlan(song.patterns, bars)
+        }
+
         /** 曲構成（繰り返し数ぶん展開したもの）。構成が空なら空のプランになる。 */
         fun arrangement(song: Song): PlaybackPlan {
             val bars = buildList {

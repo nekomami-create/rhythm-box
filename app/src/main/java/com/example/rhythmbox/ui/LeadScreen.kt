@@ -53,7 +53,7 @@ private fun isWhiteKey(midi: Int): Boolean = midi.mod(12) in setOf(0, 2, 4, 5, 7
 @Composable
 fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     val pattern = state.pattern
-    val playingStep = if (state.isPlaying && state.mode == PlayMode.PATTERN) state.playingStep else -1
+    val playingStep = state.gridStep
     val leadTrack = state.song.track(Instrument.LEAD.trackIndex)
     val horizontalScroll = rememberScrollState()
 
