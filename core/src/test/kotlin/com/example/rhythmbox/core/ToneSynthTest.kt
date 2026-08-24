@@ -44,4 +44,39 @@ class ToneSynthTest {
             assertTrue(timbre.maxGateSteps in 1..STEPS_PER_BAR)
         }
     }
+
+    @Test
+    fun `the middle of the hold knob changes nothing`() = with(ToneSynth) {
+        for (instrument in Instrument.entries) {
+            val base = timbre(instrument)
+            assertEquals(base, base.withHold(ToneSynth.DEFAULT_HOLD))
+        }
+    }
+
+    @Test
+    fun `turning the hold knob up stretches the envelope`() = with(ToneSynth) {
+        val base = timbre(Instrument.LEAD)
+        val long = base.withHold(1f)
+        val short = base.withHold(0f)
+
+        assertTrue(long.decay > base.decay && base.decay > short.decay)
+        assertTrue(long.release > base.release && base.release > short.release)
+        assertTrue(long.sustain > base.sustain && base.sustain > short.sustain)
+        assertTrue(long.maxGateSteps > base.maxGateSteps)
+        assertTrue(short.maxGateSteps < base.maxGateSteps)
+    }
+
+    @Test
+    fun `the hold knob never runs off the ends`() = with(ToneSynth) {
+        for (instrument in Instrument.entries) {
+            var value = 0f
+            while (value <= 1f) {
+                val timbre = timbre(instrument).withHold(value)
+                assertTrue("$instrument $value", timbre.sustain in 0f..0.95f)
+                assertTrue("$instrument $value", timbre.maxGateSteps in 1..STEPS_PER_BAR)
+                assertTrue("$instrument $value", timbre.decay > 0.0 && timbre.release > 0.0)
+                value += 0.05f
+            }
+        }
+    }
 }

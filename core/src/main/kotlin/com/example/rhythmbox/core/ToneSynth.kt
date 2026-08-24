@@ -1,8 +1,10 @@
 package com.example.rhythmbox.core
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -79,6 +81,30 @@ object ToneSynth {
         gain = 0.34f,
         maxGateSteps = 4,
     )
+
+    /**
+     * 「音の伸び」つまみを反映した音色。
+     *
+     * [hold] は 0〜1 で、[DEFAULT_HOLD]（0.5）が元の音。
+     * 小さくすると減衰が速くて短く切れる音（プラック）、
+     * 大きくすると減衰が遅くて伸び続ける音（パッド）になる。
+     */
+    fun Timbre.withHold(hold: Float): Timbre {
+        if (abs(hold - DEFAULT_HOLD) < 1e-3f) return this
+        // 0 で 1/4 倍、0.5 で等倍、1 で 4 倍。
+        val factor = 4.0.pow(2.0 * hold.coerceIn(0f, 1f) - 1.0)
+        return copy(
+            decay = decay * factor,
+            release = release * factor,
+            // 減衰後に残る音量。上げすぎるとオルガンのように鳴りっぱなしになる。
+            sustain = (sustain * factor).toFloat().coerceIn(0f, 0.95f),
+            // 次の音が無いときに切る長さも一緒に伸ばす。
+            maxGateSteps = (maxGateSteps * factor).roundToInt().coerceIn(1, STEPS_PER_BAR),
+        )
+    }
+
+    /** つまみの真ん中。ここが今までの音。 */
+    const val DEFAULT_HOLD = 0.5f
 
     fun timbre(instrument: Instrument): Timbre = when (instrument) {
         Instrument.CHORD -> CHORD

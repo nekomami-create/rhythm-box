@@ -51,6 +51,7 @@ object OfflineRenderer {
             masterVolume = song.masterVolume,
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
+            holds = song.tracks.map { it.hold },
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

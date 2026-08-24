@@ -294,6 +294,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             masterVolume = song.masterVolume,
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
+            holds = song.tracks.map { it.hold },
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
     }
@@ -652,6 +653,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun setTrackVolume(track: Int, volume: Float) {
         repository.updateCurrentSong { song ->
             song.withTrack(track, song.track(track).copy(volume = volume.coerceIn(0f, 1f)))
+        }
+    }
+
+    /** 音の伸び（サステイン）。コード / ベース / リードだけで効く。 */
+    fun setTrackHold(track: Int, hold: Float) {
+        repository.updateCurrentSong { song ->
+            song.withTrack(track, song.track(track).copy(hold = hold.coerceIn(0f, 1f)))
         }
     }
 

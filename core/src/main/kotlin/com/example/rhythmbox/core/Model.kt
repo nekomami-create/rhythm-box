@@ -360,6 +360,11 @@ data class ArrangementStep(
 data class TrackSetting(
     val volume: Float = 0.7f,
     val muted: Boolean = false,
+    /**
+     * 音の伸び（サステイン）。コード / ベース / リードだけで効く。
+     * 0.5 が既定で、古い保存データもこの値として読める。
+     */
+    val hold: Float = ToneSynth.DEFAULT_HOLD,
 )
 
 /** 1 曲ぶんのデータ。パターン一式・曲構成・ミキサー設定をまとめて保存する。 */

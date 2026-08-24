@@ -415,6 +415,7 @@ private fun PickerChip(
 fun MixerDialog(
     song: Song,
     onVolumeChange: (Int, Float) -> Unit,
+    onHoldChange: (Int, Float) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -423,6 +424,8 @@ fun MixerDialog(
         Voice.entries.forEachIndexed { index, voice -> add(index to voice.shortLabel) }
         Instrument.entries.forEach { add(it.trackIndex to it.shortLabel) }
     }
+    // 音の伸びは、音程を合成している 3 トラックでしか効かない。
+    val pitched = Instrument.entries.map { it.trackIndex }.toSet()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("ミキサー") },
@@ -462,12 +465,47 @@ fun MixerDialog(
                             )
                         }
                     }
+                    if (track in pitched) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "伸び",
+                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Slider(
+                                value = setting.hold,
+                                onValueChange = { onHoldChange(track, it) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = holdLabel(setting.hold),
+                                modifier = Modifier.width(36.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
+                Text(
+                    text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 TextButton(onClick = onUnmuteAll) { Text("すべてのミュートを解除") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
     )
+}
+
+/** つまみの位置を言葉にする。真ん中が既定の音。 */
+private fun holdLabel(hold: Float): String = when {
+    hold < 0.2f -> "短"
+    hold < 0.42f -> "やや短"
+    hold <= 0.58f -> "標準"
+    hold <= 0.8f -> "やや長"
+    else -> "長"
 }
 
 /** 書き出す範囲と繰り返し回数を決めるダイアログ。 */

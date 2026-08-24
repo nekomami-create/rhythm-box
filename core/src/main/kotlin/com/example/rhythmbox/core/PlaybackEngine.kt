@@ -11,6 +11,8 @@ data class EngineConfig(
     val masterVolume: Float = 0.75f,
     val trackVolumes: List<Float> = List(TRACK_COUNT) { 0.7f },
     val mutes: List<Boolean> = List(TRACK_COUNT) { false },
+    /** トラックごとの音の伸び（サステイン）。音程のある 3 トラックだけで効く。 */
+    val holds: List<Float> = List(TRACK_COUNT) { ToneSynth.DEFAULT_HOLD },
     val loop: Boolean = true,
 )
 
@@ -78,12 +80,16 @@ class PlaybackEngine(
 
     /** コードを単発で鳴らす（コードを選んだときの試聴用）。 */
     fun previewChord(chord: Chord) {
-        triggerChord(chord.voicing(), (sampleRate * PREVIEW_SECONDS).toLong())
+        triggerChord(
+            chord.voicing(),
+            (sampleRate * PREVIEW_SECONDS).toLong(),
+            timbreOf(config, Instrument.CHORD),
+        )
     }
 
     /** コード以外の音程楽器を単発で鳴らす。 */
     fun previewNote(instrument: Instrument, midi: Int) {
-        triggerNote(instrument, midi, (sampleRate * PREVIEW_SECONDS).toLong())
+        triggerNote(instrument, midi, (sampleRate * PREVIEW_SECONDS).toLong(), timbreOf(config, instrument))
     }
 
     /**
@@ -181,21 +187,26 @@ class PlaybackEngine(
             if (pattern.isOn(voice, step)) triggerDrum(voice)
         }
         if (pattern.isOn(ROW_CHORD, step)) {
+            val timbre = timbreOf(cfg, Instrument.CHORD)
             triggerChord(
                 chord.voicing(),
-                gateFrames(pattern.nextHit(ROW_CHORD, step) - step, Instrument.CHORD, cfg.bpm),
+                gateFrames(pattern.nextHit(ROW_CHORD, step) - step, timbre, cfg.bpm),
+                timbre,
             )
         }
         if (pattern.isOn(ROW_BASS, step)) {
+            val timbre = timbreOf(cfg, Instrument.BASS)
             triggerNote(
                 Instrument.BASS,
                 chord.bassMidi(),
-                gateFrames(pattern.nextHit(ROW_BASS, step) - step, Instrument.BASS, cfg.bpm),
+                gateFrames(pattern.nextHit(ROW_BASS, step) - step, timbre, cfg.bpm),
+                timbre,
             )
         }
         val leadMidi = pattern.leadAt(leadBar, step)
         if (Pattern.isNote(leadMidi)) {
-            triggerNote(Instrument.LEAD, leadMidi, leadGate(cfg, bar, step))
+            val timbre = timbreOf(cfg, Instrument.LEAD)
+            triggerNote(Instrument.LEAD, leadMidi, leadGate(cfg, bar, step, timbre), timbre)
         }
 
         timeline.record(frame = nextStepFrame.toLong(), bar = bar, step = step)
@@ -207,7 +218,7 @@ class PlaybackEngine(
      * リードの音を伸ばすフレーム数。タイが続くあいだは伸ばし続け、小節をまたいでも切らない。
      * タイが無い音は今までどおり「次の音まで（最長 1 拍）」で切る。
      */
-    private fun leadGate(cfg: EngineConfig, bar: Int, step: Int): Long {
+    private fun leadGate(cfg: EngineConfig, bar: Int, step: Int, timbre: ToneSynth.Timbre): Long {
         val plan = cfg.plan
         var held = 1
         var cursorBar = bar
@@ -225,12 +236,20 @@ class PlaybackEngine(
         }
         if (held > 1) return (held * framesPerStep(cfg.bpm) * GATE_RATIO).toLong()
         val pattern = plan.patternAt(bar)
-        return gateFrames(pattern.nextLead(plan.leadBarAt(bar), step) - step, Instrument.LEAD, cfg.bpm)
+        return gateFrames(pattern.nextLead(plan.leadBarAt(bar), step) - step, timbre, cfg.bpm)
     }
 
+    /** 「音の伸び」つまみを反映した、そのトラックの音色。 */
+    private fun timbreOf(cfg: EngineConfig, instrument: Instrument): ToneSynth.Timbre =
+        with(ToneSynth) {
+            timbre(instrument).withHold(
+                cfg.holds.getOrElse(instrument.trackIndex) { ToneSynth.DEFAULT_HOLD },
+            )
+        }
+
     /** 次の音までの長さから、実際に音を伸ばすフレーム数を決める。 */
-    private fun gateFrames(steps: Int, instrument: Instrument, bpm: Int): Long {
-        val limited = steps.coerceIn(1, ToneSynth.timbre(instrument).maxGateSteps)
+    private fun gateFrames(steps: Int, timbre: ToneSynth.Timbre, bpm: Int): Long {
+        val limited = steps.coerceIn(1, timbre.maxGateSteps)
         return (limited * framesPerStep(bpm) * GATE_RATIO).toLong()
     }
 
@@ -259,14 +278,14 @@ class PlaybackEngine(
         slotPos[target] = 0
     }
 
-    private fun triggerChord(midis: List<Int>, gate: Long) {
+    private fun triggerChord(midis: List<Int>, gate: Long, timbre: ToneSynth.Timbre) {
         releaseInstrument(Instrument.CHORD)
-        for (midi in midis) startTone(Instrument.CHORD, midi, gate)
+        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre)
     }
 
-    private fun triggerNote(instrument: Instrument, midi: Int, gate: Long) {
+    private fun triggerNote(instrument: Instrument, midi: Int, gate: Long, timbre: ToneSynth.Timbre) {
         releaseInstrument(instrument)
-        startTone(instrument, midi, gate)
+        startTone(instrument, midi, gate, timbre)
     }
 
     /** 同じ楽器の音を離鍵する（切るのではなく減衰させるので音が途切れて聞こえない）。 */
@@ -276,7 +295,7 @@ class PlaybackEngine(
         }
     }
 
-    private fun startTone(instrument: Instrument, midi: Int, gate: Long) {
+    private fun startTone(instrument: Instrument, midi: Int, gate: Long, timbre: ToneSynth.Timbre) {
         var target: ToneVoice? = null
         var quietest: ToneVoice? = null
         for (voice in toneVoices) {
@@ -286,7 +305,7 @@ class PlaybackEngine(
             }
             if (quietest == null || voice.level < quietest.level) quietest = voice
         }
-        (target ?: quietest)?.start(instrument, midi, gate, sampleRate)
+        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre)
     }
 
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
@@ -343,8 +362,13 @@ class PlaybackEngine(
 
         private enum class Stage { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE }
 
-        fun start(instrument: Instrument, midi: Int, gateFrames: Long, sampleRate: Int) {
-            val timbre = ToneSynth.timbre(instrument)
+        fun start(
+            instrument: Instrument,
+            midi: Int,
+            gateFrames: Long,
+            sampleRate: Int,
+            timbre: ToneSynth.Timbre,
+        ) {
             val frequency = ToneSynth.frequency(midi)
             this.instrument = instrument
             phase = 0.0

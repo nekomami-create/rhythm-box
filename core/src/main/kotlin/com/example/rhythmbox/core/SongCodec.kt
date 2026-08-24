@@ -44,7 +44,10 @@ object SongCodec {
                 },
                 tracks = List(TRACK_COUNT) { index ->
                     val track = song.tracks.getOrNull(index) ?: TrackSetting()
-                    track.copy(volume = track.volume.coerceIn(0f, 1f))
+                    track.copy(
+                        volume = track.volume.coerceIn(0f, 1f),
+                        hold = track.hold.coerceIn(0f, 1f),
+                    )
                 },
                 arrangement = song.arrangement
                     .filter { it.patternIndex in 0 until Song.PATTERN_COUNT }

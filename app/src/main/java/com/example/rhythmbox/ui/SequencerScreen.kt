@@ -147,6 +147,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         MixerDialog(
             song = state.song,
             onVolumeChange = viewModel::setTrackVolume,
+            onHoldChange = viewModel::setTrackHold,
             onToggleMute = viewModel::toggleMute,
             onUnmuteAll = viewModel::unmuteAll,
             onDismiss = { mixerOpen = false },

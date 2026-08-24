@@ -394,6 +394,50 @@ class PlaybackEngineTest {
         assertTrue("before=$before after=$after", after < before * 1.2)
     }
 
+    /** [hold] を指定して、ベースを 1 発だけ鳴らした波形。 */
+    private fun bassHit(hold: Float): FloatArray {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_BASS] = "x..............."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+            .let { it.withTrack(Instrument.BASS.trackIndex, it.track(Instrument.BASS.trackIndex).copy(hold = hold)) }
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0)).copy(holds = song.tracks.map { it.hold })
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+        engine.render(buffer)
+        return buffer
+    }
+
+    @Test
+    fun `the hold knob makes notes ring longer`() {
+        // 8 ステップ目（2 拍後）。既定では切れていて、長くすればまだ鳴っている。
+        val from = (framesPerStep() * 8).toInt()
+        val to = (framesPerStep() * 9).toInt()
+        val short = rms(bassHit(0f), from, to)
+        val normal = rms(bassHit(ToneSynth.DEFAULT_HOLD), from, to)
+        val long = rms(bassHit(1f), from, to)
+
+        assertTrue("short=$short normal=$normal long=$long", long > normal * 5)
+        assertTrue("short=$short normal=$normal", short <= normal)
+    }
+
+    @Test
+    fun `the middle of the knob leaves the sound as it was`() {
+        val plain = bassHit(ToneSynth.DEFAULT_HOLD)
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_BASS] = "x..............."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+        val untouched = FloatArray(plain.size)
+        engine.render(untouched)
+
+        for (i in plain.indices) {
+            assertEquals("frame=$i", untouched[i], plain[i], 1e-6f)
+        }
+    }
+
     @Test
     fun `notes stop after their gate instead of droning on`() {
         val rows = Array(STEP_ROW_COUNT) { "................" }
