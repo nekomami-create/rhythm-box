@@ -12,7 +12,7 @@ class MelodyGeneratorTest {
     private val c = Chord(0, ChordQuality.MAJOR)
     private val am = Chord(9, ChordQuality.MINOR)
 
-    private fun notesOf(lead: List<Int>) = lead.filter { it != Pattern.REST }
+    private fun notesOf(lead: List<Int>) = lead.filter { Pattern.isNote(it) }
 
     @Test
     fun `melodies stay inside the piano roll`() {
@@ -43,7 +43,7 @@ class MelodyGeneratorTest {
             val tones = chord.voicing().map { it.mod(12) }.toSet()
             val lead = MelodyGenerator.generate(chord, cMajor, Random(seed))
             lead.forEachIndexed { step, midi ->
-                if (midi != Pattern.REST && step % 4 == 0) {
+                if (Pattern.isNote(midi) && step % 4 == 0) {
                     assertTrue(
                         "${midiName(midi)} は ${chord.name} の構成音ではない",
                         midi.mod(12) in tones,
@@ -137,11 +137,28 @@ class MelodyGeneratorTest {
             repeat(20) { seed ->
                 val lead = MelodyGenerator.generate(c, cMajor, Random(seed), density = density)
                 lead.forEachIndexed { step, midi ->
-                    if (midi == Pattern.REST) return@forEachIndexed
+                    if (!Pattern.isNote(midi)) return@forEachIndexed
                     assertTrue("$density ${midiName(midi)}", midi.mod(12) in scale)
                     if (step % 4 == 0) assertTrue("$density ${midiName(midi)}", midi.mod(12) in tones)
                 }
             }
         }
+    }
+
+    @Test
+    fun `generated melodies hold notes instead of cutting every beat`() {
+        var tied = 0
+        repeat(50) { seed ->
+            val bar = MelodyGenerator.generate(c, cMajor, Random(seed))
+            // タイの前には必ず音かタイがある（宙に浮いた印は作らない）。
+            bar.forEachIndexed { step, value ->
+                if (value == Pattern.TIE) {
+                    assertTrue("seed=$seed step=$step", step > 0)
+                    assertTrue("seed=$seed step=$step", bar[step - 1] != Pattern.REST)
+                }
+            }
+            if (bar.any { it == Pattern.TIE }) tied++
+        }
+        assertTrue("tied=$tied", tied > 0)
     }
 }

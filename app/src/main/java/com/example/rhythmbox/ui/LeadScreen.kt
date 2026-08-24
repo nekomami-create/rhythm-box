@@ -3,6 +3,7 @@ package com.example.rhythmbox.ui
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,7 +83,7 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         )
 
         Text(
-            text = "縦が音の高さ、横が 16 ステップ。同じマスをもう一度押すと消えます。",
+            text = "縦が音の高さ、横が 16 ステップ。同じマスをもう一度押すと消えます。\n音を長くするには、伸ばしたいところまでを長押し（音の上を長押しで元に戻る）。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -106,6 +108,7 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                     playingStep = playingStep,
                     scrollState = horizontalScroll,
                     onToggle = { step -> viewModel.toggleLead(step, midi) },
+                    onHold = viewModel::holdLead,
                     onPreview = { viewModel.previewLead(midi) },
                 )
             }
@@ -282,6 +285,7 @@ private fun LeadBarSelector(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PianoRollRow(
     midi: Int,
@@ -290,6 +294,7 @@ private fun PianoRollRow(
     playingStep: Int,
     scrollState: ScrollState,
     onToggle: (Int) -> Unit,
+    onHold: (Int) -> Unit,
     onPreview: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -319,11 +324,15 @@ private fun PianoRollRow(
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             repeat(STEPS_PER_BAR) { step ->
-                val on = pattern.leadAt(leadBar, step) == midi
+                val head = pattern.leadAt(leadBar, step) == midi
+                // 伸ばしている途中のマス。音の頭ではないが、この高さの音が鳴り続けている。
+                val held = !head && pattern.soundingLead(leadBar, step) == midi
+                val on = head || held
                 val playing = step == playingStep
                 val color = when {
                     on && playing -> scheme.tertiary
-                    on -> scheme.secondary
+                    head -> scheme.secondary
+                    held -> scheme.secondary.copy(alpha = 0.45f)
                     playing -> scheme.outline
                     step % 4 == 0 -> scheme.surfaceContainerHigh
                     white -> scheme.surfaceVariant.copy(alpha = 0.40f)
@@ -332,9 +341,13 @@ private fun PianoRollRow(
                 Box(
                     modifier = Modifier
                         .width(CELL_WIDTH)
-                        .height(ROW_HEIGHT)
+                        // 伸ばしている途中は少し細くして、音の頭が分かるようにする。
+                        .height(if (held) ROW_HEIGHT - 8.dp else ROW_HEIGHT)
                         .background(color, RoundedCornerShape(4.dp))
-                        .clickable { onToggle(step) },
+                        .combinedClickable(
+                            onClick = { onToggle(step) },
+                            onLongClick = { onHold(step) },
+                        ),
                 )
             }
         }

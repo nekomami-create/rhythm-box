@@ -25,6 +25,21 @@ class SongCodecTest {
     }
 
     @Test
+    fun `held notes survive the round trip`() {
+        val stretched = SongLibrary(
+            songs = listOf(
+                Song.newSong("id-1", "曲", now = 1L)
+                    .withPattern(0, Pattern.empty("A").withLead(0, 0, 72).withLeadTie(0, 0, 9)),
+            ),
+            currentId = "id-1",
+        )
+        val song = SongCodec.decode(SongCodec.encode(stretched))!!.songs.first()
+
+        assertEquals(72, song.pattern(0).leadAt(0, 0))
+        assertEquals(9, song.pattern(0).tieRun(0, 0))
+    }
+
+    @Test
     fun `chords and lead notes survive the round trip`() {
         val song = SongCodec.decode(SongCodec.encode(library))!!.songs.first()
         assertEquals(Chord(9, ChordQuality.MINOR_SEVENTH), song.patternChord(2))

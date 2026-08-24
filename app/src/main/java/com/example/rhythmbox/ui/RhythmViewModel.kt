@@ -348,6 +348,28 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         if (next != Pattern.REST && !state.isPlaying) previewLead(midi)
     }
 
+    /**
+     * ピアノロールの長押し。音を長く伸ばしたり、元の長さに戻したりする。
+     *
+     * - 音の上を長押し → その音の伸ばしを解除する
+     * - 音より右の空きマスを長押し → 直前の音をそこまで伸ばす
+     *   （もう一度同じところを押すと元に戻る）
+     */
+    fun holdLead(step: Int) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val bar = state.selectedLeadBar
+        val pattern = state.song.pattern(index)
+        // 長押ししたところが音そのものなら、その音の伸ばしだけを外す。
+        val head = if (Pattern.isNote(pattern.leadAt(bar, step))) step else pattern.leadHead(bar, step - 1)
+        if (head < 0) return
+        val until = if (head == step) head + pattern.tieRun(bar, head) else step
+        if (until <= head) return
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withLeadTie(bar, head, until))
+        }
+    }
+
     /** いま選んでいる繰り返しの音だけ消す。 */
     fun clearLeadBar() {
         val state = _uiState.value

@@ -32,7 +32,9 @@ object SongCodec {
                         // 音域の外の音は休符にしておく（壊れたファイル対策）。
                         fixed.withLeads(
                             fixed.leadBars.map { notes ->
-                                notes.map { if (it in MIN_MIDI..MAX_MIDI) it else Pattern.REST }
+                                notes.map {
+                                    if (it in MIN_MIDI..MAX_MIDI || it == Pattern.TIE) it else Pattern.REST
+                                }
                             },
                         )
                     }

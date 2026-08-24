@@ -56,7 +56,7 @@ object MelodyGenerator {
 
         val lead = MutableList(STEPS_PER_BAR) { Pattern.REST }
         // 出だしは前の小節の最後の音の近くから。無ければ真ん中あたり。
-        var current = previous?.lastOrNull { it != Pattern.REST } ?: START_MIDI
+        var current = previous?.lastOrNull { Pattern.isNote(it) } ?: START_MIDI
         var sameCount = 0
 
         positions.forEachIndexed { index, step ->
@@ -69,7 +69,22 @@ object MelodyGenerator {
             current = next
             lead[step] = next
         }
+        holdLongNotes(lead, positions)
         return lead
+    }
+
+    /**
+     * 次の音まで 1 拍以上あく音をタイで伸ばす。
+     *
+     * 伸ばさないと 1 拍で切れてしまい、間の広い旋律がぶつ切りに聞こえる。
+     * 1 拍未満の空きはそのまま残して、歯切れの良さを保つ。
+     */
+    private fun holdLongNotes(lead: MutableList<Int>, positions: List<Int>) {
+        positions.forEachIndexed { index, step ->
+            val until = positions.getOrElse(index + 1) { STEPS_PER_BAR }
+            if (until - step < HOLD_MIN_STEPS) return@forEachIndexed
+            for (tie in (step + 1) until until) lead[tie] = Pattern.TIE
+        }
     }
 
     /**
@@ -140,4 +155,7 @@ object MelodyGenerator {
 
     /** 拍の頭以外の音を抜く確率。 */
     private const val REST_CHANCE = 0.25
+
+    /** これ以上あくならタイで伸ばす（1 拍）。 */
+    private const val HOLD_MIN_STEPS = 4
 }

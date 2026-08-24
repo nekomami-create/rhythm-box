@@ -153,19 +153,99 @@ data class Pattern(
     fun withLead(bar: Int, step: Int, midi: Int): Pattern {
         val bars = leadBars
         val index = bar.mod(bars.size)
+        // 音を消すときは、その音に続いていたタイも一緒に消す（行き場のない印を残さない）。
+        val tail = if (midi == REST) step + tieRun(bar, step) else step
         val updated = bars.mapIndexed { line, notes ->
-            if (line == index) List(STEPS_PER_BAR) { if (it == step) midi else notes.getOrElse(it) { REST } }
-            else notes
+            if (line == index) {
+                List(STEPS_PER_BAR) {
+                    when {
+                        it == step -> midi
+                        it in (step + 1)..tail -> REST
+                        else -> notes.getOrElse(it) { REST }
+                    }
+                }
+            } else {
+                notes
+            }
         }
         return withLeads(updated)
     }
 
-    /** [bar] 回目の小節で、[step] の次にリードが鳴るステップ。無ければ [STEPS_PER_BAR]。 */
+    /**
+     * [step] の音を [until] まで伸ばす（間をタイで埋める）。
+     * すでにちょうどそこまで伸びていれば元の長さに戻す。
+     */
+    fun withLeadTie(bar: Int, step: Int, until: Int): Pattern {
+        if (!isNote(leadAt(bar, step)) || until <= step) return this
+        val end = step + tieRun(bar, step)
+        // すでにちょうどそこまで伸びているなら、伸ばす前の長さに戻す。
+        val shrinkToNote = end == until
+        val bars = leadBars
+        val index = bar.mod(bars.size)
+        val updated = bars.mapIndexed { line, notes ->
+            if (line == index) {
+                List(STEPS_PER_BAR) {
+                    when {
+                        it in (step + 1)..until -> if (shrinkToNote) REST else TIE
+                        it in (until + 1)..end -> REST
+                        else -> notes.getOrElse(it) { REST }
+                    }
+                }
+            } else {
+                notes
+            }
+        }
+        return withLeads(updated)
+    }
+
+    /** [bar] 回目の小節で、[step] の次に新しい音が鳴るステップ。無ければ [STEPS_PER_BAR]。 */
     fun nextLead(bar: Int, step: Int): Int {
         for (next in (step + 1) until STEPS_PER_BAR) {
-            if (leadAt(bar, next) != REST) return next
+            if (isNote(leadAt(bar, next))) return next
         }
         return STEPS_PER_BAR
+    }
+
+    /** [step] の音に続くタイの数（小節内だけを見る）。 */
+    fun tieRun(bar: Int, step: Int): Int {
+        var count = 0
+        for (next in (step + 1) until STEPS_PER_BAR) {
+            if (leadAt(bar, next) != TIE) break
+            count++
+        }
+        return count
+    }
+
+    /**
+     * [step] で鳴っている音の始まりのステップ。タイの途中なら遡る。
+     * この小節より前から続いている（先頭がタイ）ときは -1。
+     */
+    fun leadHead(bar: Int, step: Int): Int {
+        var cursor = step
+        while (cursor >= 0) {
+            val value = leadAt(bar, cursor)
+            if (isNote(value)) return cursor
+            if (value != TIE) return -1
+            cursor--
+        }
+        return -1
+    }
+
+    /** [step] で実際に鳴っている音の高さ。鳴っていなければ [REST]。 */
+    fun soundingLead(bar: Int, step: Int): Int {
+        val head = leadHead(bar, step)
+        if (head >= 0) return leadAt(bar, head)
+        // ここまでが全部タイでなければ、単に鳴っていない。
+        if ((0..step).any { leadAt(bar, it) != TIE }) return REST
+        // 小節の頭から続いている。前の小節の終わりの音を引き継ぐ。
+        var cursor = bar - 1
+        repeat(leadBarCount) {
+            val previous = leadHead(cursor, STEPS_PER_BAR - 1)
+            if (previous >= 0) return leadAt(cursor, previous)
+            if (leadAt(cursor, 0) != TIE) return REST
+            cursor--
+        }
+        return REST
     }
 
     /** 旋律を何小節ぶん持つかを変える。増やしたぶんは空。 */
@@ -198,7 +278,7 @@ data class Pattern(
     fun isEmpty(): Boolean =
         rows.all { it and STEP_MASK == 0 } && leadBars.all { line -> line.all { it == REST } }
 
-    fun leadNoteCount(): Int = leadBars.sumOf { line -> line.count { it != REST } }
+    fun leadNoteCount(): Int = leadBars.sumOf { line -> line.count { isNote(it) } }
 
     fun hitCount(): Int = rows.sumOf { Integer.bitCount(it and STEP_MASK) } + leadNoteCount()
 
@@ -218,6 +298,15 @@ data class Pattern(
 
         /** リードの休符。 */
         const val REST = -1
+
+        /**
+         * 直前の音を伸ばす印（タイ）。このステップでは発音せず、前の音がそのまま続く。
+         * 小節をまたいでも続くので、2 小節にわたる長音も書ける。
+         */
+        const val TIE = -2
+
+        /** 実際に発音する音（休符でもタイでもない）か。 */
+        fun isNote(value: Int): Boolean = value >= 0
 
         /** 1 つのパターンが持てる旋律の小節数の上限。 */
         const val MAX_LEAD_BARS = 8

@@ -100,7 +100,7 @@ class SongBuilderTest {
                 val tones = chord.voicing().map { it.mod(12) }.toSet()
                 for (step in 0 until STEPS_PER_BAR step 4) {
                     val midi = pattern.leadAt(bar, step)
-                    if (midi != Pattern.REST) {
+                    if (Pattern.isNote(midi)) {
                         assertTrue(
                             "${bar + 1} 小節目 ${chord.name} に ${midiName(midi)}",
                             midi.mod(12) in tones,

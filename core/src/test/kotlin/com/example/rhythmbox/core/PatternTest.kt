@@ -162,4 +162,65 @@ class PatternTest {
         assertTrue("新しい形に移してある", fixed.lead.isEmpty())
         assertEquals(1, fixed.leads.size)
     }
+
+    @Test
+    fun `a note can be stretched over several steps`() {
+        val pattern = Pattern.empty("A").withLead(0, 0, 72).withLeadTie(0, 0, 6)
+
+        assertEquals(72, pattern.leadAt(0, 0))
+        for (step in 1..6) assertEquals("step=$step", Pattern.TIE, pattern.leadAt(0, step))
+        assertEquals(Pattern.REST, pattern.leadAt(0, 7))
+        assertEquals(6, pattern.tieRun(0, 0))
+        // 伸ばした先でも「鳴っているのは C5」と分かる。
+        for (step in 0..6) assertEquals("step=$step", 72, pattern.soundingLead(0, step))
+        assertEquals(Pattern.REST, pattern.soundingLead(0, 7))
+        // 伸ばしても音の数は 1 つのまま。
+        assertEquals(1, pattern.leadNoteCount())
+    }
+
+    @Test
+    fun `stretching to the same step again puts the note back`() {
+        val stretched = Pattern.empty("A").withLead(0, 4, 60).withLeadTie(0, 4, 10)
+        val back = stretched.withLeadTie(0, 4, 10)
+
+        assertEquals(0, back.tieRun(0, 4))
+        assertEquals(60, back.leadAt(0, 4))
+        for (step in 5..10) assertEquals("step=$step", Pattern.REST, back.leadAt(0, step))
+    }
+
+    @Test
+    fun `stretching to an earlier step shortens the note`() {
+        val pattern = Pattern.empty("A").withLead(0, 0, 60).withLeadTie(0, 0, 12).withLeadTie(0, 0, 5)
+
+        assertEquals(5, pattern.tieRun(0, 0))
+        assertEquals(Pattern.REST, pattern.leadAt(0, 6))
+    }
+
+    @Test
+    fun `deleting a note also takes away what it was holding`() {
+        val pattern = Pattern.empty("A").withLead(0, 2, 64).withLeadTie(0, 2, 9)
+        val cleared = pattern.withLead(0, 2, Pattern.REST)
+
+        for (step in 0 until STEPS_PER_BAR) {
+            assertEquals("step=$step", Pattern.REST, cleared.leadAt(0, step))
+        }
+    }
+
+    @Test
+    fun `a bar can start held over from the bar before`() {
+        val first = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        first[14] = 67
+        first[15] = Pattern.TIE
+        val second = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        second[0] = Pattern.TIE
+        second[1] = Pattern.TIE
+        second[4] = 60
+        val pattern = Pattern.empty("A").withLeads(listOf(first, second))
+
+        assertEquals(67, pattern.soundingLead(1, 0))
+        assertEquals(67, pattern.soundingLead(1, 1))
+        assertEquals(Pattern.REST, pattern.soundingLead(1, 2))
+        // 次の音を探すときは、タイを音として数えない。
+        assertEquals(4, pattern.nextLead(1, 0))
+    }
 }

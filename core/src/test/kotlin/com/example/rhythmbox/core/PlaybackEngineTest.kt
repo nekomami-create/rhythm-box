@@ -341,6 +341,60 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `a tied lead note keeps sounding past one beat`() {
+        val held = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        held[0] = 72 // C5
+        for (step in 1..11) held[step] = Pattern.TIE
+        val short = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        short[0] = 72
+
+        fun rmsAtStep(notes: List<Int>, step: Int): Double {
+            val song = Song("s", "test", bpm = bpm)
+                .withPattern(0, Pattern.empty("A").withLeads(listOf(notes)))
+            val engine = silentDrumEngine()
+            engine.config = config(song, PlaybackPlan.single(song, 0))
+            engine.start()
+            val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+            engine.render(buffer)
+            return rms(buffer, (framesPerStep() * step).toInt(), (framesPerStep() * (step + 1)).toInt())
+        }
+
+        // 8 ステップ目（2 拍目の裏）で、伸ばした音はまだ鳴っていて、伸ばしていない音は消えている。
+        val tied = rmsAtStep(held, 8)
+        val cut = rmsAtStep(short, 8)
+        assertTrue("tied=$tied cut=$cut", tied > cut * 20)
+        assertTrue("tied=$tied", tied > 0.01)
+    }
+
+    @Test
+    fun `a tie carries the note across the bar line`() {
+        val first = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        first[12] = 72 // C5
+        for (step in 13..15) first[step] = Pattern.TIE
+        val second = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        for (step in 0..3) second[step] = Pattern.TIE
+
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.empty("A").withLeads(listOf(first, second)))
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+
+        val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR * 2).roundToInt())
+        engine.render(buffer)
+
+        // 2 小節目の頭（ステップ 16〜18）でも、1 小節目から続く C5 が鳴っている。
+        val from = (framesPerStep() * STEPS_PER_BAR).toInt()
+        val to = (framesPerStep() * (STEPS_PER_BAR + 3)).toInt()
+        val c5 = magnitudeAt(buffer, ToneSynth.frequency(72), from, to)
+        assertTrue("c5=$c5", c5 > 1e-3)
+        // 小節をまたいでも音は鳴り直さない（頭で音量が跳ね上がらない）。
+        val before = rms(buffer, (framesPerStep() * (STEPS_PER_BAR - 1)).toInt(), from)
+        val after = rms(buffer, from, (framesPerStep() * (STEPS_PER_BAR + 1)).toInt())
+        assertTrue("before=$before after=$after", after < before * 1.2)
+    }
+
+    @Test
     fun `notes stop after their gate instead of droning on`() {
         val rows = Array(STEP_ROW_COUNT) { "................" }
         rows[ROW_BASS] = "x..............." // 次の音が無いので上限（4 ステップ）まで

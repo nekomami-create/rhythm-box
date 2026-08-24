@@ -194,17 +194,38 @@ class PlaybackEngine(
             )
         }
         val leadMidi = pattern.leadAt(leadBar, step)
-        if (leadMidi != Pattern.REST) {
-            triggerNote(
-                Instrument.LEAD,
-                leadMidi,
-                gateFrames(pattern.nextLead(leadBar, step) - step, Instrument.LEAD, cfg.bpm),
-            )
+        if (Pattern.isNote(leadMidi)) {
+            triggerNote(Instrument.LEAD, leadMidi, leadGate(cfg, bar, step))
         }
 
         timeline.record(frame = nextStepFrame.toLong(), bar = bar, step = step)
         absoluteStep++
         nextStepFrame += framesPerStep(cfg.bpm)
+    }
+
+    /**
+     * リードの音を伸ばすフレーム数。タイが続くあいだは伸ばし続け、小節をまたいでも切らない。
+     * タイが無い音は今までどおり「次の音まで（最長 1 拍）」で切る。
+     */
+    private fun leadGate(cfg: EngineConfig, bar: Int, step: Int): Long {
+        val plan = cfg.plan
+        var held = 1
+        var cursorBar = bar
+        var cursorStep = step
+        while (held < MAX_LEAD_HOLD_STEPS) {
+            cursorStep++
+            if (cursorStep >= STEPS_PER_BAR) {
+                cursorStep = 0
+                cursorBar++
+                if (cursorBar >= plan.barCount) break
+            }
+            val pattern = plan.patternAt(cursorBar)
+            if (pattern.leadAt(plan.leadBarAt(cursorBar), cursorStep) != Pattern.TIE) break
+            held++
+        }
+        if (held > 1) return (held * framesPerStep(cfg.bpm) * GATE_RATIO).toLong()
+        val pattern = plan.patternAt(bar)
+        return gateFrames(pattern.nextLead(plan.leadBarAt(bar), step) - step, Instrument.LEAD, cfg.bpm)
     }
 
     /** 次の音までの長さから、実際に音を伸ばすフレーム数を決める。 */
@@ -433,6 +454,9 @@ class PlaybackEngine(
 
         /** 次の音の直前で切って、同じ音が続くときも打ち直しがわかるようにする。 */
         private const val GATE_RATIO = 0.95
+
+        /** タイで伸ばせる上限（4 小節）。書き間違いで延々と鳴り続けないようにする。 */
+        private const val MAX_LEAD_HOLD_STEPS = STEPS_PER_BAR * 4
 
         /** 試聴で鳴らす長さ（秒）。 */
         private const val PREVIEW_SECONDS = 0.6
