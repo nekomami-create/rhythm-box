@@ -1,5 +1,6 @@
 package com.example.rhythmbox.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -14,13 +15,17 @@ import com.example.rhythmbox.core.EngineConfig
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MusicKey
+import com.example.rhythmbox.core.OfflineRenderer
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
 import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.ROW_BASS
 import com.example.rhythmbox.core.ROW_CHORD
+import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
+import com.example.rhythmbox.core.formatDuration
+import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +43,13 @@ import kotlin.random.Random
  */
 enum class PlayMode { PATTERN, CHAIN, SONG }
 
+/** 音声ファイルに書き出す範囲。 */
+enum class ExportScope(val label: String) {
+    SONG("曲構成をそのまま"),
+    CHAIN("チェーンを繰り返し"),
+    PATTERN("このパターンを繰り返し"),
+}
+
 data class RhythmUiState(
     val ready: Boolean = false,
     val song: Song = Song("", ""),
@@ -54,6 +66,10 @@ data class RhythmUiState(
     val playingPattern: Int = -1,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
+    /** 書き出し中の進捗（0.0〜1.0）。書き出していなければ null。 */
+    val exportProgress: Float? = null,
+    /** 書き出しが終わったときに出す文言。 */
+    val exportMessage: String? = null,
 ) {
     val pattern: Pattern get() = song.pattern(selectedPattern)
 
@@ -511,6 +527,73 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             if (index !in song.arrangement.indices) return@updateCurrentSong song
             song.copy(arrangement = song.arrangement.filterIndexed { i, _ -> i != index })
         }
+    }
+
+    // --- 音声の書き出し -----------------------------------------------------
+
+    /** 書き出す範囲に対応する再生プラン。 */
+    fun exportPlan(scope: ExportScope, repeats: Int): PlaybackPlan {
+        val state = _uiState.value
+        val song = state.song
+        return when (scope) {
+            ExportScope.SONG -> PlaybackPlan.arrangement(song)
+            ExportScope.CHAIN -> PlaybackPlan.chain(song, state.chain).repeated(repeats)
+            ExportScope.PATTERN -> PlaybackPlan.single(song, state.selectedPattern).repeated(repeats)
+        }
+    }
+
+    /** 書き出したときのおおよその長さ（表示用）。 */
+    fun exportLengthLabel(scope: ExportScope, repeats: Int): String {
+        val song = _uiState.value.song
+        val bars = exportPlan(scope, repeats).barCount
+        if (bars == 0) return "0 小節"
+        val seconds = bars * STEPS_PER_BAR * secondsPerStep(song.bpm) +
+            OfflineRenderer.DEFAULT_TAIL_SECONDS
+        return "$bars 小節 ・ 約 ${formatDuration(seconds)}"
+    }
+
+    /** 保存ダイアログに出すファイル名。ファイル名に使えない文字は _ に置き換える。 */
+    fun suggestedFileName(): String {
+        val name = _uiState.value.song.name
+            .trim()
+            .map { if (it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') it else '_' }
+            .joinToString("")
+            .ifBlank { "BreakBox" }
+        return "$name.m4a"
+    }
+
+    /** [destination] に M4A を書き出す。 */
+    fun exportAudio(destination: Uri, scope: ExportScope, repeats: Int) {
+        if (_uiState.value.exportProgress != null) return
+        stop() // 書き出し中は再生を止めて、CPU を取り合わないようにする
+        val song = _uiState.value.song
+        val plan = exportPlan(scope, repeats)
+        _uiState.update { it.copy(exportProgress = 0f, exportMessage = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                container.audioExporter.export(
+                    song = song,
+                    plan = plan,
+                    voiceSamples = container.drumSamples,
+                    sampleRate = container.sampleRate,
+                    destination = destination,
+                ) { progress ->
+                    _uiState.update { it.copy(exportProgress = progress.coerceIn(0f, 1f)) }
+                }
+            }
+            val message = result.fold(
+                onSuccess = {
+                    val megabytes = it.bytes / 1024f / 1024f
+                    "書き出しました（%s ・ %.1f MB）".format(formatDuration(it.seconds), megabytes)
+                },
+                onFailure = { "書き出せませんでした: ${it.message ?: it::class.java.simpleName}" },
+            )
+            _uiState.update { it.copy(exportProgress = null, exportMessage = message) }
+        }
+    }
+
+    fun dismissExportMessage() {
+        _uiState.update { it.copy(exportMessage = null) }
     }
 
     // --- 曲の管理 -----------------------------------------------------------

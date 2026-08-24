@@ -1,5 +1,7 @@
 package com.example.rhythmbox.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -41,6 +43,15 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     var screen by remember { mutableStateOf(Screen.SEQUENCER) }
     var menuOpen by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<SongDialog?>(null) }
+    var exportSetupOpen by remember { mutableStateOf(false) }
+    // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
+    var exportScope by remember { mutableStateOf(ExportScope.SONG) }
+    var exportRepeats by remember { mutableStateOf(2) }
+    val createAudioFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/mp4"),
+    ) { uri ->
+        if (uri != null) viewModel.exportAudio(uri, exportScope, exportRepeats)
+    }
 
     Scaffold(
         topBar = {
@@ -84,6 +95,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             text = { Text("保存した曲を開く") },
                             onClick = { menuOpen = false; dialog = SongDialog.Library },
                         )
+                        DropdownMenuItem(
+                            text = { Text("音声を書き出す (M4A)") },
+                            onClick = { menuOpen = false; exportSetupOpen = true },
+                        )
                     }
                 },
             )
@@ -116,4 +131,22 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         viewModel = viewModel,
         onDismiss = { dialog = null },
     )
+
+    if (exportSetupOpen) {
+        ExportDialog(
+            state = state,
+            lengthLabel = viewModel::exportLengthLabel,
+            onExport = { scope, repeats ->
+                exportScope = scope
+                exportRepeats = repeats
+                exportSetupOpen = false
+                createAudioFile.launch(viewModel.suggestedFileName())
+            },
+            onDismiss = { exportSetupOpen = false },
+        )
+    }
+    state.exportProgress?.let { ExportProgressDialog(it) }
+    state.exportMessage?.let {
+        ExportResultDialog(message = it, onDismiss = viewModel::dismissExportMessage)
+    }
 }

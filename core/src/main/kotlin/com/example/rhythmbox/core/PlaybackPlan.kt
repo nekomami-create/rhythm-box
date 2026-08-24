@@ -24,6 +24,10 @@ class PlaybackPlan(
 
     fun chordAt(bar: Int): Chord = barAt(bar).chord
 
+    /** 同じ並びを [times] 回繰り返したプラン（書き出しで「2 回ぶん」などに使う）。 */
+    fun repeated(times: Int): PlaybackPlan =
+        PlaybackPlan(patterns, List(times.coerceAtLeast(1)) { bars }.flatten())
+
     companion object {
         /** 1 パターンだけを、そのパターンの試聴コードで延々とループする。 */
         fun single(song: Song, patternIndex: Int): PlaybackPlan {

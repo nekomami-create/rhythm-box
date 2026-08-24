@@ -95,4 +95,12 @@ class PlaybackPlanTest {
         assertEquals(listOf(0, 2), plan.bars.map { it.patternIndex })
         assertTrue(PlaybackPlan.chain(song, emptyList()).isEmpty)
     }
+
+    @Test
+    fun `a plan can be repeated for export`() {
+        val plan = PlaybackPlan.chain(song, listOf(0, 1)).repeated(3)
+        assertEquals(6, plan.barCount)
+        assertEquals(listOf(0, 1, 0, 1, 0, 1), plan.bars.map { it.patternIndex })
+        assertEquals(2, PlaybackPlan.chain(song, listOf(0, 1)).repeated(0).barCount)
+    }
 }

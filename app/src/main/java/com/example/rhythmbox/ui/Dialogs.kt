@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -21,10 +22,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -33,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -458,3 +463,147 @@ fun MixerDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
     )
 }
+
+/** 書き出す範囲と繰り返し回数を決めるダイアログ。 */
+@Composable
+fun ExportDialog(
+    state: RhythmUiState,
+    lengthLabel: (ExportScope, Int) -> String,
+    onExport: (ExportScope, Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val hasArrangement = state.song.arrangement.isNotEmpty()
+    var scope by remember {
+        mutableStateOf(if (hasArrangement) ExportScope.SONG else ExportScope.CHAIN)
+    }
+    var repeats by remember { mutableIntStateOf(2) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("音声を書き出す") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExportScope.entries.forEach { option ->
+                    val enabled = option != ExportScope.SONG || hasArrangement
+                    val selected = option == scope
+                    Surface(
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = enabled) { scope = option },
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                text = option.label,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (enabled) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            val detail = when {
+                                option == ExportScope.SONG && !hasArrangement -> "曲構成がまだ空です"
+                                option == ExportScope.CHAIN -> state.chainLabel
+                                option == ExportScope.PATTERN -> "パターン ${state.pattern.name}"
+                                else -> "${state.song.totalBars()} 小節"
+                            }
+                            Text(
+                                text = detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (scope != ExportScope.SONG) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("繰り返し", style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = { repeats = (repeats - 1).coerceAtLeast(1) },
+                            enabled = repeats > 1,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Remove,
+                                contentDescription = "減らす",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                            Text("$repeats 回", style = MaterialTheme.typography.labelLarge)
+                        }
+                        IconButton(
+                            onClick = { repeats = (repeats + 1).coerceAtMost(MAX_EXPORT_REPEATS) },
+                            enabled = repeats < MAX_EXPORT_REPEATS,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "増やす",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "書き出し: ${lengthLabel(scope, repeats)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "M4A (AAC) で保存します。ミュートしたトラックは入りません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onExport(scope, repeats) }) { Text("保存先を選ぶ") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+/** 書き出し中の進捗。閉じられないようにしておく。 */
+@Composable
+fun ExportProgressDialog(progress: Float) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("書き出し中…") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "${(progress * 100).toInt()} %",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {},
+    )
+}
+
+@Composable
+fun ExportResultDialog(message: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("音声の書き出し") },
+        text = { Text(message) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+    )
+}
+
+private const val MAX_EXPORT_REPEATS = 32

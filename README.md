@@ -15,6 +15,7 @@
   「前から来やすく、次へ繋がりやすい」ものを上位にします）。曲構成のコードを丸ごと自動で埋めることもできます
 - **リズムの自動生成**: ボタン 1 つでパターンを生成。8ビート / 4つ打ち / ブレイクビーツ / ヒップホップ / ラテン
   の 5 スタイル + おまかせ。気に入らなければ「戻す」で 1 つ前に戻せます
+- **音声の書き出し**: 曲・チェーン・パターンを **M4A (AAC)** ファイルに書き出し（保存先は SAF で自由に選択）
 - **ヘルプ**: 使い方をアプリ内のヘルプタブにまとめています
 - **テンポ (40〜240 BPM)** とマスター音量、11 トラック（ドラム 8 + コード / ベース / リード）の音量・ミュート
 - **パターン A〜H** の切り替え・クリア・コピー（パターンごとに試聴用のコードを持ちます）
@@ -46,6 +47,7 @@
 
 - Kotlin / Jetpack Compose (Material 3)
 - 音声出力: `AudioTrack`（32bit float・モノラル・ストリーミング）
+- 書き出し: `MediaCodec` (AAC LC 128kbps) + `MediaMuxer`（M4A）。外部ライブラリなし
 - 音源: 自前のシンセ（ドラムは作り置きの波形、コード / ベース / リードはその場で加算合成）
 - 保存: kotlinx.serialization による JSON ファイル（`filesDir/songs.json`）
 
@@ -61,6 +63,7 @@ core/   … 音源合成・シーケンサ・データモデル（純 Kotlin）
   ChordSuggester.kt 調の推定と「つぎに合うコード」、コード進行の自動生成
   PatternGenerator.kt リズムパターンの自動生成（スタイル別）
   MelodyGenerator.kt リードの自動生成（調とコードに沿った旋律）
+  OfflineRenderer.kt 書き出し用に、実時間を待たず一気にレンダリング
   PlaybackPlan.kt   「どの小節でどのパターンをどのコードで鳴らすか」（1 小節ループ / チェーン / 曲構成）
   PlaybackEngine.kt ステップ発音・発振器・ミックス・ソフトリミッタ
   StepTimeline.kt   再生位置の履歴（表示を音に合わせる）
@@ -68,6 +71,8 @@ core/   … 音源合成・シーケンサ・データモデル（純 Kotlin）
 
 app/    … Android アプリ（Compose UI / AudioTrack / ファイル保存）
   audio/AudioOutput.kt     AudioTrack への書き込みスレッド
+  audio/AacEncoder.kt      MediaCodec + MediaMuxer で M4A に圧縮
+  audio/AudioExporter.kt   レンダリング → 圧縮 → 保存先へコピー
   data/SongRepository.kt   自動保存つきの曲リポジトリ
   ui/                      画面（パターン / リード / 曲構成 / ヘルプ）・ViewModel・テーマ
 ```
@@ -128,6 +133,16 @@ GitHub Actions (`.github/workflows/android.yml`) でも単体テストと APK �
 - 音の長さは「次に同じ行が鳴るまで」。コードは小節いっぱい、ベースとリードは最長 4 ステップで切ります
 - 同時に鳴った音が歪まないよう、出力の直前でソフトリミッタを通しています
 - クローズドハットはオープンハットを止めます（実機と同じ挙動）
+
+## 書き出しについて
+
+書き出しは再生と同じ [`PlaybackEngine`](core/src/main/kotlin/com/example/rhythmbox/core/PlaybackEngine.kt) を
+そのまま使い、実時間を待たずに一気に描いています（別経路で作り直すと、聴いている音と書き出した音がズレるため）。
+曲の終わりのあとも 2 秒ぶん描き続けるので、最後のシンバルやコードの余韻が途切れません。
+
+MP3 ではなく M4A (AAC) にしているのは、Android 標準の `MediaCodec` だけで完結するためです。
+MP3 で書き出すには LAME を NDK で組み込む必要があり、ビルド環境と APK サイズの負担が増えます。
+M4A は MP3 と同程度に小さく、スマホ・PC・DAW のいずれでもそのまま再生できます。
 
 ## 名前について
 
