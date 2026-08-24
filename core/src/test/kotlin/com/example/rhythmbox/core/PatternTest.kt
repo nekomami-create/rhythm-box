@@ -223,4 +223,37 @@ class PatternTest {
         // 次の音を探すときは、タイを音として数えない。
         assertEquals(4, pattern.nextLead(1, 0))
     }
+
+    @Test
+    fun `long pressing far from a note still finds it`() {
+        val pattern = Pattern.empty("A").withLead(0, 0, 72)
+
+        // 音のすぐ隣だけでなく、休符をいくつ挟んでいても直前の音を掴む。
+        for (step in 1 until STEPS_PER_BAR) {
+            assertEquals("step=$step", 0, pattern.stretchTarget(0, step))
+        }
+        assertEquals(0, pattern.stretchTarget(0, 0))
+    }
+
+    @Test
+    fun `long pressing picks the nearest note on its left`() {
+        val pattern = Pattern.empty("A").withLead(0, 0, 72).withLead(0, 8, 74)
+
+        assertEquals(0, pattern.stretchTarget(0, 5))
+        assertEquals(8, pattern.stretchTarget(0, 8))
+        assertEquals(8, pattern.stretchTarget(0, 15))
+        // 最初の音より前には何も無い。
+        assertEquals(-1, Pattern.empty("A").withLead(0, 4, 60).stretchTarget(0, 2))
+    }
+
+    @Test
+    fun `stretching across rests fills them in`() {
+        val pattern = Pattern.empty("A").withLead(0, 0, 72)
+        val target = pattern.stretchTarget(0, 11)
+        val stretched = pattern.withLeadTie(0, target, 11)
+
+        assertEquals(11, stretched.tieRun(0, 0))
+        for (step in 0..11) assertEquals("step=$step", 72, stretched.soundingLead(0, step))
+        assertEquals(Pattern.REST, stretched.soundingLead(0, 12))
+    }
 }

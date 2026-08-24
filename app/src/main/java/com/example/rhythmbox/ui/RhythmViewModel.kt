@@ -361,9 +361,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val index = state.selectedPattern
         val bar = state.selectedLeadBar
         val pattern = state.song.pattern(index)
-        // 長押ししたところが音そのものなら、その音の伸ばしだけを外す。
-        val head = if (Pattern.isNote(pattern.leadAt(bar, step))) step else pattern.leadHead(bar, step - 1)
+        val head = pattern.stretchTarget(bar, step)
         if (head < 0) return
+        // 長押ししたところが音そのものなら、その音の伸ばしを外す。
         val until = if (head == step) head + pattern.tieRun(bar, head) else step
         if (until <= head) return
         repository.updateCurrentSong { song ->

@@ -231,6 +231,20 @@ data class Pattern(
         return -1
     }
 
+    /**
+     * [step] を長押ししたときに、長さを変える対象になる音の位置。無ければ -1。
+     *
+     * 長押ししたところが音そのものならそれ自身、そうでなければ「それより前にある
+     * いちばん近い音」。間に休符が挟まっていても遡る（休符ぶんを埋めて伸ばすため）。
+     */
+    fun stretchTarget(bar: Int, step: Int): Int {
+        if (isNote(leadAt(bar, step))) return step
+        for (cursor in (step - 1) downTo 0) {
+            if (isNote(leadAt(bar, cursor))) return cursor
+        }
+        return -1
+    }
+
     /** [step] で実際に鳴っている音の高さ。鳴っていなければ [REST]。 */
     fun soundingLead(bar: Int, step: Int): Int {
         val head = leadHead(bar, step)
