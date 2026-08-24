@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordSuggestion
+import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.Song
@@ -607,3 +609,84 @@ fun ExportResultDialog(message: String, onDismiss: () -> Unit) {
 }
 
 private const val MAX_EXPORT_REPEATS = 32
+
+/**
+ * ジャンルを選んで、テンポ・コード進行・リズム・旋律をまとめて当てはめるダイアログ。
+ * どこまで書き換えるかを選べるようにして、書いたものが不意に消えないようにしている。
+ */
+@Composable
+fun GenreDialog(
+    onApply: (Genre, GenreOptions) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var genre by remember { mutableStateOf(Genre.JPOP) }
+    var options by remember { mutableStateOf(GenreOptions()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ジャンルから作る") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Genre.entries.forEach { entry ->
+                    val selected = entry == genre
+                    Surface(
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { genre = entry },
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                text = entry.label,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            Text(
+                                text = "${entry.description} ・ ${entry.bpmRange.first}〜${entry.bpmRange.last} BPM",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(2.dp))
+                Text("当てはめるもの", style = MaterialTheme.typography.labelMedium)
+                GenreOptionRow("テンポ", options.tempo) { options = options.copy(tempo = it) }
+                GenreOptionRow("コード進行（曲構成）", options.chords) { options = options.copy(chords = it) }
+                GenreOptionRow("リズム（このパターン）", options.rhythm) { options = options.copy(rhythm = it) }
+                GenreOptionRow("旋律（このパターン）", options.melody) { options = options.copy(melody = it) }
+                Text(
+                    text = "コード進行は定番の型をそのまま並べます。曲構成がまだ無いときは作ります。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onApply(genre, options) },
+                enabled = options.tempo || options.chords || options.rhythm || options.melody,
+            ) {
+                Text("当てはめる")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun GenreOptionRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}

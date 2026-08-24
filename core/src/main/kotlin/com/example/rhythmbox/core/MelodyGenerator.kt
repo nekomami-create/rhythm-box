@@ -17,16 +17,28 @@ object MelodyGenerator {
     const val LOWEST_MIDI = 60
     const val HIGHEST_MIDI = 84
 
-    /** リズムの型。x が音を置く位置。 */
-    private val RHYTHMS = listOf(
-        "x...x...x...x...",
-        "x.......x.......",
-        "x.x.x.x.x.x.x.x.",
-        "x..x..x...x..x..",
-        "x...x.x...x.x...",
-        "x.x...x.x.x...x.",
-        "x..x.x..x..x.x..",
-        "x...x...x.x.x...",
+    /** リズムの型。x が音を置く位置。詰め込み具合ごとに分けてある。 */
+    private val RHYTHMS = mapOf(
+        MelodyDensity.SPARSE to listOf(
+            "x.......x.......",
+            "x...............",
+            "x.......x...x...",
+            "x...x...........",
+        ),
+        MelodyDensity.NORMAL to listOf(
+            "x...x...x...x...",
+            "x.......x.......",
+            "x...x.x...x.x...",
+            "x...x...x.x.x...",
+            "x..x..x...x..x..",
+        ),
+        MelodyDensity.BUSY to listOf(
+            "x.x.x.x.x.x.x.x.",
+            "x.x...x.x.x...x.",
+            "x..x.x..x..x.x..",
+            "x.x.x.x.x...x.x.",
+            "x.xx..x.x.xx..x.",
+        ),
     )
 
     fun generate(
@@ -35,8 +47,10 @@ object MelodyGenerator {
         random: Random = Random.Default,
         /** 直前の旋律。最後の音を受けて滑らかに繋げる。 */
         previous: List<Int>? = null,
+        /** 音の詰め込み具合。ジャンルによって変える。 */
+        density: MelodyDensity = MelodyDensity.NORMAL,
     ): List<Int> {
-        val positions = pickPositions(random)
+        val positions = pickPositions(density, random)
         val scale = pitchClasses(key)
         val chordTones = chord.voicing().map { it.mod(12) }.toSet()
 
@@ -59,8 +73,8 @@ object MelodyGenerator {
     }
 
     /** リズムの型を 1 つ選び、拍の頭以外を少しだけ抜いて変化を付ける。 */
-    private fun pickPositions(random: Random): List<Int> {
-        val rhythm = RHYTHMS.random(random)
+    private fun pickPositions(density: MelodyDensity, random: Random): List<Int> {
+        val rhythm = RHYTHMS.getValue(density).random(random)
         val positions = rhythm.mapIndexedNotNull { step, c -> step.takeIf { c == 'x' } }
         val thinned = positions.filter { it == 0 || it % 4 == 0 || random.nextDouble() > REST_CHANCE }
         return thinned.ifEmpty { listOf(0) }

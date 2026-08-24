@@ -12,6 +12,7 @@ import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.EngineConfig
+import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MusicKey
@@ -42,6 +43,14 @@ import kotlin.random.Random
  * A→B→C… と 1 小節ずつ繋げたループ、[SONG] は曲構成の通し再生。
  */
 enum class PlayMode { PATTERN, CHAIN, SONG }
+
+/** ジャンルを当てはめるときに、どこまで書き換えるか。 */
+data class GenreOptions(
+    val tempo: Boolean = true,
+    val chords: Boolean = true,
+    val rhythm: Boolean = true,
+    val melody: Boolean = false,
+)
 
 /** 音声ファイルに書き出す範囲。 */
 enum class ExportScope(val label: String) {
@@ -121,9 +130,8 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** 今エンジンに渡しているプラン。鳴っているパターンを割り出すのに使う。 */
     private var currentPlan: PlaybackPlan? = null
 
-    /** 自動生成をやり直すための直前の状態。 */
-    private var undoSnapshot: Pair<Int, Pattern>? = null
-    private var undoArrangement: List<ArrangementStep>? = null
+    /** 自動生成をやり直すための、直前の曲まるごとの控え。 */
+    private var undoSong: Song? = null
 
     init {
         audio.onPlaybackFinished = {
@@ -361,7 +369,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun generateRhythm(style: RhythmStyle?) {
         val index = _uiState.value.selectedPattern
         val current = _uiState.value.song.pattern(index)
-        undoSnapshot = index to current
+        snapshotForUndo()
         val generated = if (style == null) {
             PatternGenerator.generateAny(Random, current.name)
         } else {
@@ -370,7 +378,6 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song ->
             song.withPattern(index, song.pattern(index).copy(rows = generated.rows))
         }
-        _uiState.update { it.copy(canUndo = true) }
     }
 
     /** リードの旋律を自動生成する。前のパターンの終わりから滑らかに繋げる。 */
@@ -378,7 +385,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val state = _uiState.value
         val index = state.selectedPattern
         val song = state.song
-        undoSnapshot = index to song.pattern(index)
+        snapshotForUndo()
         val lead = MelodyGenerator.generate(
             chord = song.patternChord(index),
             key = detectedKey(),
@@ -386,7 +393,6 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             previous = if (index > 0) song.pattern(index - 1).lead else null,
         )
         repository.updateCurrentSong { it.withPattern(index, it.pattern(index).copy(lead = lead)) }
-        _uiState.update { it.copy(canUndo = true) }
     }
 
     /** 曲構成のコードを、起承転結の流れで埋める。 */
@@ -425,34 +431,32 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 小節ごとのコード列を、曲構成のブロックに割り振って書き戻す。 */
     private fun applyChords(song: Song, chords: List<Chord>) {
-        undoArrangement = song.arrangement
-        undoSnapshot = null
+        snapshotForUndo()
         var index = 0
         val arrangement = song.arrangement.map { step ->
             step.copy(chords = List(step.repeat) { chords.getOrElse(index++) { Chord() } })
         }
         repository.updateCurrentSong { it.copy(arrangement = arrangement) }
+    }
+
+    /** 自動生成の前に、今の曲を控えておく。 */
+    private fun snapshotForUndo() {
+        undoSong = _uiState.value.song
         _uiState.update { it.copy(canUndo = true) }
     }
 
     /** 直前の自動生成を取り消す。 */
     fun undoGenerate() {
-        val patternSnapshot = undoSnapshot
-        val arrangementSnapshot = undoArrangement
-        if (patternSnapshot != null) {
-            repository.updateCurrentSong { it.withPattern(patternSnapshot.first, patternSnapshot.second) }
+        val previous = undoSong ?: return
+        // 別の曲に切り替わっていたら戻さない（別の曲を上書きしてしまうため）。
+        if (previous.id == _uiState.value.song.id) {
+            repository.updateCurrentSong { previous }
         }
-        if (arrangementSnapshot != null) {
-            repository.updateCurrentSong { it.copy(arrangement = arrangementSnapshot) }
-        }
-        undoSnapshot = null
-        undoArrangement = null
-        _uiState.update { it.copy(canUndo = false) }
+        clearUndo()
     }
 
     private fun clearUndo() {
-        undoSnapshot = null
-        undoArrangement = null
+        undoSong = null
         if (_uiState.value.canUndo) _uiState.update { it.copy(canUndo = false) }
     }
 
@@ -461,6 +465,59 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val song = _uiState.value.song
         val fromArrangement = PlaybackPlan.arrangement(song).bars.map { it.chord }
         return fromArrangement.ifEmpty { song.patternChords }
+    }
+
+    /**
+     * ジャンルのプリセットを当てはめる。
+     * テンポ・コード進行・リズム・旋律をまとめて設定するので、
+     * ドラムの型だけを変えるより「そのジャンルらしく」なる。
+     */
+    fun applyGenre(genre: Genre, options: GenreOptions) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val key = detectedKey()
+        val progression = genre.pickProgression(Random)
+        snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            var next = song
+            if (options.tempo) {
+                next = next.copy(bpm = genre.pickBpm(Random))
+            }
+            if (options.chords) {
+                // 曲構成がまだ無いときは、進行の長さぶんの構成を作ってから埋める。
+                val arrangement = next.arrangement.ifEmpty {
+                    listOf(ArrangementStep(index, progression.degrees.size.coerceAtMost(8)))
+                }
+                val bars = arrangement.sumOf { it.repeat }
+                val chords = progression.fill(key, bars)
+                var barIndex = 0
+                next = next.copy(
+                    arrangement = arrangement.map { step ->
+                        step.copy(chords = List(step.repeat) { chords.getOrElse(barIndex++) { Chord() } })
+                    },
+                )
+                // パターン単体で鳴らしたときも進行の頭の響きになるように合わせる。
+                chords.firstOrNull()?.let { next = next.withPatternChord(index, it) }
+            }
+            if (options.rhythm) {
+                val generated = PatternGenerator.generate(
+                    style = genre.pickRhythm(Random),
+                    random = Random,
+                    name = next.pattern(index).name,
+                )
+                next = next.withPattern(index, next.pattern(index).copy(rows = generated.rows))
+            }
+            if (options.melody) {
+                val lead = MelodyGenerator.generate(
+                    chord = next.patternChord(index),
+                    key = key,
+                    random = Random,
+                    density = genre.melodyDensity,
+                )
+                next = next.withPattern(index, next.pattern(index).copy(lead = lead))
+            }
+            next
+        }
     }
 
     // --- 音量・テンポ -------------------------------------------------------
@@ -629,22 +686,26 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     fun createSong(name: String) {
         stop()
+        clearUndo()
         repository.createSong(name.trim().ifEmpty { "新しい曲" })
     }
 
     fun duplicateSong() {
         stop()
+        clearUndo()
         val current = _uiState.value.song
         repository.duplicateCurrentSong("${current.name} のコピー")
     }
 
     fun selectSong(id: String) {
         stop()
+        clearUndo()
         repository.selectSong(id)
     }
 
     fun deleteSong(id: String) {
         stop()
+        clearUndo()
         repository.deleteSong(id)
     }
 

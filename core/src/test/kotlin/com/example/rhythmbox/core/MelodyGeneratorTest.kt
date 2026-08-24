@@ -115,4 +115,33 @@ class MelodyGeneratorTest {
             notesOf(lead).forEach { assertTrue(midiName(it), it.mod(12) in scale) }
         }
     }
+
+    @Test
+    fun `density changes how many notes come out`() {
+        fun average(density: MelodyDensity) = (0 until 60)
+            .map { notesOf(MelodyGenerator.generate(c, cMajor, Random(it), density = density)).size }
+            .average()
+
+        val sparse = average(MelodyDensity.SPARSE)
+        val normal = average(MelodyDensity.NORMAL)
+        val busy = average(MelodyDensity.BUSY)
+        assertTrue("疎=$sparse 普通=$normal 密=$busy", sparse < normal)
+        assertTrue("疎=$sparse 普通=$normal 密=$busy", normal < busy)
+    }
+
+    @Test
+    fun `every density still keeps the melody in key and on chord tones`() {
+        val scale = setOf(0, 2, 4, 5, 7, 9, 11)
+        val tones = c.voicing().map { it.mod(12) }.toSet()
+        for (density in MelodyDensity.entries) {
+            repeat(20) { seed ->
+                val lead = MelodyGenerator.generate(c, cMajor, Random(seed), density = density)
+                lead.forEachIndexed { step, midi ->
+                    if (midi == Pattern.REST) return@forEachIndexed
+                    assertTrue("$density ${midiName(midi)}", midi.mod(12) in scale)
+                    if (step % 4 == 0) assertTrue("$density ${midiName(midi)}", midi.mod(12) in tones)
+                }
+            }
+        }
+    }
 }

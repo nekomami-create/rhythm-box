@@ -44,6 +44,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<SongDialog?>(null) }
     var exportSetupOpen by remember { mutableStateOf(false) }
+    var genreOpen by remember { mutableStateOf(false) }
     // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
     var exportScope by remember { mutableStateOf(ExportScope.SONG) }
     var exportRepeats by remember { mutableStateOf(2) }
@@ -96,6 +97,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             onClick = { menuOpen = false; dialog = SongDialog.Library },
                         )
                         DropdownMenuItem(
+                            text = { Text("ジャンルから作る") },
+                            onClick = { menuOpen = false; genreOpen = true },
+                        )
+                        DropdownMenuItem(
                             text = { Text("音声を書き出す (M4A)") },
                             onClick = { menuOpen = false; exportSetupOpen = true },
                         )
@@ -132,6 +137,15 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         onDismiss = { dialog = null },
     )
 
+    if (genreOpen) {
+        GenreDialog(
+            onApply = { genre, options ->
+                viewModel.applyGenre(genre, options)
+                genreOpen = false
+            },
+            onDismiss = { genreOpen = false },
+        )
+    }
     if (exportSetupOpen) {
         ExportDialog(
             state = state,
