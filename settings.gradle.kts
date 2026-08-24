@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RhythmBox"
+rootProject.name = "BreakBox"
 include(":app")
 include(":core")

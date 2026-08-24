@@ -38,7 +38,7 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk RhythmBox.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk BreakBox.apk
 
       # 配布は GitHub Release で行う。actions/upload-artifact は Actions の
       # ストレージ枠を消費して枠切れの原因になるため使わない
@@ -48,9 +48,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: rhythmbox-latest
-          name: "リズムボックス 最新APK (v1.0.${{ github.run_number }})"
+          name: "BreakBox 最新APK (v1.0.${{ github.run_number }})"
           body: |
             バージョン: 1.0.${{ github.run_number }} (コミット ${{ github.sha }})
             Android の「提供元不明のアプリ」を許可してインストールしてください。
           prerelease: true
-          files: RhythmBox.apk
+          files: BreakBox.apk
+
+      # 旧名 (RhythmBox.apk) のまま残ると、古いリンクから古い APK が落ちてしまう。
+      - name: Remove the old RhythmBox.apk asset
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete-asset rhythmbox-latest RhythmBox.apk --yes || true

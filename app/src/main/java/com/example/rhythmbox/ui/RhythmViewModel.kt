@@ -12,6 +12,7 @@ import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.EngineConfig
 import com.example.rhythmbox.core.Instrument
+import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.PatternGenerator
@@ -353,6 +354,22 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song ->
             song.withPattern(index, song.pattern(index).copy(rows = generated.rows))
         }
+        _uiState.update { it.copy(canUndo = true) }
+    }
+
+    /** リードの旋律を自動生成する。前のパターンの終わりから滑らかに繋げる。 */
+    fun generateMelody() {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val song = state.song
+        undoSnapshot = index to song.pattern(index)
+        val lead = MelodyGenerator.generate(
+            chord = song.patternChord(index),
+            key = detectedKey(),
+            random = Random,
+            previous = if (index > 0) song.pattern(index - 1).lead else null,
+        )
+        repository.updateCurrentSong { it.withPattern(index, it.pattern(index).copy(lead = lead)) }
         _uiState.update { it.copy(canUndo = true) }
     }
 

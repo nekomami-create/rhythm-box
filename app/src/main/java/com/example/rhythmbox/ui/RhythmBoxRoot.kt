@@ -31,6 +31,7 @@ private enum class Screen(val label: String) {
     SEQUENCER("パターン"),
     LEAD("リード"),
     SONG("曲構成"),
+    HELP("ヘルプ"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,11 +99,13 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                     )
                 }
             }
-            if (!state.ready) return@Column
+            // ヘルプは曲の読み込みを待たずに開ける。
+            if (!state.ready && screen != Screen.HELP) return@Column
             when (screen) {
                 Screen.SEQUENCER -> SequencerScreen(state, viewModel)
                 Screen.LEAD -> LeadScreen(state, viewModel)
                 Screen.SONG -> SongScreen(state, viewModel)
+                Screen.HELP -> HelpScreen()
             }
         }
     }

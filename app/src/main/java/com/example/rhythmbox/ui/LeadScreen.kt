@@ -21,9 +21,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +68,8 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             muted = leadTrack.muted,
             onPlayToggle = { viewModel.toggle(PlayMode.PATTERN) },
             onToggleMute = { viewModel.toggleMute(Instrument.LEAD.trackIndex) },
+            onGenerate = viewModel::generateMelody,
+            onUndo = viewModel::undoGenerate,
             onClear = viewModel::clearLead,
         )
 
@@ -96,6 +100,8 @@ private fun LeadHeader(
     muted: Boolean,
     onPlayToggle: () -> Unit,
     onToggleMute: () -> Unit,
+    onGenerate: () -> Unit,
+    onUndo: () -> Unit,
     onClear: () -> Unit,
 ) {
     val playing = state.isPlaying && state.mode == PlayMode.PATTERN
@@ -104,59 +110,79 @@ private fun LeadHeader(
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            FilledIconButton(
-                onClick = onPlayToggle,
-                modifier = Modifier.size(48.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (playing) {
-                        MaterialTheme.colorScheme.secondary
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                ),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "停止" else "再生",
-                    modifier = Modifier.size(24.dp),
-                )
+                FilledIconButton(
+                    onClick = onPlayToggle,
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (playing) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    ),
+                ) {
+                    Icon(
+                        imageVector = if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        contentDescription = if (playing) "停止" else "再生",
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "パターン ${state.pattern.name} のリード",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "コード ${state.patternChord.name} ・ ${state.pattern.lead.count { it != Pattern.REST }} 音",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onToggleMute) {
+                    Icon(
+                        imageVector = if (muted) {
+                            Icons.AutoMirrored.Filled.VolumeOff
+                        } else {
+                            Icons.AutoMirrored.Filled.VolumeUp
+                        },
+                        contentDescription = if (muted) "リードのミュートを解除" else "リードをミュート",
+                        tint = if (muted) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "パターン ${state.pattern.name} のリード",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "コード ${state.patternChord.name} ・ ${state.pattern.lead.count { it != Pattern.REST }} 音",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onToggleMute) {
-                Icon(
-                    imageVector = if (muted) {
-                        Icons.AutoMirrored.Filled.VolumeOff
-                    } else {
-                        Icons.AutoMirrored.Filled.VolumeUp
-                    },
-                    contentDescription = if (muted) "リードのミュートを解除" else "リードをミュート",
-                    tint = if (muted) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            OutlinedButton(onClick = onClear) {
-                Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("全消し")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("ランダム")
+                }
+                OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("全消し")
+                }
+                OutlinedButton(
+                    onClick = onUndo,
+                    enabled = state.canUndo,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("戻す")
+                }
             }
         }
     }
