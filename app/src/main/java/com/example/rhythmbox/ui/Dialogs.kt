@@ -616,20 +616,51 @@ private const val MAX_EXPORT_REPEATS = 32
  */
 @Composable
 fun GenreDialog(
-    onApply: (Genre, GenreOptions) -> Unit,
+    title: String,
+    confirmLabel: String,
+    note: String,
+    /** 書き換える範囲のチェックを出すか。 */
+    showOptions: Boolean,
+    /** 「おまかせ」（ジャンルもランダム）を選べるようにするか。 */
+    allowRandom: Boolean,
+    onApply: (Genre?, GenreOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var genre by remember { mutableStateOf(Genre.JPOP) }
+    var genre by remember { mutableStateOf<Genre?>(if (allowRandom) null else Genre.JPOP) }
     var options by remember { mutableStateOf(GenreOptions()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ジャンルから作る") },
+        title = { Text(title) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (allowRandom) {
+                    val selected = genre == null
+                    Surface(
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { genre = null },
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                text = "おまかせ",
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            Text(
+                                text = "ジャンルもランダムに選びます",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 Genre.entries.forEach { entry ->
                     val selected = entry == genre
                     Surface(
@@ -655,14 +686,22 @@ fun GenreDialog(
                     }
                 }
 
-                Spacer(Modifier.height(2.dp))
-                Text("当てはめるもの", style = MaterialTheme.typography.labelMedium)
-                GenreOptionRow("テンポ", options.tempo) { options = options.copy(tempo = it) }
-                GenreOptionRow("コード進行（曲構成）", options.chords) { options = options.copy(chords = it) }
-                GenreOptionRow("リズム（このパターン）", options.rhythm) { options = options.copy(rhythm = it) }
-                GenreOptionRow("旋律（このパターン）", options.melody) { options = options.copy(melody = it) }
+                if (showOptions) {
+                    Spacer(Modifier.height(2.dp))
+                    Text("当てはめるもの", style = MaterialTheme.typography.labelMedium)
+                    GenreOptionRow("テンポ", options.tempo) { options = options.copy(tempo = it) }
+                    GenreOptionRow("コード進行（曲構成）", options.chords) {
+                        options = options.copy(chords = it)
+                    }
+                    GenreOptionRow("リズム（このパターン）", options.rhythm) {
+                        options = options.copy(rhythm = it)
+                    }
+                    GenreOptionRow("旋律（このパターン）", options.melody) {
+                        options = options.copy(melody = it)
+                    }
+                }
                 Text(
-                    text = "コード進行は定番の型をそのまま並べます。曲構成がまだ無いときは作ります。",
+                    text = note,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -671,9 +710,10 @@ fun GenreDialog(
         confirmButton = {
             TextButton(
                 onClick = { onApply(genre, options) },
-                enabled = options.tempo || options.chords || options.rhythm || options.melody,
+                enabled = !showOptions ||
+                    options.tempo || options.chords || options.rhythm || options.melody,
             ) {
-                Text("当てはめる")
+                Text(confirmLabel)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },

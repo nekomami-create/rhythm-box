@@ -25,6 +25,7 @@ import com.example.rhythmbox.core.ROW_BASS
 import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
+import com.example.rhythmbox.core.SongBuilder
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
@@ -465,6 +466,20 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val song = _uiState.value.song
         val fromArrangement = PlaybackPlan.arrangement(song).bars.map { it.chord }
         return fromArrangement.ifEmpty { song.patternChords }
+    }
+
+    /**
+     * ジャンルを 1 つ選んで、8 小節の曲をまるごと作る（[genre] が null ならジャンルもおまかせ）。
+     * 旋律には触らない（コードは小節ごとに変わるのに、旋律はパターンに 1 つしか持てないため）。
+     */
+    fun generateSong(genre: Genre?) {
+        val chosen = genre ?: Genre.entries.random(Random)
+        val key = detectedKey()
+        snapshotForUndo()
+        repository.updateCurrentSong { SongBuilder.build(it, chosen, key, Random) }
+        // 作ったあとは前半のパターンを開いておく（やり直しの控えは残す）。
+        _uiState.update { it.copy(selectedPattern = SongBuilder.FIRST_PATTERN) }
+        syncEngine()
     }
 
     /**

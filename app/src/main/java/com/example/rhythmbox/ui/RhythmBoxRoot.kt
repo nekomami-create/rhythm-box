@@ -45,6 +45,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     var dialog by remember { mutableStateOf<SongDialog?>(null) }
     var exportSetupOpen by remember { mutableStateOf(false) }
     var genreOpen by remember { mutableStateOf(false) }
+    var songBuilderOpen by remember { mutableStateOf(false) }
     // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
     var exportScope by remember { mutableStateOf(ExportScope.SONG) }
     var exportRepeats by remember { mutableStateOf(2) }
@@ -97,6 +98,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             onClick = { menuOpen = false; dialog = SongDialog.Library },
                         )
                         DropdownMenuItem(
+                            text = { Text("8 小節つくる") },
+                            onClick = { menuOpen = false; songBuilderOpen = true },
+                        )
+                        DropdownMenuItem(
                             text = { Text("ジャンルから作る") },
                             onClick = { menuOpen = false; genreOpen = true },
                         )
@@ -137,10 +142,30 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         onDismiss = { dialog = null },
     )
 
+    if (songBuilderOpen) {
+        GenreDialog(
+            title = "8 小節つくる",
+            confirmLabel = "作る",
+            note = "テンポ・コード進行・リズムを決めて、A を 4 小節 + B を 4 小節の曲を作ります。" +
+                "旋律はそのままなので、あとからリードタブで足してください。",
+            showOptions = false,
+            allowRandom = true,
+            onApply = { genre, _ ->
+                viewModel.generateSong(genre)
+                songBuilderOpen = false
+            },
+            onDismiss = { songBuilderOpen = false },
+        )
+    }
     if (genreOpen) {
         GenreDialog(
+            title = "ジャンルから作る",
+            confirmLabel = "当てはめる",
+            note = "コード進行は定番の型をそのまま並べます。曲構成がまだ無いときは作ります。",
+            showOptions = true,
+            allowRandom = false,
             onApply = { genre, options ->
-                viewModel.applyGenre(genre, options)
+                if (genre != null) viewModel.applyGenre(genre, options)
                 genreOpen = false
             },
             onDismiss = { genreOpen = false },

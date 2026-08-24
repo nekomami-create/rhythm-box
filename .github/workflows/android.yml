@@ -3,6 +3,7 @@ name: Android CI
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
     branches: ["**"]
   workflow_dispatch:
@@ -34,30 +35,49 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :core:test testDebugUnitTest --no-daemon
 
-      - name: Assemble debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      # 配布するのは release ビルド（debuggable が付かない）。
+      # 署名はリポジトリに置いた固定鍵で、debug ビルドと同じ署名になる。
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk BreakBox.apk
+        run: cp app/build/outputs/apk/release/app-release.apk BreakBox.apk
 
       # 配布は GitHub Release で行う。actions/upload-artifact は Actions の
       # ストレージ枠を消費して枠切れの原因になるため使わない
       # （Release のアセットはこの枠とは別に保存される）。
-      - name: Publish APK to "rhythmbox-latest" release
-        if: github.event_name != 'pull_request'
+      - name: Publish the rolling "latest" release
+        if: github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: rhythmbox-latest
-          name: "BreakBox 最新APK (v1.0.${{ github.run_number }})"
+          name: "BreakBox 最新APK (build ${{ github.run_number }})"
           body: |
-            バージョン: 1.0.${{ github.run_number }} (コミット ${{ github.sha }})
-            Android の「提供元不明のアプリ」を許可してインストールしてください。
+            main の最新ビルドです。いつも同じ URL から取得できます。
+            コミット ${{ github.sha }}
+
+            インストール: Android の「提供元不明のアプリ」を許可してから開いてください。
+            上書きインストールで更新でき、保存した曲は残ります。
           prerelease: true
+          files: BreakBox.apk
+
+      # v1.2.3 のようなタグを押したときは、そのバージョンで固定のリリースを作る。
+      - name: Publish a versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "BreakBox ${{ github.ref_name }}"
+          body: |
+            BreakBox ${{ github.ref_name }}
+
+            インストール: Android の「提供元不明のアプリ」を許可してから開いてください。
+            上書きインストールで更新でき、保存した曲は残ります。
+          generate_release_notes: true
           files: BreakBox.apk
 
       # 旧名 (RhythmBox.apk) のまま残ると、古いリンクから古い APK が落ちてしまう。
       - name: Remove the old RhythmBox.apk asset
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release delete-asset rhythmbox-latest RhythmBox.apk --yes || true

@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.rhythmbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,7 +35,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
-            isMinifyEnabled = true
+            // 配布はこのビルドを使う。デバッグビルドと違い debuggable が付かない。
+            // 署名はデバッグ用と同じ固定鍵。署名が変わると上書き更新ができなくなり、
+            // 保存した曲が消えてしまうため、鍵は変えない。
+            signingConfig = signingConfigs.getByName("debug")
+            // R8 での圧縮は実機での動作確認ができていないので、いまは切っている。
+            // （有効にすると APK は小さくなるが、壊れても CI では検出できない）
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

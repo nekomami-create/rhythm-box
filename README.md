@@ -3,6 +3,22 @@
 16 ステップのステップシーケンサーで、ドラムを打ち込み、**和音（コード）とベースとリード**を重ねて曲に組み立てる Android アプリです。
 音源ファイルは持たず、**すべての音をアプリ内で合成**しています（サンプル素材の同梱・ダウンロード不要）。
 
+## ダウンロード
+
+**[BreakBox.apk をダウンロード](https://github.com/nekomami-create/rhythm-box/releases/download/rhythmbox-latest/BreakBox.apk)**
+（このリンクはいつも最新版を指します。[リリース一覧](https://github.com/nekomami-create/rhythm-box/releases) からバージョンを選ぶこともできます）
+
+### インストール
+
+1. 上のリンクから APK をダウンロードする
+2. 開こうとすると「提供元不明のアプリ」の確認が出るので、この操作を許可する
+3. インストールして開く
+
+- **Android 8.0 (API 26) 以上**が必要です
+- Google Play では配布していません。APK を直接入れる形です
+- 更新は**上書きインストールするだけ**です。アンインストールは不要で、保存した曲もそのまま残ります
+- 広告・課金・通信は一切ありません。音はすべて端末の中で作っています
+
 ## 主な機能
 
 - **16 ステップ x 8 音色**のドラム打ち込み（BD / SD / CH / OH / CP / RS / TM / CB）
@@ -13,6 +29,8 @@
 - **コードのおすすめ**: 曲に出てくるコードから調を推定し、**前後の小節に馴染むコード**を度数つきで提案
   （V → I、IV → V、vi → ii など、よくある進行の重みで並べ替え。両隣が分かっているときは
   「前から来やすく、次へ繋がりやすい」ものを上位にします）
+- **8 小節つくる**: ジャンルを選ぶ（またはおまかせ）だけで、テンポ・コード進行・リズムを決めて
+  「A を 4 小節 + B を 4 小節」の曲をまるごと作ります
 - **ジャンルから作る**: ロック / J-POP / バラード / シティポップ / ダンス を選ぶと、
   テンポ・コード進行（王道進行・小室進行・カノン進行・丸サ進行など）・リズム・旋律をまとめて設定します
 - **起承転結でコード進行を自動生成**: 曲を 4 つに区切り、起（調を示す）承（広げる）転（主和音から離れる）結（帰る）
@@ -82,14 +100,15 @@ app/    … Android アプリ（Compose UI / AudioTrack / ファイル保存）
   ui/                      画面（パターン / リード / 曲構成 / ヘルプ）・ViewModel・テーマ
 ```
 
-## ビルド方法
+## 開発者向け
 
 Android Studio (Ladybug 以降推奨) でプロジェクトを開くか、コマンドラインから:
 
 ```bash
 ./gradlew :core:test           # 音源・シーケンサの単体テスト
 ./gradlew testDebugUnitTest    # アプリ側の単体テスト
-./gradlew assembleDebug        # デバッグ APK をビルド
+./gradlew assembleDebug        # 開発用 APK をビルド
+./gradlew assembleRelease      # 配布用 APK をビルド
 ```
 
 - **compileSdk / targetSdk**: 35
@@ -98,16 +117,30 @@ Android Studio (Ladybug 以降推奨) でプロジェクトを開くか、コマ
 Android SDK のパスは `local.properties` に `sdk.dir=/path/to/Android/sdk` として設定するか、
 `ANDROID_HOME` 環境変数で指定してください（このファイルは Git 管理外）。
 
-GitHub Actions (`.github/workflows/android.yml`) でも単体テストと APK ビルドを行い、
-`rhythmbox-latest` タグの **GitHub Release** に `BreakBox.apk` を公開します
-（Actions の成果物ストレージ枠を消費しないため）。最新版はいつも同じ URL から取得できます。
+### 配布のしかた
 
-## アップデート（データを維持したまま更新）
+GitHub Actions (`.github/workflows/android.yml`) が単体テストと **release ビルド**を行い、
+GitHub Release に `BreakBox.apk` を公開します（Actions の成果物ストレージ枠を消費しないため、
+Release のアセットとして置いています）。
 
-固定のデバッグ署名鍵 (`app/debug.keystore`) を使うため、**新しい APK を上書きインストールするだけ**で更新でき、
-保存した曲データはそのまま残ります（アンインストール不要）。
+- **main への push** … `rhythmbox-latest` タグのローリングリリースを更新。ダウンロード URL は不変
+- **`v1.2.3` のようなタグを push** … そのバージョンで固定のリリースを作成（変更履歴は自動生成）
 
-- ⚠️ `app/debug.keystore` はデバッグ用の鍵（パスワード `android`）です。Google Play で配布する場合は別途リリース用の署名鍵が必要です。
+バージョンを切るときは、`app/build.gradle.kts` の `versionCode` / `versionName` を上げてから
+同じ番号のタグを押してください。
+
+```bash
+git tag v1.9.0 && git push origin v1.9.0
+```
+
+配布用ビルドは `app/debug.keystore` の固定鍵で署名しています。デバッグビルドと同じ鍵なので、
+**これまで入れた APK に上書き更新できます**（署名が変わると更新できず、保存データが消えます）。
+R8 での圧縮は実機で確認できていないため切ってあります。
+
+> [!NOTE]
+> 署名鍵 (`app/debug.keystore`, パスワード `android`) はリポジトリに置いてあります。
+> 誰でも同じ鍵で署名できるので、Google Play で配布する場合は必ず別の鍵に差し替えてください。
+> ここでは「上書き更新でデータが消えないこと」を優先しています。
 
 ## 自動生成のしくみ
 
@@ -166,4 +199,4 @@ M4A は MP3 と同程度に小さく、スマホ・PC・DAW のいずれでも�
 
 ## ライセンス
 
-サンプルアプリのため任意にご利用ください。
+MIT License（[LICENSE](LICENSE)）。自由に使ってかまいません。
