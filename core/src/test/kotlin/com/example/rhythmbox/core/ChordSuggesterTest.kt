@@ -99,7 +99,7 @@ class ChordSuggesterTest {
         val key = MusicKey(0, minor = false)
         val diatonic = key.diatonicChords() + Chord(7, ChordQuality.SEVENTH)
         repeat(20) { seed ->
-            val progression = ChordSuggester.generateProgression(8, key, c, Random(seed))
+            val progression = ChordSuggester.generateStory(8, key, c, Random(seed))
             assertEquals(8, progression.size)
             assertEquals(c, progression.first())
             assertEquals(c, progression.last())
@@ -112,10 +112,124 @@ class ChordSuggesterTest {
     @Test
     fun `progressions are reproducible from a seed`() {
         val key = MusicKey(9, minor = true)
-        val first = ChordSuggester.generateProgression(6, key, random = Random(42))
-        val second = ChordSuggester.generateProgression(6, key, random = Random(42))
+        val first = ChordSuggester.generateStory(6, key, random = Random(42))
+        val second = ChordSuggester.generateStory(6, key, random = Random(42))
         assertEquals(first, second)
         assertEquals(6, first.size)
+    }
+
+    // --- 起承転結 -----------------------------------------------------------
+
+    @Test
+    fun `bars are shared out between the four roles`() {
+        val roles = ChordSuggester.SectionRole.entries
+        for (bars in 1..32) {
+            val sections = ChordSuggester.sections(bars)
+            assertEquals("$bars 小節", bars, sections.sumOf { it.second.count() })
+            // 役割の順番は 起 → 承 → 転 → 結 のまま
+            val order = sections.map { roles.indexOf(it.first) }
+            assertTrue("$bars 小節: $order", order.zipWithNext().all { it.first < it.second })
+            // 終わりは必ず「結」
+            assertEquals(ChordSuggester.SectionRole.CONCLUSION, sections.last().first)
+            // 区間が飛んだり重なったりしない
+            var next = 0
+            sections.forEach { (_, range) ->
+                assertEquals(next, range.first)
+                next = range.last + 1
+            }
+        }
+        assertEquals(
+            listOf(2, 2, 2, 2),
+            ChordSuggester.sections(8).map { it.second.count() },
+        )
+        assertEquals(listOf(1, 1, 1, 1), ChordSuggester.sections(4).map { it.second.count() })
+        assertEquals(
+            listOf(ChordSuggester.SectionRole.CONCLUSION),
+            ChordSuggester.sections(1).map { it.first },
+        )
+    }
+
+    @Test
+    fun `a cadence always lands on the tonic`() {
+        for (key in listOf(MusicKey(0, false), MusicKey(9, true), MusicKey(5, false))) {
+            val tonic = key.diatonicChords().first()
+            for (length in 1..8) {
+                repeat(10) { seed ->
+                    val ending = ChordSuggester.cadence(length, key, random = Random(seed))
+                    assertEquals(length, ending.size)
+                    assertEquals("$key $ending", tonic, ending.last())
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a cadence pulls home through the dominant`() {
+        // 3 小節以上の終止形は、最後の 1 つ前が必ずドミナント（V）。ここが終わった感じの芯。
+        for (key in listOf(MusicKey(0, false), MusicKey(9, true), MusicKey(5, false))) {
+            val dominantRoot = (key.tonic + 7).mod(12)
+            for (length in 3..6) {
+                repeat(15) { seed ->
+                    val ending = ChordSuggester.cadence(length, key, random = Random(seed))
+                    assertEquals(
+                        "${key.name} $ending",
+                        dominantRoot,
+                        ending[ending.lastIndex - 1].root,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `two bar endings are either a full close or a plagal one`() {
+        val key = MusicKey(0, minor = false)
+        val endings = (0 until 20).map { ChordSuggester.cadence(2, key, random = Random(it)) }
+        assertTrue(endings.all { it.first().root == g.root || it.first().root == f.root })
+        assertTrue("全終止 (V - I) が出ていない", endings.any { it.first().root == g.root })
+    }
+
+    @Test
+    fun `minor keys borrow the major dominant to sound finished`() {
+        val key = MusicKey(9, minor = true) // Am
+        val e = Chord(4, ChordQuality.MAJOR)
+        val endings = (0 until 30).map { ChordSuggester.cadence(3, key, random = Random(it)) }
+        assertTrue("和声的短音階の V が一度も出ていない", endings.any { e in it })
+        assertTrue(endings.all { it.last() == Chord(9, ChordQuality.MINOR) })
+    }
+
+    @Test
+    fun `the turn section moves away from the tonic`() {
+        val key = MusicKey(0, minor = false)
+        // 転（3 番目の区間）に主和音が居座らないこと。
+        val turnRange = ChordSuggester.sections(8)[2].second
+        val tonicCount = (0 until 40).count { seed ->
+            val progression = ChordSuggester.generateStory(8, key, c, Random(seed))
+            turnRange.any { progression[it] == c }
+        }
+        assertTrue("転に主和音が出すぎ: $tonicCount / 40", tonicCount < 8)
+    }
+
+    @Test
+    fun `a story opens on the tonic and closes on it`() {
+        for (key in listOf(MusicKey(0, false), MusicKey(9, true))) {
+            val tonic = key.diatonicChords().first()
+            repeat(20) { seed ->
+                val progression = ChordSuggester.generateStory(8, key, random = Random(seed))
+                assertEquals(tonic, progression.first())
+                assertEquals(tonic, progression.last())
+            }
+        }
+    }
+
+    @Test
+    fun `short songs still get an ending`() {
+        val key = MusicKey(0, minor = false)
+        for (bars in 1..4) {
+            val progression = ChordSuggester.generateStory(bars, key, random = Random(1))
+            assertEquals(bars, progression.size)
+            assertEquals(c, progression.last())
+        }
     }
 
     @Test

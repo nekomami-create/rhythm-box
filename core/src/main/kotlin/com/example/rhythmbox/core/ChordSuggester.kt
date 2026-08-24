@@ -217,47 +217,200 @@ object ChordSuggester {
         }
     }
 
-    /** [length] 小節ぶんのコード進行を作る。[start] から始めて、最後は主和音に戻す。 */
-    fun generateProgression(
+    // --- 起承転結 -----------------------------------------------------------
+
+    /** 曲の流れの中での役割。 */
+    enum class SectionRole(val label: String, val description: String) {
+        OPENING("起", "調を示して始める"),
+        DEVELOPMENT("承", "受けて広げる"),
+        TURN("転", "主和音から離れて変化をつける"),
+        CONCLUSION("結", "主和音へ帰って終わる"),
+    }
+
+    /** 役割ごとの、その度数の使いやすさ（結は終止形の型で作るのでここには無い）。 */
+    private val MAJOR_ROLE_WEIGHTS = mapOf(
+        //                              I    ii   iii  IV   V    vi   vii
+        SectionRole.OPENING to doubleArrayOf(1.00, 0.40, 0.30, 0.60, 0.50, 0.60, 0.15),
+        SectionRole.DEVELOPMENT to doubleArrayOf(0.50, 0.80, 0.40, 1.00, 0.50, 0.80, 0.20),
+        SectionRole.TURN to doubleArrayOf(0.05, 0.70, 0.90, 0.60, 0.50, 0.90, 0.40),
+    )
+
+    private val MINOR_ROLE_WEIGHTS = mapOf(
+        //                              i    ii°  III  iv   v    VI   VII
+        SectionRole.OPENING to doubleArrayOf(1.00, 0.20, 0.50, 0.60, 0.40, 0.70, 0.60),
+        SectionRole.DEVELOPMENT to doubleArrayOf(0.50, 0.30, 0.70, 0.90, 0.50, 0.90, 0.80),
+        SectionRole.TURN to doubleArrayOf(0.05, 0.50, 0.80, 0.60, 0.50, 0.80, 0.90),
+    )
+
+    /** 終止形の型（度数）。最後は必ず主和音。 */
+    private val CADENCES = mapOf(
+        1 to listOf(listOf(0)),
+        2 to listOf(
+            listOf(4, 0), // V - I（全終止）
+            listOf(4, 0),
+            listOf(3, 0), // IV - I（変格終止）
+        ),
+        3 to listOf(
+            listOf(1, 4, 0), // ii - V - I
+            listOf(3, 4, 0), // IV - V - I
+            listOf(5, 4, 0), // vi - V - I
+        ),
+        4 to listOf(
+            listOf(0, 3, 4, 0), // I - IV - V - I
+            listOf(5, 1, 4, 0), // vi - ii - V - I
+            listOf(3, 1, 4, 0), // IV - ii - V - I
+            listOf(5, 3, 4, 0), // vi - IV - V - I
+        ),
+    )
+
+    /** [bars] 小節を起承転結に割り振る。小節が少ないときは後ろの役割を優先して残す。 */
+    fun sections(bars: Int): List<Pair<SectionRole, IntRange>> {
+        if (bars <= 0) return emptyList()
+        val conclusion = (bars / 4).coerceIn(1, 4)
+        val rest = bars - conclusion
+        val base = rest / 3
+        val extra = rest % 3
+        val sizes = listOf(
+            SectionRole.OPENING to base + if (extra > 0) 1 else 0,
+            SectionRole.DEVELOPMENT to base + if (extra > 1) 1 else 0,
+            SectionRole.TURN to base,
+            SectionRole.CONCLUSION to conclusion,
+        )
+        var start = 0
+        return sizes.mapNotNull { (role, size) ->
+            if (size <= 0) return@mapNotNull null
+            val range = start until (start + size)
+            start += size
+            role to range
+        }
+    }
+
+    /**
+     * 終わらせるためのコード進行（結）を [length] 小節ぶん作る。
+     * 最後は必ず主和音。[previous] を渡すと、そこから繋がりやすい型を選ぶ。
+     */
+    fun cadence(
         length: Int,
+        key: MusicKey,
+        previous: Chord? = null,
+        random: Random = Random.Default,
+    ): List<Chord> {
+        if (length <= 0) return emptyList()
+        val diatonic = key.diatonicChords()
+        val tonic = diatonic.first()
+        if (length > MAX_CADENCE) {
+            // 長いときは前を普通に埋めて、後ろ 4 小節を終止形にする。
+            val head = generateSection(length - MAX_CADENCE, SectionRole.TURN, key, previous, random)
+            return head + cadence(MAX_CADENCE, key, head.lastOrNull() ?: previous, random)
+        }
+
+        val templates = CADENCES.getValue(length)
+        // 直前のコードから入りやすい型を、重み付きで選ぶ。
+        val fromDegree = previous?.let { key.degreeOf(it) }
+        val weights = templates.map { template ->
+            val first = template.first()
+            if (previous != null && diatonic[first] == previous && templates.size > 1) {
+                0.0 // 同じコードが続く型は避ける
+            } else {
+                val flow = if (fromDegree != null) transitions(key)[fromDegree][first] else 0.6
+                flow + 0.2
+            }
+        }
+        val template = pickWeightedIndex(weights, random)?.let { templates[it] } ?: templates.first()
+
+        return template.mapIndexed { index, degree ->
+            when {
+                index == template.lastIndex -> tonic
+                // マイナーキーの V は、メジャーにすると終わった感じが強くなる（和声的短音階）。
+                degree == 4 && key.minor && random.nextDouble() < HARMONIC_MINOR_CHANCE ->
+                    Chord((key.tonic + 7).mod(12), ChordQuality.MAJOR)
+                // メジャーキーの V は、ときどき 7th にして終止感を強める。
+                degree == 4 && !key.minor && random.nextDouble() < DOMINANT_SEVENTH_CHANCE ->
+                    diatonic[4].copy(quality = ChordQuality.SEVENTH)
+                else -> diatonic[degree]
+            }
+        }
+    }
+
+    /**
+     * 起承転結の流れを持つコード進行を [bars] 小節ぶん作る。
+     * 起で調を示し、承で受け、転で主和音から離れ、結で帰ってくる。
+     */
+    fun generateStory(
+        bars: Int,
         key: MusicKey,
         start: Chord? = null,
         random: Random = Random.Default,
     ): List<Chord> {
-        if (length <= 0) return emptyList()
-        val tonic = key.diatonicChords().first()
-        val first = start ?: tonic
-        val progression = mutableListOf(first)
-        while (progression.size < length) {
-            when (length - progression.size) {
-                // 締めは主和音に帰る。
-                1 -> progression += tonic
-                // その 1 つ前は、主和音へ繋がるコード（V, IV, ii, vii°）から選ぶ。
-                2 -> {
-                    val cadence = suggest(progression.last(), key, limit = 8)
-                        .filter { it.chord != tonic && key.degreeOf(it.chord) in CADENCE_DEGREES }
-                    progression += pickWeighted(cadence, random)?.chord ?: key.diatonicChords()[4]
-                }
-                else -> {
-                    val candidates = suggest(progression.last(), key, limit = 4)
-                    progression += pickWeighted(candidates, random)?.chord ?: tonic
-                }
+        if (bars <= 0) return emptyList()
+        val progression = mutableListOf<Chord>()
+        for ((role, range) in sections(bars)) {
+            val previous = progression.lastOrNull()
+            progression += if (role == SectionRole.CONCLUSION) {
+                cadence(range.count(), key, previous, random)
+            } else {
+                val head = if (progression.isEmpty()) start ?: key.diatonicChords().first() else null
+                generateSection(range.count(), role, key, previous, random, head)
             }
         }
         return progression
     }
 
-    private fun pickWeighted(candidates: List<ChordSuggestion>, random: Random): ChordSuggestion? {
-        if (candidates.isEmpty()) return null
-        val total = candidates.sumOf { it.weight }
-        if (total <= 0.0) return candidates.first()
-        var target = random.nextDouble() * total
-        for (candidate in candidates) {
-            target -= candidate.weight
-            if (target <= 0.0) return candidate
+    /** 役割 [role] のまとまりを [length] 小節ぶん作る。 */
+    private fun generateSection(
+        length: Int,
+        role: SectionRole,
+        key: MusicKey,
+        previous: Chord?,
+        random: Random,
+        firstChord: Chord? = null,
+    ): List<Chord> {
+        if (length <= 0) return emptyList()
+        val diatonic = key.diatonicChords()
+        val roleWeights = (if (key.minor) MINOR_ROLE_WEIGHTS else MAJOR_ROLE_WEIGHTS).getValue(role)
+        val result = mutableListOf<Chord>()
+        var last = previous
+        repeat(length) { index ->
+            if (index == 0 && firstChord != null) {
+                result += firstChord
+                last = firstChord
+                return@repeat
+            }
+            val fromDegree = last?.let { key.degreeOf(it) }
+            val weights = diatonic.indices.map { degree ->
+                if (diatonic[degree] == last) {
+                    0.0 // 同じコードを続けない
+                } else {
+                    val flow = if (fromDegree != null) transitions(key)[fromDegree][degree] else 0.6
+                    flow * roleWeights[degree]
+                }
+            }
+            val chord = pickWeightedIndex(weights, random)?.let { diatonic[it] } ?: diatonic.first()
+            result += chord
+            last = chord
         }
-        return candidates.last()
+        return result
     }
+
+    private fun pickWeightedIndex(weights: List<Double>, random: Random): Int? {
+        val total = weights.sum()
+        if (total <= 0.0) return weights.indices.firstOrNull()
+        var target = random.nextDouble() * total
+        for (index in weights.indices) {
+            target -= weights[index]
+            if (target <= 0.0) return index
+        }
+        return weights.indices.lastOrNull()
+    }
+
+    /** 終止形の型を用意してある最大の長さ。 */
+    private const val MAX_CADENCE = 4
+
+    /** マイナーキーで V をメジャーにする割合。 */
+    private const val HARMONIC_MINOR_CHANCE = 0.75
+
+    /** メジャーキーで V を 7th にする割合。 */
+    private const val DOMINANT_SEVENTH_CHANCE = 0.4
 
     /** 主和音へ帰りやすい度数（IV / V / ii / vii°）。 */
     private val CADENCE_DEGREES = setOf(1, 3, 4, 6)

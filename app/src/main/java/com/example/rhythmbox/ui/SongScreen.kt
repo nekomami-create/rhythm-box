@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
@@ -29,6 +30,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +61,7 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     var addOpen by remember { mutableStateOf(false) }
     var editingPattern by remember { mutableStateOf<Int?>(null) }
     var editingChord by remember { mutableStateOf<ChordTarget?>(null) }
+    var cadenceMenuOpen by remember { mutableStateOf(false) }
     val song = state.song
     // 各ブロックが曲の何小節目から始まるか。再生位置の表示に使う。
     val startBars = song.arrangement.runningFold(0) { acc, step -> acc + step.repeat }
@@ -72,7 +76,11 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         )
 
         if (song.arrangement.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 曲全体を起承転結の流れで埋める。
                 OutlinedButton(onClick = viewModel::fillProgression, modifier = Modifier.weight(1f)) {
                     Icon(
                         Icons.Filled.AutoAwesome,
@@ -80,16 +88,40 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("コード進行おまかせ")
+                    Text("起承転結")
                 }
-                OutlinedButton(
-                    onClick = viewModel::undoGenerate,
-                    enabled = state.canUndo,
-                    modifier = Modifier.width(110.dp),
-                ) {
-                    Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("戻す")
+                // 終わりだけを作り直す。何小節を終止形にするかを選ぶ。
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { cadenceMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(
+                            Icons.Filled.Flag,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("終わり")
+                    }
+                    DropdownMenu(
+                        expanded = cadenceMenuOpen,
+                        onDismissRequest = { cadenceMenuOpen = false },
+                    ) {
+                        listOf(2, 4, 8).forEach { bars ->
+                            DropdownMenuItem(
+                                text = { Text("最後の $bars 小節を終止形に") },
+                                enabled = song.totalBars() >= bars,
+                                onClick = {
+                                    cadenceMenuOpen = false
+                                    viewModel.fillCadence(bars)
+                                },
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = viewModel::undoGenerate, enabled = state.canUndo) {
+                    Icon(Icons.Filled.Undo, contentDescription = "生成を戻す")
                 }
             }
         }

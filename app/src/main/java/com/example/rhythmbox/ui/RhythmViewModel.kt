@@ -389,23 +389,47 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update { it.copy(canUndo = true) }
     }
 
-    /** 曲構成のコードを、調に沿った進行で埋める。 */
+    /** 曲構成のコードを、起承転結の流れで埋める。 */
     fun fillProgression() {
         val song = _uiState.value.song
         if (song.arrangement.isEmpty()) return
-        val key = detectedKey()
-        val bars = song.totalBars()
-        val progression = ChordSuggester.generateProgression(
-            length = bars,
-            key = key,
+        val progression = ChordSuggester.generateStory(
+            bars = song.totalBars(),
+            key = detectedKey(),
             start = song.arrangement.first().chords.firstOrNull(),
             random = Random,
         )
+        applyChords(song, progression)
+    }
+
+    /**
+     * 最後の [bars] 小節を終止形（結）に差し替える。
+     * それより前の小節はそのまま残す。
+     */
+    fun fillCadence(bars: Int) {
+        val song = _uiState.value.song
+        val total = song.totalBars()
+        if (total == 0) return
+        val count = bars.coerceIn(1, total)
+        val current = PlaybackPlan.arrangement(song).bars.map { it.chord }
+        val ending = ChordSuggester.cadence(
+            length = count,
+            key = detectedKey(),
+            previous = current.getOrNull(total - count - 1),
+            random = Random,
+        )
+        val chords = current.toMutableList()
+        ending.forEachIndexed { index, chord -> chords[total - count + index] = chord }
+        applyChords(song, chords)
+    }
+
+    /** 小節ごとのコード列を、曲構成のブロックに割り振って書き戻す。 */
+    private fun applyChords(song: Song, chords: List<Chord>) {
         undoArrangement = song.arrangement
+        undoSnapshot = null
         var index = 0
         val arrangement = song.arrangement.map { step ->
-            val slice = List(step.repeat) { progression.getOrElse(index++) { Chord() } }
-            step.copy(chords = slice)
+            step.copy(chords = List(step.repeat) { chords.getOrElse(index++) { Chord() } })
         }
         repository.updateCurrentSong { it.copy(arrangement = arrangement) }
         _uiState.update { it.copy(canUndo = true) }
