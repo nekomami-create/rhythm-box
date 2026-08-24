@@ -326,7 +326,7 @@ class PlaybackEngineTest {
     @Test
     fun `lead notes play the pitch that was punched in`() {
         val song = Song("s", "test", bpm = bpm)
-            .withPattern(0, Pattern.empty("A").withLead(0, 72)) // C5
+            .withPattern(0, Pattern.empty("A").withLead(0, 0, 72)) // C5
         val engine = silentDrumEngine()
         engine.config = config(song, PlaybackPlan.single(song, 0))
         engine.start()
@@ -425,5 +425,31 @@ class PlaybackEngineTest {
         val buffer = FloatArray(sampleRate / 4)
         assertFalse(engine.render(buffer)) // 再生はしていない
         assertTrue(rms(buffer, 0, buffer.size) > 0.01)
+    }
+
+    @Test
+    fun `the melody changes on each repetition of the same pattern`() {
+        // 同じドラムパターンを 2 小節鳴らし、1 小節目と 2 小節目で違う音が出ることを確かめる。
+        val pattern = Pattern.empty("A")
+            .withLeadBarCount(2)
+            .withLead(0, 0, 72) // C5
+            .withLead(1, 0, 79) // G5
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, pattern)
+            .copy(arrangement = listOf(ArrangementStep(0, 2)))
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.arrangement(song), loop = false)
+        engine.start()
+
+        val bar = (framesPerStep() * STEPS_PER_BAR).toInt()
+        val buffer = FloatArray(bar * 2)
+        engine.render(buffer)
+
+        val firstC5 = magnitudeAt(buffer, ToneSynth.frequency(72), 0, bar / 2)
+        val firstG5 = magnitudeAt(buffer, ToneSynth.frequency(79), 0, bar / 2)
+        val secondC5 = magnitudeAt(buffer, ToneSynth.frequency(72), bar, bar + bar / 2)
+        val secondG5 = magnitudeAt(buffer, ToneSynth.frequency(79), bar, bar + bar / 2)
+        assertTrue("1 小節目 C5=$firstC5 G5=$firstG5", firstC5 > firstG5 * 5)
+        assertTrue("2 小節目 G5=$secondG5 C5=$secondC5", secondG5 > secondC5 * 5)
     }
 }

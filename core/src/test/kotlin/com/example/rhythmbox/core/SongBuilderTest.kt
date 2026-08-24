@@ -76,14 +76,54 @@ class SongBuilderTest {
     }
 
     @Test
-    fun `melodies and other patterns are left alone`() {
+    fun `each bar of a block gets its own melody`() {
+        // ドラムは 4 小節同じでも、旋律は小節ごとに変える必要がある。
+        repeat(10) { seed ->
+            val song = SongBuilder.build(base(), Genre.JPOP, key, Random(seed))
+            listOf(SongBuilder.FIRST_PATTERN, SongBuilder.SECOND_PATTERN).forEach { index ->
+                val pattern = song.pattern(index)
+                assertEquals(SongBuilder.BLOCK, pattern.leadBarCount)
+                assertTrue("旋律が入っていない", pattern.leadNoteCount() > 0)
+                // 4 小節が全部同じだと、繰り返しても意味がない。
+                assertTrue("4 小節とも同じ旋律", pattern.leadBars.distinct().size > 1)
+            }
+        }
+    }
+
+    @Test
+    fun `each melody lands on the chord of its own bar`() {
+        repeat(10) { seed ->
+            val song = SongBuilder.build(base(), Genre.JPOP, key, Random(seed))
+            val block = song.arrangement.first()
+            val pattern = song.pattern(block.patternIndex)
+            block.chords.forEachIndexed { bar, chord ->
+                val tones = chord.voicing().map { it.mod(12) }.toSet()
+                for (step in 0 until STEPS_PER_BAR step 4) {
+                    val midi = pattern.leadAt(bar, step)
+                    if (midi != Pattern.REST) {
+                        assertTrue(
+                            "${bar + 1} 小節目 ${chord.name} に ${midiName(midi)}",
+                            midi.mod(12) in tones,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `melodies can be left alone, and other patterns always are`() {
         val written = base()
-            .withPattern(0, base().pattern(0).withLead(0, 72).withLead(4, 74))
+            .withPattern(0, base().pattern(0).withLead(0, 0, 72).withLead(0, 4, 74))
             .withPattern(5, Pattern.of("F", "x...x...x...x..."))
-        val song = SongBuilder.build(written, Genre.DANCE, key, Random(1))
-        assertEquals(72, song.pattern(0).leadAt(0))
-        assertEquals(74, song.pattern(0).leadAt(4))
+        val song = SongBuilder.build(written, Genre.DANCE, key, Random(1), withMelody = false)
+        assertEquals(72, song.pattern(0).leadAt(0, 0))
+        assertEquals(74, song.pattern(0).leadAt(0, 4))
         assertEquals(written.pattern(5), song.pattern(5))
+
+        // 旋律も作る場合でも、使っていないパターンには触らない。
+        val withMelody = SongBuilder.build(written, Genre.DANCE, key, Random(1))
+        assertEquals(written.pattern(5), withMelody.pattern(5))
     }
 
     @Test

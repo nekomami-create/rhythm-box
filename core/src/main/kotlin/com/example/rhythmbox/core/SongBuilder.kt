@@ -5,9 +5,8 @@ import kotlin.random.Random
 /**
  * ジャンルを 1 つ選んで、8 小節ぶんの曲をまるごと組み立てる。
  *
- * 旋律（リード）には触れない。旋律はパターンごとに 1 つしか持てないのに対し、
- * コードは小節ごとに変わるため、4 小節ぶん通して合う旋律を自動では作れないため。
- * ドラム・コード・ベースは小節のコードから音程が決まるので、そのまま最後まで馴染む。
+ * ドラム・コード・ベースは 4 小節同じものを繰り返すが、旋律だけは小節ごとに作る。
+ * 下のコードが変わるのに旋律が同じままだと、和音から外れるうえに単調になるため。
  */
 object SongBuilder {
 
@@ -28,6 +27,8 @@ object SongBuilder {
         genre: Genre,
         key: MusicKey,
         random: Random = Random.Default,
+        /** 旋律も作るか。 */
+        withMelody: Boolean = true,
     ): Song {
         val progression = genre.pickProgression(random)
         val chords = progression.fill(key, BARS)
@@ -37,11 +38,26 @@ object SongBuilder {
 
         // 前半と後半で別のパターンを作る。同じスタイルでも打点が変わるので、
         // 通して聴いたときに展開が出る。
+        var previousLead: List<Int>? = null
         listOf(FIRST_PATTERN, SECOND_PATTERN).forEachIndexed { index, patternIndex ->
+            val blockChords = chords.subList(index * BLOCK, index * BLOCK + BLOCK)
             val generated = PatternGenerator.generate(style, random, song.pattern(patternIndex).name)
-            song = song.withPattern(patternIndex, song.pattern(patternIndex).copy(rows = generated.rows))
+            var pattern = song.pattern(patternIndex).copy(rows = generated.rows)
+            if (withMelody) {
+                // ブロックのコード 1 つにつき 1 小節ぶんの旋律を作る。
+                val leads = MelodyGenerator.generateBars(
+                    chords = blockChords,
+                    key = key,
+                    random = random,
+                    density = genre.melodyDensity,
+                    previous = previousLead,
+                )
+                pattern = pattern.withLeads(leads)
+                previousLead = leads.lastOrNull()
+            }
+            song = song.withPattern(patternIndex, pattern)
             // パターン単体で鳴らしたときも、そのブロックの頭の響きになるように。
-            song = song.withPatternChord(patternIndex, chords[index * BLOCK])
+            song = song.withPatternChord(patternIndex, blockChords.first())
         }
 
         return song.copy(

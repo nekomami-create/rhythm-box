@@ -22,7 +22,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ClearAll
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
@@ -40,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.STEPS_PER_BAR
@@ -55,7 +59,7 @@ private fun isWhiteKey(midi: Int): Boolean = midi.mod(12) in setOf(0, 2, 4, 5, 7
 @Composable
 fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     val pattern = state.pattern
-    val playingStep = state.gridStep
+    val playingStep = state.leadGridStep
     val leadTrack = state.song.track(Instrument.LEAD.trackIndex)
     val horizontalScroll = rememberScrollState()
 
@@ -66,6 +70,9 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         LeadHeader(
             state = state,
             muted = leadTrack.muted,
+            barLabel = "${state.selectedLeadBar + 1} 小節目 ・ コード " +
+                "${viewModel.chordForLeadBar(state.selectedLeadBar).name} ・ " +
+                "${pattern.leadNoteCount()} 音",
             onPlayToggle = { viewModel.toggle(PlayMode.PATTERN) },
             onToggleMute = { viewModel.toggleMute(Instrument.LEAD.trackIndex) },
             onGenerate = viewModel::generateMelody,
@@ -79,11 +86,23 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        // 同じパターンを繰り返すとき、旋律だけは小節ごとに変えられる。
+        LeadBarSelector(
+            count = pattern.leadBarCount,
+            selected = state.selectedLeadBar,
+            playing = state.playingLeadBar.takeIf { state.playingPattern == state.selectedPattern } ?: -1,
+            chordAt = viewModel::chordForLeadBar,
+            onSelect = viewModel::selectLeadBar,
+            onCountChange = viewModel::setLeadBarCount,
+            onClearBar = viewModel::clearLeadBar,
+        )
+
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             for (midi in HIGHEST_MIDI downTo LOWEST_MIDI) {
                 PianoRollRow(
                     midi = midi,
                     pattern = pattern,
+                    leadBar = state.selectedLeadBar,
                     playingStep = playingStep,
                     scrollState = horizontalScroll,
                     onToggle = { step -> viewModel.toggleLead(step, midi) },
@@ -98,6 +117,7 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 private fun LeadHeader(
     state: RhythmUiState,
     muted: Boolean,
+    barLabel: String,
     onPlayToggle: () -> Unit,
     onToggleMute: () -> Unit,
     onGenerate: () -> Unit,
@@ -142,7 +162,7 @@ private fun LeadHeader(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "コード ${state.patternChord.name} ・ ${state.pattern.lead.count { it != Pattern.REST }} 音",
+                        text = barLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -188,10 +208,85 @@ private fun LeadHeader(
     }
 }
 
+/**
+ * 何回目の小節を編集するかを選ぶ行。
+ * ドラムは同じでも、旋律は小節ごとに変えないと下のコードから外れてしまう。
+ */
+@Composable
+private fun LeadBarSelector(
+    count: Int,
+    selected: Int,
+    playing: Int,
+    chordAt: (Int) -> Chord,
+    onSelect: (Int) -> Unit,
+    onCountChange: (Int) -> Unit,
+    onClearBar: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(count) { bar ->
+            val isSelected = bar == selected
+            val isPlaying = bar == playing
+            Surface(
+                color = when {
+                    isPlaying -> MaterialTheme.colorScheme.tertiary
+                    isSelected -> MaterialTheme.colorScheme.secondary
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                contentColor = if (isSelected || isPlaying) {
+                    MaterialTheme.colorScheme.onSecondary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(42.dp).clickable { onSelect(bar) },
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        text = "${bar + 1}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(text = chordAt(bar).name, fontSize = 10.sp)
+                }
+            }
+        }
+        IconButton(
+            onClick = { onCountChange(count + 1) },
+            enabled = count < Pattern.MAX_LEAD_BARS,
+            modifier = Modifier.size(34.dp),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "小節を増やす", modifier = Modifier.size(18.dp))
+        }
+        IconButton(
+            onClick = { onCountChange(count - 1) },
+            enabled = count > 1,
+            modifier = Modifier.size(34.dp),
+        ) {
+            Icon(Icons.Filled.Remove, contentDescription = "小節を減らす", modifier = Modifier.size(18.dp))
+        }
+        IconButton(onClick = onClearBar, modifier = Modifier.size(34.dp)) {
+            Icon(
+                Icons.Filled.Delete,
+                contentDescription = "この小節の音を消す",
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun PianoRollRow(
     midi: Int,
     pattern: Pattern,
+    leadBar: Int,
     playingStep: Int,
     scrollState: ScrollState,
     onToggle: (Int) -> Unit,
@@ -224,7 +319,7 @@ private fun PianoRollRow(
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             repeat(STEPS_PER_BAR) { step ->
-                val on = pattern.leadAt(step) == midi
+                val on = pattern.leadAt(leadBar, step) == midi
                 val playing = step == playingStep
                 val color = when {
                     on && playing -> scheme.tertiary

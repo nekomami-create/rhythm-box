@@ -175,6 +175,7 @@ class PlaybackEngine(
         val step = (absoluteStep % STEPS_PER_BAR).toInt()
         val pattern = plan.patternAt(bar)
         val chord = plan.chordAt(bar)
+        val leadBar = plan.leadBarAt(bar)
 
         for (voice in 0 until DRUM_COUNT) {
             if (pattern.isOn(voice, step)) triggerDrum(voice)
@@ -192,12 +193,12 @@ class PlaybackEngine(
                 gateFrames(pattern.nextHit(ROW_BASS, step) - step, Instrument.BASS, cfg.bpm),
             )
         }
-        val leadMidi = pattern.leadAt(step)
+        val leadMidi = pattern.leadAt(leadBar, step)
         if (leadMidi != Pattern.REST) {
             triggerNote(
                 Instrument.LEAD,
                 leadMidi,
-                gateFrames(pattern.nextLead(step) - step, Instrument.LEAD, cfg.bpm),
+                gateFrames(pattern.nextLead(leadBar, step) - step, Instrument.LEAD, cfg.bpm),
             )
         }
 

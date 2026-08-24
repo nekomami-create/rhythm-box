@@ -28,12 +28,14 @@ object SongCodec {
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
                 patterns = List(Song.PATTERN_COUNT) { index ->
                     val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
-                    pattern.normalized().copy(
-                        lead = List(STEPS_PER_BAR) { step ->
-                            val midi = pattern.leadAt(step)
-                            if (midi in MIN_MIDI..MAX_MIDI) midi else Pattern.REST
-                        },
-                    )
+                    pattern.normalized().let { fixed ->
+                        // 音域の外の音は休符にしておく（壊れたファイル対策）。
+                        fixed.withLeads(
+                            fixed.leadBars.map { notes ->
+                                notes.map { if (it in MIN_MIDI..MAX_MIDI) it else Pattern.REST }
+                            },
+                        )
+                    }
                 },
                 patternChords = List(Song.PATTERN_COUNT) { index ->
                     sanitizeChord(song.patternChords.getOrNull(index))

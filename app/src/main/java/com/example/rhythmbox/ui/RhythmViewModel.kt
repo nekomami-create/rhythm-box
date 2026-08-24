@@ -14,6 +14,7 @@ import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.EngineConfig
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
+import com.example.rhythmbox.core.MelodyDensity
 import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.OfflineRenderer
@@ -74,6 +75,10 @@ data class RhythmUiState(
     val playingBar: Int = -1,
     /** いま鳴っているパターン（止まっていれば -1）。チェーン再生の表示に使う。 */
     val playingPattern: Int = -1,
+    /** いま鳴っている旋律の小節（繰り返し何回目か）。止まっていれば -1。 */
+    val playingLeadBar: Int = -1,
+    /** ピアノロールで編集している繰り返し。 */
+    val selectedLeadBar: Int = 0,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
     /** 書き出し中の進捗（0.0〜1.0）。書き出していなければ null。 */
@@ -101,6 +106,14 @@ data class RhythmUiState(
     val gridStep: Int
         get() = if (isPlaying && (mode == PlayMode.PATTERN || playingPattern == selectedPattern)) {
             playingStep
+        } else {
+            -1
+        }
+
+    /** ピアノロールで光らせるステップ。今その小節が鳴っているときだけ光る。 */
+    val leadGridStep: Int
+        get() = if (playingPattern == selectedPattern && playingLeadBar == selectedLeadBar) {
+            gridStep
         } else {
             -1
         }
@@ -146,11 +159,14 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             repository.library.collect { library ->
                 val song = library.current() ?: return@collect
                 _uiState.update {
+                    val pattern = it.selectedPattern.coerceIn(song.patterns.indices)
                     it.copy(
                         ready = true,
                         song = song,
                         library = library.songs,
-                        selectedPattern = it.selectedPattern.coerceIn(song.patterns.indices),
+                        selectedPattern = pattern,
+                        selectedLeadBar = it.selectedLeadBar
+                            .coerceIn(0, song.pattern(pattern).leadBarCount - 1),
                     )
                 }
                 syncEngine()
@@ -188,7 +204,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         positionJob?.cancel()
         positionJob = null
         _uiState.update {
-            it.copy(isPlaying = false, playingStep = -1, playingBar = -1, playingPattern = -1)
+            it.copy(
+                isPlaying = false,
+                playingStep = -1,
+                playingBar = -1,
+                playingPattern = -1,
+                playingLeadBar = -1,
+            )
         }
     }
 
@@ -226,7 +248,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         positionJob?.cancel()
         positionJob = null
         _uiState.update {
-            it.copy(isPlaying = false, playingStep = -1, playingBar = -1, playingPattern = -1)
+            it.copy(
+                isPlaying = false,
+                playingStep = -1,
+                playingBar = -1,
+                playingPattern = -1,
+                playingLeadBar = -1,
+            )
         }
     }
 
@@ -235,12 +263,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         positionJob = viewModelScope.launch {
             while (isActive) {
                 val position = audio.currentPosition()
-                val pattern = position?.let { currentPlan?.bars?.getOrNull(it.bar)?.patternIndex }
+                val bar = position?.let { currentPlan?.bars?.getOrNull(it.bar) }
                 _uiState.update {
                     it.copy(
                         playingStep = position?.step ?: -1,
                         playingBar = position?.bar ?: -1,
-                        playingPattern = pattern ?: -1,
+                        playingPattern = bar?.patternIndex ?: -1,
+                        playingLeadBar = bar?.leadBar ?: -1,
                     )
                 }
                 delay(POSITION_POLL_MS)
@@ -273,7 +302,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     fun selectPattern(index: Int) {
         clearUndo()
-        _uiState.update { it.copy(selectedPattern = index.coerceIn(it.song.patterns.indices)) }
+        _uiState.update {
+            it.copy(selectedPattern = index.coerceIn(it.song.patterns.indices), selectedLeadBar = 0)
+        }
         syncEngine()
     }
 
@@ -287,21 +318,86 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         if (turningOn && !state.isPlaying) previewRow(row)
     }
 
+    // --- リード（旋律） -----------------------------------------------------
+
+    /** 編集する繰り返し（何回目の小節か）を選ぶ。 */
+    fun selectLeadBar(bar: Int) {
+        _uiState.update { it.copy(selectedLeadBar = bar.coerceIn(0, it.pattern.leadBarCount - 1)) }
+    }
+
+    /** 旋律を何小節ぶん持つかを変える。 */
+    fun setLeadBarCount(count: Int) {
+        val index = _uiState.value.selectedPattern
+        val target = count.coerceIn(1, Pattern.MAX_LEAD_BARS)
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withLeadBarCount(target))
+        }
+        _uiState.update { it.copy(selectedLeadBar = it.selectedLeadBar.coerceIn(0, target - 1)) }
+    }
+
     /** ピアノロールの 1 マス。同じ音を押し直したら消す。 */
     fun toggleLead(step: Int, midi: Int) {
         val state = _uiState.value
         val index = state.selectedPattern
-        val current = state.song.pattern(index).leadAt(step)
+        val bar = state.selectedLeadBar
+        val current = state.song.pattern(index).leadAt(bar, step)
         val next = if (current == midi) Pattern.REST else midi
         repository.updateCurrentSong { song ->
-            song.withPattern(index, song.pattern(index).withLead(step, next))
+            song.withPattern(index, song.pattern(index).withLead(bar, step, next))
         }
         if (next != Pattern.REST && !state.isPlaying) previewLead(midi)
     }
 
+    /** いま選んでいる繰り返しの音だけ消す。 */
+    fun clearLeadBar() {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val bar = state.selectedLeadBar
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).clearLead(bar))
+        }
+    }
+
+    /** 旋律を全部消して 1 小節ぶんに戻す。 */
     fun clearLead() {
         val index = _uiState.value.selectedPattern
-        repository.updateCurrentSong { song -> song.withPattern(index, song.pattern(index).clearLead()) }
+        repository.updateCurrentSong { song -> song.withPattern(index, song.pattern(index).clearAllLeads()) }
+        _uiState.update { it.copy(selectedLeadBar = 0) }
+    }
+
+    /**
+     * 旋律を自動生成する。持っている小節数ぶんまとめて作り、
+     * それぞれの小節のコードに合わせる（同じ旋律を繰り返すと和音から外れるため）。
+     */
+    fun generateMelody() {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val song = state.song
+        // 曲構成で 4 小節使われているのに旋律が 1 小節ぶんしか無ければ、そのぶんまで広げる。
+        val block = song.arrangement.firstOrNull { it.patternIndex == index }
+        val bars = maxOf(song.pattern(index).leadBarCount, block?.repeat ?: 1)
+            .coerceAtMost(Pattern.MAX_LEAD_BARS)
+        snapshotForUndo()
+        val leads = MelodyGenerator.generateBars(
+            chords = leadChords(song, index, bars),
+            key = detectedKey(),
+            random = Random,
+            density = MelodyDensity.NORMAL,
+            previous = if (index > 0) song.pattern(index - 1).leadBars.lastOrNull() else null,
+        )
+        repository.updateCurrentSong { it.withPattern(index, it.pattern(index).withLeads(leads)) }
+        _uiState.update { it.copy(selectedLeadBar = it.selectedLeadBar.coerceIn(0, bars - 1)) }
+    }
+
+    /** [bar] 回目の小節で鳴るコード。曲構成で使われていれば、そこのコードを見る。 */
+    fun chordForLeadBar(bar: Int): Chord =
+        leadChords(_uiState.value.song, _uiState.value.selectedPattern, bar + 1).last()
+
+    /** パターン [index] を [bars] 小節ぶん鳴らすときの、小節ごとのコード。 */
+    private fun leadChords(song: Song, index: Int, bars: Int): List<Chord> {
+        val fallback = song.patternChord(index)
+        val block = song.arrangement.firstOrNull { it.patternIndex == index }
+        return List(bars) { block?.chordAt(it, fallback) ?: fallback }
     }
 
     fun clearPattern() {
@@ -381,21 +477,6 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** リードの旋律を自動生成する。前のパターンの終わりから滑らかに繋げる。 */
-    fun generateMelody() {
-        val state = _uiState.value
-        val index = state.selectedPattern
-        val song = state.song
-        snapshotForUndo()
-        val lead = MelodyGenerator.generate(
-            chord = song.patternChord(index),
-            key = detectedKey(),
-            random = Random,
-            previous = if (index > 0) song.pattern(index - 1).lead else null,
-        )
-        repository.updateCurrentSong { it.withPattern(index, it.pattern(index).copy(lead = lead)) }
-    }
-
     /** 曲構成のコードを、起承転結の流れで埋める。 */
     fun fillProgression() {
         val song = _uiState.value.song
@@ -470,7 +551,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /**
      * ジャンルを 1 つ選んで、8 小節の曲をまるごと作る（[genre] が null ならジャンルもおまかせ）。
-     * 旋律には触らない（コードは小節ごとに変わるのに、旋律はパターンに 1 つしか持てないため）。
+     * 旋律も小節ごとに作る（同じ旋律を 4 回繰り返すと、下のコードが変わったときに合わなくなるため）。
      */
     fun generateSong(genre: Genre?) {
         val chosen = genre ?: Genre.entries.random(Random)

@@ -103,4 +103,34 @@ class PlaybackPlanTest {
         assertEquals(listOf(0, 1, 0, 1, 0, 1), plan.bars.map { it.patternIndex })
         assertEquals(2, PlaybackPlan.chain(song, listOf(0, 1)).repeated(0).barCount)
     }
+
+    @Test
+    fun `each bar of a block knows which melody to play`() {
+        val plan = PlaybackPlan.arrangement(song)
+        // 1 ブロック目は 2 小節なので、旋律は 1 小節目 / 2 小節目
+        assertEquals(listOf(0, 1, 0, 0, 1, 2), plan.bars.map { it.leadBar })
+        assertEquals(1, plan.leadBarAt(1))
+    }
+
+    @Test
+    fun `previewing a pattern plays all of its melody bars`() {
+        val tuned = song.withPattern(0, song.pattern(0).withLeadBarCount(4))
+        val plan = PlaybackPlan.single(tuned, 0)
+        assertEquals(4, plan.barCount)
+        assertEquals(listOf(0, 1, 2, 3), plan.bars.map { it.leadBar })
+        // 旋律が 1 小節ぶんだけのパターンは、これまでどおり 1 小節ループ
+        assertEquals(1, PlaybackPlan.single(song, 2).barCount)
+    }
+
+    @Test
+    fun `previewing a pattern uses the chords it has in the song`() {
+        // 曲構成で使われているパターンは、その響きのまま試聴できる。
+        val tuned = song.withPattern(0, song.pattern(0).withLeadBarCount(2))
+        val plan = PlaybackPlan.single(tuned, 0)
+        assertEquals(listOf(c, am), plan.bars.map { it.chord })
+
+        // 曲構成に無いパターンは、そのパターンの試聴コードを使う
+        val orphan = song.withPatternChord(6, f).withPattern(6, song.pattern(6).withLeadBarCount(2))
+        assertEquals(listOf(f, f), PlaybackPlan.single(orphan, 6).bars.map { it.chord })
+    }
 }

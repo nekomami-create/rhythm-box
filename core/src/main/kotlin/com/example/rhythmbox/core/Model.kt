@@ -97,14 +97,33 @@ data class Chord(
 /**
  * 1 小節ぶんのパターン。
  * ドラム・コード・ベースの ON/OFF は [rows] の 1 要素（Int）のビットで持つ（bit n = ステップ n）。
- * リードだけは音程が要るので [lead] にステップごとの MIDI ノート番号を持つ（[REST] は休符）。
+ *
+ * リードだけは音程が要るので、ステップごとの MIDI ノート番号を [leads] に持つ（[REST] は休符）。
+ * [leads] は「繰り返し何回目か」ごとに 1 小節ぶんずつ入っている。
+ * ドラムは 4 小節同じでも構わないが、旋律は下のコードが変わるたびに変えないと
+ * 曲として成立しないため、リードだけ小節ごとに持てるようにしてある。
  */
 @Serializable
 data class Pattern(
     val name: String,
     val rows: List<Int> = List(STEP_ROW_COUNT) { 0 },
-    val lead: List<Int> = List(STEPS_PER_BAR) { REST },
+    /** 旧形式（1 小節ぶんだけの旋律）。以前の保存データを読むためだけに残している。 */
+    val lead: List<Int> = emptyList(),
+    /** 繰り返しごとの旋律。1 つ目が 1 回目の小節、2 つ目が 2 回目…。 */
+    val leads: List<List<Int>> = listOf(emptyLead()),
 ) {
+    /** 実際に使う旋律の一覧。旧形式しか無いときはそれを 1 小節ぶんとして扱う。 */
+    val leadBars: List<List<Int>>
+        get() = when {
+            // 新しい形が空のままで旧形式に中身があるなら、そちらを使う（読み込み互換）。
+            lead.isNotEmpty() && leads.all { line -> line.all { it == REST } } -> listOf(lead)
+            leads.isEmpty() -> listOf(emptyLead())
+            else -> leads
+        }
+
+    /** 旋律を何小節ぶん持っているか。 */
+    val leadBarCount: Int get() = leadBars.size
+
     fun isOn(row: Int, step: Int): Boolean = (rowAt(row) shr step) and 1 == 1
 
     fun rowAt(row: Int): Int = rows.getOrElse(row) { 0 } and STEP_MASK
@@ -127,35 +146,68 @@ data class Pattern(
         return STEPS_PER_BAR
     }
 
-    fun leadAt(step: Int): Int = lead.getOrElse(step) { REST }
+    /** [bar] 回目の小節の [step] にある音。範囲外の [bar] は折り返す。 */
+    fun leadAt(bar: Int, step: Int): Int =
+        leadBars[bar.mod(leadBarCount)].getOrElse(step) { REST }
 
-    fun withLead(step: Int, midi: Int): Pattern =
-        copy(lead = normalizedLead().toMutableList().also { it[step] = midi })
+    fun withLead(bar: Int, step: Int, midi: Int): Pattern {
+        val bars = leadBars
+        val index = bar.mod(bars.size)
+        val updated = bars.mapIndexed { line, notes ->
+            if (line == index) List(STEPS_PER_BAR) { if (it == step) midi else notes.getOrElse(it) { REST } }
+            else notes
+        }
+        return withLeads(updated)
+    }
 
-    /** [step] の次にリードが鳴るステップ。無ければ [STEPS_PER_BAR]。 */
-    fun nextLead(step: Int): Int {
+    /** [bar] 回目の小節で、[step] の次にリードが鳴るステップ。無ければ [STEPS_PER_BAR]。 */
+    fun nextLead(bar: Int, step: Int): Int {
         for (next in (step + 1) until STEPS_PER_BAR) {
-            if (leadAt(next) != REST) return next
+            if (leadAt(bar, next) != REST) return next
         }
         return STEPS_PER_BAR
     }
 
-    fun clearLead(): Pattern = copy(lead = List(STEPS_PER_BAR) { REST })
+    /** 旋律を何小節ぶん持つかを変える。増やしたぶんは空。 */
+    fun withLeadBarCount(count: Int): Pattern {
+        val target = count.coerceIn(1, MAX_LEAD_BARS)
+        val bars = leadBars
+        return withLeads(List(target) { bars.getOrElse(it) { emptyLead() } })
+    }
 
-    fun cleared(): Pattern = copy(rows = List(STEP_ROW_COUNT) { 0 }, lead = List(STEPS_PER_BAR) { REST })
-
-    fun isEmpty(): Boolean = rows.all { it and STEP_MASK == 0 } && lead.all { it == REST }
-
-    fun hitCount(): Int =
-        rows.sumOf { Integer.bitCount(it and STEP_MASK) } + lead.count { it != REST }
-
-    /** 古い保存データ（行数が足りないもの）を今の形に揃える。 */
-    fun normalized(): Pattern = copy(
-        rows = List(STEP_ROW_COUNT) { rowAt(it) },
-        lead = normalizedLead(),
+    fun withLeads(bars: List<List<Int>>): Pattern = copy(
+        lead = emptyList(),
+        leads = bars.ifEmpty { listOf(emptyLead()) }
+            .take(MAX_LEAD_BARS)
+            .map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
     )
 
-    private fun normalizedLead(): List<Int> = List(STEPS_PER_BAR) { leadAt(it) }
+    /** [bar] 回目の小節の音だけ消す。 */
+    fun clearLead(bar: Int): Pattern =
+        withLeads(leadBars.mapIndexed { line, notes -> if (line == bar.mod(leadBarCount)) emptyLead() else notes })
+
+    /** 旋律をすべて消して 1 小節ぶんに戻す。 */
+    fun clearAllLeads(): Pattern = withLeads(listOf(emptyLead()))
+
+    fun cleared(): Pattern = copy(
+        rows = List(STEP_ROW_COUNT) { 0 },
+        lead = emptyList(),
+        leads = listOf(emptyLead()),
+    )
+
+    fun isEmpty(): Boolean =
+        rows.all { it and STEP_MASK == 0 } && leadBars.all { line -> line.all { it == REST } }
+
+    fun leadNoteCount(): Int = leadBars.sumOf { line -> line.count { it != REST } }
+
+    fun hitCount(): Int = rows.sumOf { Integer.bitCount(it and STEP_MASK) } + leadNoteCount()
+
+    /** 古い保存データ（行数が足りない・旧形式の旋律）を今の形に揃える。 */
+    fun normalized(): Pattern = copy(
+        rows = List(STEP_ROW_COUNT) { rowAt(it) },
+        lead = emptyList(),
+        leads = leadBars.map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
+    )
 
     private fun withRow(row: Int, value: Int): Pattern =
         copy(rows = List(STEP_ROW_COUNT) { if (it == row) value and STEP_MASK else rowAt(it) })
@@ -166,6 +218,12 @@ data class Pattern(
 
         /** リードの休符。 */
         const val REST = -1
+
+        /** 1 つのパターンが持てる旋律の小節数の上限。 */
+        const val MAX_LEAD_BARS = 8
+
+        /** 音の入っていない 1 小節ぶんの旋律。 */
+        fun emptyLead(): List<Int> = List(STEPS_PER_BAR) { REST }
 
         fun empty(name: String) = Pattern(name)
 

@@ -72,6 +72,28 @@ object MelodyGenerator {
         return lead
     }
 
+    /**
+     * [chords] の並びに沿って、1 小節ずつ旋律を作る。
+     *
+     * 同じ旋律を繰り返すと、下のコードが変わったときに合わなくなる。
+     * 小節ごとにそのコードの構成音へ着地させ、前の小節の最後の音から
+     * 続きを書き始めることで、通して聴いたときに 1 本の線になるようにしている。
+     */
+    fun generateBars(
+        chords: List<Chord>,
+        key: MusicKey,
+        random: Random = Random.Default,
+        density: MelodyDensity = MelodyDensity.NORMAL,
+        previous: List<Int>? = null,
+    ): List<List<Int>> {
+        var last = previous
+        return chords.map { chord ->
+            val bar = generate(chord, key, random, last, density)
+            last = bar
+            bar
+        }
+    }
+
     /** リズムの型を 1 つ選び、拍の頭以外を少しだけ抜いて変化を付ける。 */
     private fun pickPositions(density: MelodyDensity, random: Random): List<Int> {
         val rhythm = RHYTHMS.getValue(density).random(random)

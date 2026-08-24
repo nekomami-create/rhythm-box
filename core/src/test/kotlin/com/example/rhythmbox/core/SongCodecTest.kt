@@ -11,7 +11,7 @@ class SongCodecTest {
     private val library = SongLibrary(
         songs = listOf(
             Song.newSong("id-1", "はじめての曲", now = 1_000L)
-                .withPattern(2, Pattern.of("C", "x.x.x.x.x.x.x.x.").withLead(4, 67))
+                .withPattern(2, Pattern.of("C", "x.x.x.x.x.x.x.x.").withLead(0, 4, 67))
                 .withPatternChord(2, Chord(9, ChordQuality.MINOR_SEVENTH)),
             Song.newSong("id-2", "2 曲目", now = 2_000L),
         ),
@@ -28,7 +28,7 @@ class SongCodecTest {
     fun `chords and lead notes survive the round trip`() {
         val song = SongCodec.decode(SongCodec.encode(library))!!.songs.first()
         assertEquals(Chord(9, ChordQuality.MINOR_SEVENTH), song.patternChord(2))
-        assertEquals(67, song.pattern(2).leadAt(4))
+        assertEquals(67, song.pattern(2).leadAt(0, 4))
         assertEquals(Chord(0, ChordQuality.MAJOR), song.arrangement.first().chords.first())
     }
 
@@ -92,7 +92,7 @@ class SongCodecTest {
         assertEquals(100, song.bpm)
         assertTrue(song.pattern(0).isOn(0, 0))
         assertEquals(STEP_ROW_COUNT, song.pattern(0).rows.size)
-        assertEquals(STEPS_PER_BAR, song.pattern(0).lead.size)
+        assertEquals(STEPS_PER_BAR, song.pattern(0).leadBars.first().size)
         assertEquals(TRACK_COUNT, song.tracks.size)
         assertEquals(0.5f, song.track(0).volume, 1e-6f)
         assertEquals(Song.PATTERN_COUNT, song.patternChords.size)

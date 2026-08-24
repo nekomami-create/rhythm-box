@@ -65,7 +65,7 @@ class PatternGeneratorTest {
     @Test
     fun `the melody is left alone`() {
         val pattern = PatternGenerator.generate(RhythmStyle.EIGHT_BEAT, Random(1))
-        assertTrue(pattern.lead.all { it == Pattern.REST })
+        assertTrue(pattern.leadBars.all { line -> line.all { it == Pattern.REST } })
     }
 
     @Test
