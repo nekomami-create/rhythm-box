@@ -550,14 +550,14 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * ジャンルを 1 つ選んで、8 小節の曲をまるごと作る（[genre] が null ならジャンルもおまかせ）。
+     * ジャンルを 1 つ選んで、[bars] 小節の曲をまるごと作る（[genre] が null ならジャンルもおまかせ）。
      * 旋律も小節ごとに作る（同じ旋律を 4 回繰り返すと、下のコードが変わったときに合わなくなるため）。
      */
-    fun generateSong(genre: Genre?) {
+    fun generateSong(genre: Genre?, bars: Int = DEFAULT_SONG_BARS) {
         val chosen = genre ?: Genre.entries.random(Random)
         val key = detectedKey()
         snapshotForUndo()
-        repository.updateCurrentSong { SongBuilder.build(it, chosen, key, Random) }
+        repository.updateCurrentSong { SongBuilder.build(it, chosen, key, bars, Random) }
         // 作ったあとは前半のパターンを開いておく（やり直しの控えは残す）。
         _uiState.update { it.copy(selectedPattern = SongBuilder.FIRST_PATTERN) }
         syncEngine()
@@ -812,6 +812,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     companion object {
         private const val POSITION_POLL_MS = 24L
+
+        /** オート作曲で最初に選ばれている小節数。 */
+        const val DEFAULT_SONG_BARS = 8
 
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { RhythmViewModel(container) }

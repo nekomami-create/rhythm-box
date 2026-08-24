@@ -23,10 +23,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -623,11 +627,16 @@ fun GenreDialog(
     showOptions: Boolean,
     /** 「おまかせ」（ジャンルもランダム）を選べるようにするか。 */
     allowRandom: Boolean,
-    onApply: (Genre?, GenreOptions) -> Unit,
+    /** 小節数を選ばせるなら、その選択肢（空なら出さない）。 */
+    barChoices: List<Int> = emptyList(),
+    defaultBars: Int = 8,
+    onApply: (Genre?, GenreOptions, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var genre by remember { mutableStateOf<Genre?>(if (allowRandom) null else Genre.JPOP) }
     var options by remember { mutableStateOf(GenreOptions()) }
+    var bars by remember { mutableIntStateOf(defaultBars) }
+    var barMenuOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -686,6 +695,40 @@ fun GenreDialog(
                     }
                 }
 
+                if (barChoices.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("長さ", style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.width(10.dp))
+                        Box {
+                            OutlinedButton(onClick = { barMenuOpen = true }) {
+                                Text("$bars 小節")
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Filled.ArrowDropDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = barMenuOpen,
+                                onDismissRequest = { barMenuOpen = false },
+                                modifier = Modifier.heightIn(max = 320.dp),
+                            ) {
+                                barChoices.forEach { choice ->
+                                    DropdownMenuItem(
+                                        text = { Text("$choice 小節") },
+                                        onClick = {
+                                            bars = choice
+                                            barMenuOpen = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (showOptions) {
                     Spacer(Modifier.height(2.dp))
                     Text("当てはめるもの", style = MaterialTheme.typography.labelMedium)
@@ -709,7 +752,7 @@ fun GenreDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onApply(genre, options) },
+                onClick = { onApply(genre, options, bars) },
                 enabled = !showOptions ||
                     options.tempo || options.chords || options.rhythm || options.melody,
             ) {

@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.rhythmbox.core.SongBuilder
 
 private enum class Screen(val label: String) {
     SEQUENCER("パターン"),
@@ -98,7 +99,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             onClick = { menuOpen = false; dialog = SongDialog.Library },
                         )
                         DropdownMenuItem(
-                            text = { Text("8 小節つくる") },
+                            text = { Text("オート作曲") },
                             onClick = { menuOpen = false; songBuilderOpen = true },
                         )
                         DropdownMenuItem(
@@ -144,14 +145,16 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
 
     if (songBuilderOpen) {
         GenreDialog(
-            title = "8 小節つくる",
+            title = "オート作曲",
             confirmLabel = "作る",
-            note = "テンポ・コード進行・リズムを決めて、A を 4 小節 + B を 4 小節の曲を作ります。" +
-                "旋律はそのままなので、あとからリードタブで足してください。",
+            note = "テンポ・コード進行・リズム・旋律を決めて、4 小節ずつのまとまりで曲を作ります。" +
+                "ドラムは 4 小節ごとに変わり、旋律は小節ごとのコードに合わせて変わります。",
             showOptions = false,
             allowRandom = true,
-            onApply = { genre, _ ->
-                viewModel.generateSong(genre)
+            barChoices = SongBuilder.BAR_CHOICES,
+            defaultBars = RhythmViewModel.DEFAULT_SONG_BARS,
+            onApply = { genre, _, bars ->
+                viewModel.generateSong(genre, bars)
                 songBuilderOpen = false
             },
             onDismiss = { songBuilderOpen = false },
@@ -164,7 +167,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
             note = "コード進行は定番の型をそのまま並べます。曲構成がまだ無いときは作ります。",
             showOptions = true,
             allowRandom = false,
-            onApply = { genre, options ->
+            onApply = { genre, options, _ ->
                 if (genre != null) viewModel.applyGenre(genre, options)
                 genreOpen = false
             },

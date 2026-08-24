@@ -3,18 +3,26 @@ package com.example.rhythmbox.core
 import kotlin.random.Random
 
 /**
- * ジャンルを 1 つ選んで、8 小節ぶんの曲をまるごと組み立てる。
+ * ジャンルを 1 つ選んで、曲をまるごと組み立てる（オート作曲）。
  *
+ * 4 小節を 1 ブロックとして、ブロックごとにパターンを割り当てる。
  * ドラム・コード・ベースは 4 小節同じものを繰り返すが、旋律だけは小節ごとに作る。
  * 下のコードが変わるのに旋律が同じままだと、和音から外れるうえに単調になるため。
  */
 object SongBuilder {
 
-    /** 作る小節数（前半 4 小節 + 後半 4 小節）。 */
-    const val BARS = 8
-
     /** 1 ブロックの小節数。 */
     const val BLOCK = 4
+
+    /** 作れる小節数の下限と上限。 */
+    const val MIN_BARS = 4
+    const val MAX_BARS = 64
+
+    /**
+     * 使うパターンの数の上限。
+     * A〜D までにとどめて、E 以降は手で書く用に空けておく。
+     */
+    const val MAX_PATTERNS = 4
 
     /** 前半に使うパターン。 */
     const val FIRST_PATTERN = 0
@@ -22,25 +30,45 @@ object SongBuilder {
     /** 後半に使うパターン。 */
     const val SECOND_PATTERN = 1
 
+    /** 選べる小節数（4, 8, 12 … 64）。 */
+    val BAR_CHOICES: List<Int> = (MIN_BARS..MAX_BARS step BLOCK).toList()
+
+    /** [bars] 小節を 4 小節ずつに割り、ブロックごとに使うパターンの番号を返す。 */
+    fun patternLayout(bars: Int): List<Int> {
+        val blocks = normalizeBars(bars) / BLOCK
+        return List(blocks) { it % MAX_PATTERNS }
+    }
+
+    /** 4 小節単位に丸めて、扱える範囲に収める。 */
+    fun normalizeBars(bars: Int): Int =
+        (bars / BLOCK * BLOCK).coerceIn(MIN_BARS, MAX_BARS)
+
     fun build(
         base: Song,
         genre: Genre,
         key: MusicKey,
+        bars: Int = 8,
         random: Random = Random.Default,
         /** 旋律も作るか。 */
         withMelody: Boolean = true,
     ): Song {
+        val total = normalizeBars(bars)
+        val layout = patternLayout(total)
         val progression = genre.pickProgression(random)
-        val chords = progression.fill(key, BARS)
+        val chords = progression.fill(key, total)
         val style = genre.pickRhythm(random)
 
         var song = base.copy(bpm = genre.pickBpm(random))
 
-        // 前半と後半で別のパターンを作る。同じスタイルでも打点が変わるので、
-        // 通して聴いたときに展開が出る。
+        // 同じパターンが何ブロックかに出てくる。最初に出てくるブロックの
+        // コードに合わせて作れば、以降のブロックでもコードの並びは同じになる。
+        val firstBlockOf = layout.withIndex()
+            .groupBy({ it.value }, { it.index })
+            .mapValues { it.value.first() }
+
         var previousLead: List<Int>? = null
-        listOf(FIRST_PATTERN, SECOND_PATTERN).forEachIndexed { index, patternIndex ->
-            val blockChords = chords.subList(index * BLOCK, index * BLOCK + BLOCK)
+        firstBlockOf.entries.sortedBy { it.key }.forEach { (patternIndex, blockIndex) ->
+            val blockChords = chords.subList(blockIndex * BLOCK, blockIndex * BLOCK + BLOCK)
             val generated = PatternGenerator.generate(style, random, song.pattern(patternIndex).name)
             var pattern = song.pattern(patternIndex).copy(rows = generated.rows)
             if (withMelody) {
@@ -61,10 +89,13 @@ object SongBuilder {
         }
 
         return song.copy(
-            arrangement = listOf(
-                ArrangementStep(FIRST_PATTERN, BLOCK, chords.take(BLOCK)),
-                ArrangementStep(SECOND_PATTERN, BLOCK, chords.drop(BLOCK).take(BLOCK)),
-            ),
+            arrangement = layout.mapIndexed { blockIndex, patternIndex ->
+                ArrangementStep(
+                    patternIndex = patternIndex,
+                    repeat = BLOCK,
+                    chords = chords.subList(blockIndex * BLOCK, blockIndex * BLOCK + BLOCK),
+                )
+            },
         )
     }
 }
