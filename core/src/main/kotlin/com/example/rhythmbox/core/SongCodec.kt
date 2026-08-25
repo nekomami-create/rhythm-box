@@ -28,6 +28,7 @@ object SongCodec {
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
                 patterns = List(Song.PATTERN_COUNT) { index ->
                     val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
+                    // normalized() が、鳴らないステップに残った強弱も落とす。
                     pattern.normalized().let { fixed ->
                         // 音域の外の音は休符にしておく（壊れたファイル対策）。
                         fixed.withLeads(

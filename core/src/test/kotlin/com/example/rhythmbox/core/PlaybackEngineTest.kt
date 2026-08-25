@@ -438,6 +438,69 @@ class PlaybackEngineTest {
         }
     }
 
+    /** キックを 1 発だけ、指定した強さで鳴らした波形。 */
+    private fun kick(level: Pattern.Level): FloatArray {
+        val pattern = Pattern.of("A", "x...............")
+            .withLevel(0, 0, level)
+        val song = Song("s", "test", bpm = bpm).withPattern(0, pattern)
+        val engine = engine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * 2).roundToInt())
+        engine.render(buffer)
+        return buffer
+    }
+
+    @Test
+    fun `accents are louder and ghost notes quieter`() {
+        val ghost = kick(Pattern.Level.GHOST).maxOf { abs(it) }
+        val normal = kick(Pattern.Level.NORMAL).maxOf { abs(it) }
+        val accent = kick(Pattern.Level.ACCENT).maxOf { abs(it) }
+
+        assertTrue("ghost=$ghost normal=$normal accent=$accent", ghost < normal)
+        assertTrue("ghost=$ghost normal=$normal accent=$accent", normal < accent)
+    }
+
+    @Test
+    fun `a pattern with no accents sounds exactly as before`() {
+        val plain = Pattern.of("A", "x...x...x...x...", "....x.......x...")
+        val song = Song("s", "test", bpm = bpm).withPattern(0, plain)
+
+        fun render(pattern: Pattern): FloatArray {
+            val engine = engine()
+            engine.config = config(song.withPattern(0, pattern), PlaybackPlan.single(song, 0))
+            engine.start()
+            val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+            engine.render(buffer)
+            return buffer
+        }
+
+        // 強弱を付けてから外したものと、最初から付けていないものが一致する。
+        val touched = plain.withLevel(0, 0, Pattern.Level.ACCENT).withLevel(0, 0, Pattern.Level.NORMAL)
+        val before = render(plain)
+        val after = render(touched)
+        for (i in before.indices) assertEquals("frame=$i", before[i], after[i], 0f)
+    }
+
+    @Test
+    fun `the chord row follows the accent too`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        fun peak(level: Pattern.Level): Float {
+            val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows).let {
+                it.withPattern(0, it.pattern(0).withLevel(ROW_CHORD, 0, level))
+            }
+            val engine = silentDrumEngine()
+            engine.config = config(song, PlaybackPlan.single(song, 0))
+            engine.start()
+            val buffer = FloatArray((framesPerStep() * 4).roundToInt())
+            engine.render(buffer)
+            return buffer.maxOf { abs(it) }
+        }
+        assertTrue(peak(Pattern.Level.GHOST) < peak(Pattern.Level.NORMAL))
+        assertTrue(peak(Pattern.Level.NORMAL) < peak(Pattern.Level.ACCENT))
+    }
+
     @Test
     fun `notes stop after their gate instead of droning on`() {
         val rows = Array(STEP_ROW_COUNT) { "................" }

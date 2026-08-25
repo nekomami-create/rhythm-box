@@ -55,6 +55,9 @@ class PlaybackEngine(
     // --- 音声スレッドだけが触る状態 ---
     private val slotVoice = IntArray(maxPolyphony) { -1 }
     private val slotPos = IntArray(maxPolyphony)
+
+    /** ドラム 1 発ごとの強さ（アクセント / 幽霊音）。 */
+    private val slotGain = FloatArray(maxPolyphony) { 1f }
     private val toneVoices = Array(maxTonePolyphony) { ToneVoice() }
     private var absoluteStep = 0L
     private var nextStepFrame = 0.0
@@ -129,7 +132,7 @@ class PlaybackEngine(
             val voice = slotVoice[slot]
             if (voice < 0) continue
             val sample = voiceSamples[voice]
-            val gain = master * trackGain(cfg, voice)
+            val gain = master * trackGain(cfg, voice) * slotGain[slot]
             var pos = slotPos[slot]
             var k = 0
             if (gain > 0f) {
@@ -184,7 +187,7 @@ class PlaybackEngine(
         val leadBar = plan.leadBarAt(bar)
 
         for (voice in 0 until DRUM_COUNT) {
-            if (pattern.isOn(voice, step)) triggerDrum(voice)
+            if (pattern.isOn(voice, step)) triggerDrum(voice, pattern.levelAt(voice, step).gain)
         }
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
@@ -192,6 +195,7 @@ class PlaybackEngine(
                 chord.voicing(),
                 gateFrames(pattern.nextHit(ROW_CHORD, step) - step, timbre, cfg.bpm),
                 timbre,
+                pattern.levelAt(ROW_CHORD, step).gain,
             )
         }
         if (pattern.isOn(ROW_BASS, step)) {
@@ -201,6 +205,7 @@ class PlaybackEngine(
                 chord.bassMidi(),
                 gateFrames(pattern.nextHit(ROW_BASS, step) - step, timbre, cfg.bpm),
                 timbre,
+                pattern.levelAt(ROW_BASS, step).gain,
             )
         }
         val leadMidi = pattern.leadAt(leadBar, step)
@@ -253,7 +258,7 @@ class PlaybackEngine(
         return (limited * framesPerStep(bpm) * GATE_RATIO).toLong()
     }
 
-    private fun triggerDrum(voice: Int) {
+    private fun triggerDrum(voice: Int, velocity: Float = 1f) {
         val group = chokeGroups[voice]
         var slot = -1
         var oldest = -1
@@ -276,16 +281,23 @@ class PlaybackEngine(
         if (target < 0) return
         slotVoice[target] = voice
         slotPos[target] = 0
+        slotGain[target] = velocity
     }
 
-    private fun triggerChord(midis: List<Int>, gate: Long, timbre: ToneSynth.Timbre) {
+    private fun triggerChord(midis: List<Int>, gate: Long, timbre: ToneSynth.Timbre, velocity: Float = 1f) {
         releaseInstrument(Instrument.CHORD)
-        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre)
+        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre, velocity)
     }
 
-    private fun triggerNote(instrument: Instrument, midi: Int, gate: Long, timbre: ToneSynth.Timbre) {
+    private fun triggerNote(
+        instrument: Instrument,
+        midi: Int,
+        gate: Long,
+        timbre: ToneSynth.Timbre,
+        velocity: Float = 1f,
+    ) {
         releaseInstrument(instrument)
-        startTone(instrument, midi, gate, timbre)
+        startTone(instrument, midi, gate, timbre, velocity)
     }
 
     /** 同じ楽器の音を離鍵する（切るのではなく減衰させるので音が途切れて聞こえない）。 */
@@ -295,7 +307,13 @@ class PlaybackEngine(
         }
     }
 
-    private fun startTone(instrument: Instrument, midi: Int, gate: Long, timbre: ToneSynth.Timbre) {
+    private fun startTone(
+        instrument: Instrument,
+        midi: Int,
+        gate: Long,
+        timbre: ToneSynth.Timbre,
+        velocity: Float,
+    ) {
         var target: ToneVoice? = null
         var quietest: ToneVoice? = null
         for (voice in toneVoices) {
@@ -305,13 +323,14 @@ class PlaybackEngine(
             }
             if (quietest == null || voice.level < quietest.level) quietest = voice
         }
-        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre)
+        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre, velocity)
     }
 
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
     private fun rewind() {
         java.util.Arrays.fill(slotVoice, -1)
         java.util.Arrays.fill(slotPos, 0)
+        java.util.Arrays.fill(slotGain, 1f)
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         nextStepFrame = framePosition.toDouble()
@@ -326,6 +345,7 @@ class PlaybackEngine(
     fun resetFrameClock() {
         java.util.Arrays.fill(slotVoice, -1)
         java.util.Arrays.fill(slotPos, 0)
+        java.util.Arrays.fill(slotGain, 1f)
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         framePosition = 0L
@@ -368,6 +388,8 @@ class PlaybackEngine(
             gateFrames: Long,
             sampleRate: Int,
             timbre: ToneSynth.Timbre,
+            /** アクセント / 幽霊音の強さ。[level]（包絡線の今の値）とは別物。 */
+            velocity: Float,
         ) {
             val frequency = ToneSynth.frequency(midi)
             this.instrument = instrument
@@ -376,7 +398,7 @@ class PlaybackEngine(
             gate = gateFrames.coerceAtLeast(1L)
             stage = Stage.ATTACK
             level = 0f
-            gain = timbre.gain
+            gain = timbre.gain * velocity
             sustain = timbre.sustain
             attackStep = (1.0 / (timbre.attack * sampleRate).coerceAtLeast(1.0)).toFloat()
             decayCoefficient = exp(-1.0 / (timbre.decay * sampleRate)).toFloat()

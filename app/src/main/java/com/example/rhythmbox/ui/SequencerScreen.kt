@@ -2,7 +2,9 @@ package com.example.rhythmbox.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -141,6 +143,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             song = state.song,
             playingStep = state.gridStep,
             onToggle = viewModel::toggleStep,
+            onCycleLevel = viewModel::cycleStepLevel,
             onPreview = viewModel::previewRow,
             onToggleMute = viewModel::toggleMute,
         )
@@ -444,11 +447,13 @@ private fun PatternSelector(
 
 /** 8 音色 + コード + ベース x 16 ステップの打ち込みグリッド。 */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun StepGrid(
     pattern: Pattern,
     song: Song,
     playingStep: Int,
     onToggle: (Int, Int) -> Unit,
+    onCycleLevel: (Int, Int) -> Unit,
     onPreview: (Int) -> Unit,
     onToggleMute: (Int) -> Unit,
 ) {
@@ -501,12 +506,14 @@ private fun StepGrid(
                         repeat(STEPS_PER_BAR) { step ->
                             StepCell(
                                 on = pattern.isOn(info.row, step),
+                                level = pattern.levelAt(info.row, step),
                                 playing = step == playingStep,
                                 onBeat = step % 4 == 0,
                                 dimmed = track.muted,
                                 melodic = info.melodic,
                                 width = cellWidth,
                                 onClick = { onToggle(info.row, step) },
+                                onLongClick = { onCycleLevel(info.row, step) },
                             )
                         }
                     }
@@ -574,14 +581,17 @@ private fun TrackLabel(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun StepCell(
     on: Boolean,
+    level: Pattern.Level,
     playing: Boolean,
     onBeat: Boolean,
     dimmed: Boolean,
     melodic: Boolean,
     width: Dp,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val activeColor = if (melodic) scheme.secondary else scheme.primary
@@ -592,15 +602,21 @@ private fun StepCell(
         onBeat -> scheme.surfaceContainerHigh
         else -> scheme.surfaceVariant.copy(alpha = 0.45f)
     }
+    // 強さは色の濃さで見せる。弱い音は薄く、アクセントは上に線を足す。
+    val shaded = when {
+        !on -> color
+        level == Pattern.Level.GHOST -> color.copy(alpha = 0.45f)
+        else -> color
+    }
     Box(
         modifier = Modifier
             .width(width)
             .height(CELL_HEIGHT)
             .background(
-                color = if (dimmed) color.copy(alpha = 0.35f) else color,
+                color = if (dimmed) shaded.copy(alpha = 0.35f) else shaded,
                 shape = RoundedCornerShape(6.dp),
             )
-            .clickable { onClick() },
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         if (playing) {
             Box(
@@ -608,6 +624,15 @@ private fun StepCell(
                     .fillMaxWidth()
                     .height(2.dp)
                     .background(if (on) Color.White.copy(alpha = 0.6f) else scheme.primary),
+            )
+        }
+        if (on && level == Pattern.Level.ACCENT) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(Color.White.copy(alpha = 0.75f)),
             )
         }
     }

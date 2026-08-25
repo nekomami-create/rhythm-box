@@ -323,6 +323,20 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         if (turningOn && !state.isPlaying) previewRow(row)
     }
 
+    /**
+     * ステップの強さを 普通 → 強 → 弱 → 普通 と巡回させる（長押し）。
+     * タップは今までどおり ON/OFF なので、打ち込みの手順は変わらない。
+     */
+    fun cycleStepLevel(row: Int, step: Int) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        if (!state.song.pattern(index).isOn(row, step)) return
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).cycleLevel(row, step))
+        }
+        if (!state.isPlaying) previewRow(row)
+    }
+
     // --- リード（旋律） -----------------------------------------------------
 
     /** 編集する繰り返し（何回目の小節か）を選ぶ。 */

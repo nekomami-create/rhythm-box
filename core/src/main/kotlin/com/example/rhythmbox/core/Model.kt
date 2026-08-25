@@ -111,6 +111,10 @@ data class Pattern(
     val lead: List<Int> = emptyList(),
     /** 繰り返しごとの旋律。1 つ目が 1 回目の小節、2 つ目が 2 回目…。 */
     val leads: List<List<Int>> = listOf(emptyLead()),
+    /** 強く鳴らすステップ（[rows] と同じ形のビット）。空なら強弱なし。 */
+    val accents: List<Int> = emptyList(),
+    /** 弱く鳴らすステップ（[rows] と同じ形のビット）。 */
+    val ghosts: List<Int> = emptyList(),
 ) {
     /** 実際に使う旋律の一覧。旧形式しか無いときはそれを 1 小節ぶんとして扱う。 */
     val leadBars: List<List<Int>>
@@ -136,6 +140,49 @@ data class Pattern(
     }
 
     fun clearRow(row: Int): Pattern = withRow(row, 0)
+
+    /** [step] の強さ。アクセントを付けていなければ [Level.NORMAL]。 */
+    fun levelAt(row: Int, step: Int): Level = when {
+        !isOn(row, step) -> Level.NORMAL
+        (maskAt(accents, row) shr step) and 1 == 1 -> Level.ACCENT
+        (maskAt(ghosts, row) shr step) and 1 == 1 -> Level.GHOST
+        else -> Level.NORMAL
+    }
+
+    /** [step] の強さを 普通 → 強 → 弱 → 普通 と巡回させる。鳴っていないステップは変えない。 */
+    fun cycleLevel(row: Int, step: Int): Pattern {
+        if (!isOn(row, step)) return this
+        return withLevel(row, step, next(levelAt(row, step)))
+    }
+
+    fun withLevel(row: Int, step: Int, level: Level): Pattern {
+        val bit = 1 shl step
+        val accent = maskAt(accents, row).let { if (level == Level.ACCENT) it or bit else it and bit.inv() }
+        val ghost = maskAt(ghosts, row).let { if (level == Level.GHOST) it or bit else it and bit.inv() }
+        return copy(
+            accents = compact(List(STEP_ROW_COUNT) { if (it == row) accent else maskAt(accents, it) }),
+            ghosts = compact(List(STEP_ROW_COUNT) { if (it == row) ghost else maskAt(ghosts, it) }),
+        )
+    }
+
+    /** 行ごとの強さをまとめて置く（生成用）。 */
+    fun withLevels(row: Int, accent: Int, ghost: Int): Pattern = copy(
+        accents = compact(List(STEP_ROW_COUNT) { if (it == row) accent and STEP_MASK else maskAt(accents, it) }),
+        ghosts = compact(List(STEP_ROW_COUNT) { if (it == row) ghost and STEP_MASK else maskAt(ghosts, it) }),
+    )
+
+    /** その行の強さをすべて普通に戻す。 */
+    fun clearLevels(row: Int): Pattern = withLevels(row, 0, 0)
+
+    private fun maskAt(masks: List<Int>, row: Int): Int = masks.getOrElse(row) { 0 } and STEP_MASK
+
+    /**
+     * 強弱がひとつも無ければ空のままにする。
+     * 0 が並んだだけの行を持たせると、強弱を使っていない曲の保存内容が
+     * 意味もなく変わってしまう。
+     */
+    private fun compact(masks: List<Int>): List<Int> =
+        if (masks.all { it and STEP_MASK == 0 }) emptyList() else masks
 
     /** [step] の次にこの行が鳴るステップ。小節内に無ければ [STEPS_PER_BAR]（＝小節末）。 */
     fun nextHit(row: Int, step: Int): Int {
@@ -285,6 +332,8 @@ data class Pattern(
 
     fun cleared(): Pattern = copy(
         rows = List(STEP_ROW_COUNT) { 0 },
+        accents = emptyList(),
+        ghosts = emptyList(),
         lead = emptyList(),
         leads = listOf(emptyLead()),
     )
@@ -299,12 +348,39 @@ data class Pattern(
     /** 古い保存データ（行数が足りない・旧形式の旋律）を今の形に揃える。 */
     fun normalized(): Pattern = copy(
         rows = List(STEP_ROW_COUNT) { rowAt(it) },
+        // 鳴らないステップに強弱だけ残っていても意味がないので落とす。
+        accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
+        ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
         lead = emptyList(),
         leads = leadBars.map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
     )
 
-    private fun withRow(row: Int, value: Int): Pattern =
-        copy(rows = List(STEP_ROW_COUNT) { if (it == row) value and STEP_MASK else rowAt(it) })
+    private fun withRow(row: Int, value: Int): Pattern {
+        val bits = value and STEP_MASK
+        // 消したステップの強弱も落とす。置き直したときに前の強さが残っていると驚く。
+        return copy(
+            rows = List(STEP_ROW_COUNT) { if (it == row) bits else rowAt(it) },
+            accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it).let { m -> if (it == row) m and bits else m } }),
+            ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it).let { m -> if (it == row) m and bits else m } }),
+        )
+    }
+
+    /**
+     * ステップの強さ。
+     *
+     * 実機のリズムマシンにアクセントが付いているのと同じ理由で入れている。
+     * すべて同じ音量だと、打ち込みがどうしても機械的に聞こえる。
+     */
+    enum class Level(val gain: Float) {
+        /** 幽霊音。裏拍の細かい刻みなど、鳴っているのが分かればいい音。 */
+        GHOST(0.5f),
+
+        /** 既定。アクセントを付けていない曲はすべてこれで、今までと同じ音になる。 */
+        NORMAL(1.0f),
+
+        /** アクセント。 */
+        ACCENT(1.35f),
+    }
 
     companion object {
         /** 有効なステップだけを残すマスク。 */
@@ -324,6 +400,13 @@ data class Pattern(
 
         /** 1 つのパターンが持てる旋律の小節数の上限。 */
         const val MAX_LEAD_BARS = 8
+
+        /** 巡回の順番。押すたびに 普通 → 強 → 弱 と変わって元に戻る。 */
+        fun next(level: Level): Level = when (level) {
+            Level.NORMAL -> Level.ACCENT
+            Level.ACCENT -> Level.GHOST
+            Level.GHOST -> Level.NORMAL
+        }
 
         /** 音の入っていない 1 小節ぶんの旋律。 */
         fun emptyLead(): List<Int> = List(STEPS_PER_BAR) { REST }

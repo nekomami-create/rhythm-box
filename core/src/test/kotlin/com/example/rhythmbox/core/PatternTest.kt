@@ -256,4 +256,42 @@ class PatternTest {
         for (step in 0..11) assertEquals("step=$step", 72, stretched.soundingLead(0, step))
         assertEquals(Pattern.REST, stretched.soundingLead(0, 12))
     }
+
+    @Test
+    fun `levels cycle and come back to normal`() {
+        var pattern = Pattern.of("A", "x...............")
+        assertEquals(Pattern.Level.NORMAL, pattern.levelAt(0, 0))
+        pattern = pattern.cycleLevel(0, 0)
+        assertEquals(Pattern.Level.ACCENT, pattern.levelAt(0, 0))
+        pattern = pattern.cycleLevel(0, 0)
+        assertEquals(Pattern.Level.GHOST, pattern.levelAt(0, 0))
+        pattern = pattern.cycleLevel(0, 0)
+        assertEquals(Pattern.Level.NORMAL, pattern.levelAt(0, 0))
+    }
+
+    @Test
+    fun `a step that is not playing has no level to change`() {
+        val pattern = Pattern.of("A", "................")
+        assertEquals(pattern, pattern.cycleLevel(0, 0))
+        assertEquals(Pattern.Level.NORMAL, pattern.levelAt(0, 0))
+    }
+
+    @Test
+    fun `erasing a step drops its accent`() {
+        val accented = Pattern.of("A", "x...............").withLevel(0, 0, Pattern.Level.ACCENT)
+        val erased = accented.toggle(0, 0)
+        val again = erased.toggle(0, 0)
+
+        assertEquals(Pattern.Level.NORMAL, again.levelAt(0, 0))
+        // 強弱を使っていない状態に戻ったら、保存する中身も空に戻る。
+        assertTrue(again.accents.isEmpty())
+    }
+
+    @Test
+    fun `a pattern without accents keeps its saved shape empty`() {
+        val pattern = Pattern.of("A", "x...x...x...x...")
+        assertTrue(pattern.accents.isEmpty())
+        assertTrue(pattern.ghosts.isEmpty())
+        assertTrue(pattern.normalized().accents.isEmpty())
+    }
 }

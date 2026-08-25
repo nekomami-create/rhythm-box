@@ -47,8 +47,43 @@ object PatternGenerator {
             }
             rows[rule.row] = bits and Pattern.STEP_MASK
         }
-        return Pattern(name, rows)
+        return accented(Pattern(name, rows), random)
     }
+
+    /**
+     * 強弱を置く。すべて同じ音量だと打ち込みが機械的に聞こえるので、
+     * 拍の頭を強く、拍の間の細かい刻みを弱くする。
+     *
+     * キックとスネアは「置いた場所そのものが要」なので弱くはせず、
+     * 拍の頭に来たものだけを強くする。刻み物（ハイハットなど）は、
+     * 拍の頭を強く・裏を弱くすると、いちばん人が叩いたように聞こえる。
+     */
+    private fun accented(pattern: Pattern, random: Random): Pattern {
+        var result = pattern
+        for (row in 0 until DRUM_COUNT) {
+            val bits = pattern.rowAt(row)
+            if (bits == 0) continue
+            var accent = 0
+            var ghost = 0
+            val keeper = row == Voice.KICK.ordinal || row == Voice.SNARE.ordinal
+            for (step in 0 until STEPS_PER_BAR) {
+                if ((bits shr step) and 1 == 0) continue
+                val onBeat = step % 4 == 0
+                when {
+                    // 拍の頭は強く。ただし全部強いと平坦なので、たまに普通のまま残す。
+                    onBeat && random.nextDouble() < ACCENT_CHANCE -> accent = accent or (1 shl step)
+                    // 拍の間の刻みは弱く。キックとスネアは弱くしない。
+                    !onBeat && !keeper && random.nextDouble() < GHOST_CHANCE -> ghost = ghost or (1 shl step)
+                }
+            }
+            result = result.withLevels(row, accent, ghost)
+        }
+        return result
+    }
+
+    private const val ACCENT_CHANCE = 0.8
+    private const val GHOST_CHANCE = 0.65
+
 
     /** ハイハットなどの刻み方。 */
     private val QUARTERS = listOf(0, 4, 8, 12)
