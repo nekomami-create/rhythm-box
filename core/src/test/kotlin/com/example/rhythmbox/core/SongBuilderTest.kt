@@ -214,4 +214,23 @@ class SongBuilderTest {
             assertTrue(pattern.leadNoteCount() > 0)
         }
     }
+
+    @Test
+    fun `an auto-composed song comes with accents already in it`() {
+        val song = SongBuilder.build(
+            base = Song.newSong("id", "曲", 0L),
+            genre = Genre.ROCK,
+            key = MusicKey(0, minor = false),
+            bars = 8,
+            random = Random(3),
+        )
+        val accented = song.patterns.any { pattern ->
+            (0 until STEPS_PER_BAR).any { step ->
+                (0 until DRUM_COUNT).any { row ->
+                    pattern.isOn(row, step) && pattern.levelAt(row, step) != Pattern.Level.NORMAL
+                }
+            }
+        }
+        assertTrue("オート作曲の結果に強弱が入っていない", accented)
+    }
 }

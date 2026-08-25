@@ -174,17 +174,29 @@ data class Pattern(
         ghosts = compact(List(STEP_ROW_COUNT) { if (it == row) ghost and STEP_MASK else maskAt(ghosts, it) }),
     )
 
+    /**
+     * [other] のリズム（打ち込みと強弱）を丸ごと受け取る。旋律はこちらのものを残す。
+     *
+     * 自動生成の結果を書き戻すときに使う。copy(rows = ...) と個別に写していると、
+     * 強弱のような項目を足したときに写し忘れて静かに落ちるので、ここに集約する。
+     */
+    fun withRhythmOf(other: Pattern): Pattern = copy(
+        rows = List(STEP_ROW_COUNT) { other.rowAt(it) },
+        accents = compact(List(STEP_ROW_COUNT) { other.maskAt(other.accents, it) }),
+        ghosts = compact(List(STEP_ROW_COUNT) { other.maskAt(other.ghosts, it) }),
+    )
+
     /** その行の強さをすべて普通に戻す。 */
     fun clearLevels(row: Int): Pattern = withLevels(row, 0, 0)
 
-    private fun maskAt(masks: List<Int>, row: Int): Int = masks.getOrElse(row) { 0 } and STEP_MASK
+    internal fun maskAt(masks: List<Int>, row: Int): Int = masks.getOrElse(row) { 0 } and STEP_MASK
 
     /**
      * 強弱がひとつも無ければ空のままにする。
      * 0 が並んだだけの行を持たせると、強弱を使っていない曲の保存内容が
      * 意味もなく変わってしまう。
      */
-    private fun compact(masks: List<Int>): List<Int> =
+    internal fun compact(masks: List<Int>): List<Int> =
         if (masks.all { it and STEP_MASK == 0 }) emptyList() else masks
 
     /** [step] の次にこの行が鳴るステップ。小節内に無ければ [STEPS_PER_BAR]（＝小節末）。 */

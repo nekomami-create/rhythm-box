@@ -600,7 +600,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 } else {
                     PatternGenerator.generate(style, Random, current.name)
                 }
-                acc.withPattern(index, current.copy(rows = generated.rows))
+                acc.withPattern(index, current.withRhythmOf(generated))
             }
         }
     }
@@ -736,7 +736,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                     random = Random,
                     name = next.pattern(index).name,
                 )
-                next = next.withPattern(index, next.pattern(index).copy(rows = generated.rows))
+                next = next.withPattern(index, next.pattern(index).withRhythmOf(generated))
             }
             if (options.melody) {
                 val lead = MelodyGenerator.generate(

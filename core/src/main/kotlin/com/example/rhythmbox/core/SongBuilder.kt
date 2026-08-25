@@ -70,7 +70,7 @@ object SongBuilder {
         firstBlockOf.entries.sortedBy { it.key }.forEach { (patternIndex, blockIndex) ->
             val blockChords = chords.subList(blockIndex * BLOCK, blockIndex * BLOCK + BLOCK)
             val generated = PatternGenerator.generate(style, random, song.pattern(patternIndex).name)
-            var pattern = song.pattern(patternIndex).copy(rows = generated.rows)
+            var pattern = song.pattern(patternIndex).withRhythmOf(generated)
             if (withMelody) {
                 // ブロックのコード 1 つにつき 1 小節ぶんの旋律を作る。
                 val leads = MelodyGenerator.generateBars(

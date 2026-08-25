@@ -294,4 +294,34 @@ class PatternTest {
         assertTrue(pattern.ghosts.isEmpty())
         assertTrue(pattern.normalized().accents.isEmpty())
     }
+
+    @Test
+    fun `taking a rhythm brings the accents along and keeps the melody`() {
+        val lead = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        lead[0] = 72
+        val mine = Pattern.empty("A").withLeads(listOf(lead))
+        val generated = Pattern.of("X", "x...x...x...x...")
+            .withLevel(0, 0, Pattern.Level.ACCENT)
+            .withLevel(0, 4, Pattern.Level.GHOST)
+
+        val merged = mine.withRhythmOf(generated)
+
+        // 打ち込みだけでなく強弱も一緒に来る（ここを落とすと生成しても強弱が出ない）。
+        assertEquals(Pattern.Level.ACCENT, merged.levelAt(0, 0))
+        assertEquals(Pattern.Level.GHOST, merged.levelAt(0, 4))
+        assertEquals(Pattern.Level.NORMAL, merged.levelAt(0, 8))
+        // 旋律はこちらのものが残る。
+        assertEquals(72, merged.leadAt(0, 0))
+        // 名前も変わらない。
+        assertEquals("A", merged.name)
+    }
+
+    @Test
+    fun `taking a plain rhythm clears the accents that were there`() {
+        val mine = Pattern.of("A", "x...............").withLevel(0, 0, Pattern.Level.ACCENT)
+        val merged = mine.withRhythmOf(Pattern.of("X", "x...x..........."))
+
+        assertEquals(Pattern.Level.NORMAL, merged.levelAt(0, 0))
+        assertTrue(merged.accents.isEmpty())
+    }
 }
