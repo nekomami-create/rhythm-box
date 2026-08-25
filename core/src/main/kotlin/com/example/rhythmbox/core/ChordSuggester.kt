@@ -15,6 +15,9 @@ data class MusicKey(val tonic: Int, val minor: Boolean) {
     /** 度数の表記（I, ii, V ...）。 */
     fun degreeLabels(): List<String> = if (minor) MINOR_LABELS else MAJOR_LABELS
 
+    /** この調の音階の音（C=0 の半音番号）。 */
+    fun scalePitches(): Set<Int> = degrees().map { (offset, _) -> (tonic + offset).mod(12) }.toSet()
+
     internal fun degrees(): List<Pair<Int, ChordQuality>> = if (minor) MINOR_DEGREES else MAJOR_DEGREES
 
     /** [chord] がこの調の何度か。音階上に無ければ null。 */

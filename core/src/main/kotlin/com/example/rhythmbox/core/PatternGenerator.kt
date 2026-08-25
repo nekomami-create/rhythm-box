@@ -51,29 +51,37 @@ object PatternGenerator {
     }
 
     /**
-     * 強弱を置く。すべて同じ音量だと打ち込みが機械的に聞こえるので、
-     * 拍の頭を強く、拍の間の細かい刻みを弱くする。
+     * 強弱を置く。すべて同じ音量だと打ち込みが機械的に聞こえる。
      *
-     * キックとスネアは「置いた場所そのものが要」なので弱くはせず、
-     * 拍の頭に来たものだけを強くする。刻み物（ハイハットなど）は、
-     * 拍の頭を強く・裏を弱くすると、いちばん人が叩いたように聞こえる。
+     * 大事なのは「強い音を置く」ことではなく「差を作る」こと。
+     * 拍の頭を一律に強くすると、4 分打ちでは全部が強になって平坦に戻ってしまう。
+     * そこで小節の頭を軸に据え、そこから拍の重みで段を付ける。
+     *
+     * - 小節の頭（1 拍目）… 必ず強い
+     * - 3 拍目 … 半々で強い（4 拍子の第 2 の重心）
+     * - 16 分の裏（奇数ステップ）… 弱く。ここを抜くと刻みが人の手つきになる
+     * - 8 分の裏 … ときどき弱く
+     *
+     * キックとスネアは「置いた場所そのものが要」なので弱くはしない。
      */
     private fun accented(pattern: Pattern, random: Random): Pattern {
         var result = pattern
         for (row in 0 until DRUM_COUNT) {
             val bits = pattern.rowAt(row)
             if (bits == 0) continue
+            val keeper = row == Voice.KICK.ordinal || row == Voice.SNARE.ordinal
             var accent = 0
             var ghost = 0
-            val keeper = row == Voice.KICK.ordinal || row == Voice.SNARE.ordinal
             for (step in 0 until STEPS_PER_BAR) {
                 if ((bits shr step) and 1 == 0) continue
-                val onBeat = step % 4 == 0
                 when {
-                    // 拍の頭は強く。ただし全部強いと平坦なので、たまに普通のまま残す。
-                    onBeat && random.nextDouble() < ACCENT_CHANCE -> accent = accent or (1 shl step)
-                    // 拍の間の刻みは弱く。キックとスネアは弱くしない。
-                    !onBeat && !keeper && random.nextDouble() < GHOST_CHANCE -> ghost = ghost or (1 shl step)
+                    step == 0 -> accent = accent or (1 shl step)
+                    step == 8 && random.nextDouble() < DOWNBEAT_ACCENT_CHANCE ->
+                        accent = accent or (1 shl step)
+                    keeper -> Unit
+                    step % 2 == 1 -> ghost = ghost or (1 shl step)
+                    step % 4 == 2 && random.nextDouble() < OFFBEAT_GHOST_CHANCE ->
+                        ghost = ghost or (1 shl step)
                 }
             }
             result = result.withLevels(row, accent, ghost)
@@ -81,8 +89,11 @@ object PatternGenerator {
         return result
     }
 
-    private const val ACCENT_CHANCE = 0.8
-    private const val GHOST_CHANCE = 0.65
+    /** 3 拍目も強くする確率。毎回だと 1 拍目との差が消える。 */
+    private const val DOWNBEAT_ACCENT_CHANCE = 0.5
+
+    /** 8 分の裏を弱くする確率。 */
+    private const val OFFBEAT_GHOST_CHANCE = 0.4
 
 
     /** ハイハットなどの刻み方。 */

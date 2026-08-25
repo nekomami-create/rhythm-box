@@ -147,8 +147,7 @@ object MelodyGenerator {
     }
 
     /** その調の音階（音名の集合）。 */
-    private fun pitchClasses(key: MusicKey): Set<Int> =
-        key.diatonicChords().map { it.root.mod(12) }.toSet()
+    private fun pitchClasses(key: MusicKey): Set<Int> = key.scalePitches()
 
     /** 出だしの目安（C5）。 */
     private const val START_MIDI = 72

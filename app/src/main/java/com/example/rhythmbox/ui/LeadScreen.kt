@@ -49,6 +49,9 @@ import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.STEPS_PER_BAR
+import com.example.rhythmbox.core.NoteRole
+import com.example.rhythmbox.core.chordDegreeLabel
+import com.example.rhythmbox.core.noteRole
 import com.example.rhythmbox.core.midiName
 
 /** ピアノロールで扱う音域（C4 〜 C6）。 */
@@ -106,12 +109,19 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onClearBar = viewModel::clearLeadBar,
         )
 
+        // いま書いている小節のコード。どの音が構成音かを鍵盤の色で見せる。
+        val barChord = viewModel.chordForLeadBar(state.selectedLeadBar)
+        val key = viewModel.detectedKey()
+        ChordLegend(chord = barChord, keyName = key.name)
+
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             for (midi in HIGHEST_MIDI downTo LOWEST_MIDI) {
                 PianoRollRow(
                     midi = midi,
                     pattern = pattern,
                     leadBar = state.selectedLeadBar,
+                    role = noteRole(midi, barChord, key),
+                    degree = chordDegreeLabel(midi, barChord),
                     playingStep = playingStep,
                     scrollState = horizontalScroll,
                     onToggle = { step -> viewModel.toggleLead(step, midi) },
@@ -232,6 +242,40 @@ private fun LeadHeader(
  * 何回目の小節を編集するかを選ぶ行。
  * ドラムは同じでも、旋律は小節ごとに変えないと下のコードから外れてしまう。
  */
+/**
+ * 色の意味を出す帯。
+ *
+ * 色を付けただけでは「なぜその色なのか」が伝わらないので、
+ * いま何のコードで、どの色が何を意味するのかを添える。
+ */
+@Composable
+private fun ChordLegend(chord: Chord, keyName: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Surface(
+            color = scheme.tertiaryContainer,
+            contentColor = scheme.onTertiaryContainer,
+            shape = RoundedCornerShape(6.dp),
+        ) {
+            Text(
+                text = chord.name,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            text = "の構成音に色。薄い行は $keyName の外の音",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun LeadBarSelector(
     count: Int,
@@ -308,6 +352,8 @@ private fun PianoRollRow(
     midi: Int,
     pattern: Pattern,
     leadBar: Int,
+    role: NoteRole,
+    degree: String?,
     playingStep: Int,
     scrollState: ScrollState,
     onToggle: (Int) -> Unit,
@@ -321,18 +367,41 @@ private fun PianoRollRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 左端の鍵盤。押すとその音だけ試聴できる。
+        // コードの構成音は色を付け、度数（R / 3 / 5 …）を添える。
+        // 調の外の音は薄くして、外れやすい音が目で分かるようにする。
+        val keyColor = when (role) {
+            NoteRole.CHORD_TONE -> scheme.tertiaryContainer
+            NoteRole.SCALE_TONE -> if (white) scheme.surfaceContainerHigh else scheme.surfaceContainerLow
+            NoteRole.OUTSIDE -> scheme.surfaceVariant.copy(alpha = 0.30f)
+        }
         Surface(
-            color = if (white) scheme.surfaceContainerHigh else scheme.surfaceContainerLow,
+            color = keyColor,
             shape = RoundedCornerShape(4.dp),
             modifier = Modifier.width(46.dp).height(ROW_HEIGHT).clickable { onPreview() },
         ) {
-            Box(contentAlignment = Alignment.CenterStart) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 5.dp),
+            ) {
                 Text(
                     text = midiName(midi),
-                    modifier = Modifier.padding(start = 6.dp),
                     fontSize = 10.sp,
-                    color = if (white) scheme.onSurface else scheme.onSurfaceVariant,
+                    fontWeight = if (role == NoteRole.CHORD_TONE) FontWeight.Bold else FontWeight.Normal,
+                    color = when (role) {
+                        NoteRole.CHORD_TONE -> scheme.onTertiaryContainer
+                        NoteRole.SCALE_TONE -> if (white) scheme.onSurface else scheme.onSurfaceVariant
+                        NoteRole.OUTSIDE -> scheme.onSurfaceVariant.copy(alpha = 0.55f)
+                    },
                 )
+                if (degree != null) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = degree,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = scheme.onTertiaryContainer.copy(alpha = 0.75f),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(4.dp))
@@ -351,6 +420,9 @@ private fun PianoRollRow(
                     head -> scheme.secondary
                     held -> scheme.secondary.copy(alpha = 0.45f)
                     playing -> scheme.outline
+                    // 何も置いていないマスも、コードの構成音の行だけ薄く色を敷く。
+                    role == NoteRole.CHORD_TONE -> scheme.tertiary.copy(alpha = if (step % 4 == 0) 0.30f else 0.18f)
+                    role == NoteRole.OUTSIDE -> scheme.surfaceVariant.copy(alpha = 0.12f)
                     step % 4 == 0 -> scheme.surfaceContainerHigh
                     white -> scheme.surfaceVariant.copy(alpha = 0.40f)
                     else -> scheme.surfaceVariant.copy(alpha = 0.22f)

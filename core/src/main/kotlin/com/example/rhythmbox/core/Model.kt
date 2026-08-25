@@ -376,13 +376,13 @@ data class Pattern(
      */
     enum class Level(val gain: Float) {
         /** 幽霊音。裏拍の細かい刻みなど、鳴っているのが分かればいい音。 */
-        GHOST(0.5f),
+        GHOST(0.4f),
 
         /** 既定。アクセントを付けていない曲はすべてこれで、今までと同じ音になる。 */
         NORMAL(1.0f),
 
         /** アクセント。 */
-        ACCENT(1.35f),
+        ACCENT(1.5f),
     }
 
     companion object {
