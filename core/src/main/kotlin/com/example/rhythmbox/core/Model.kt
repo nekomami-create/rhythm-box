@@ -50,6 +50,16 @@ enum class ChordQuality(val suffix: String, val intervals: List<Int>) {
     SUS4("sus4", listOf(0, 5, 7)),
     DIMINISHED("dim", listOf(0, 3, 6)),
     AUGMENTED("aug", listOf(0, 4, 8)),
+
+    // ここから下は後から足したもの。並び順が保存の中身に影響しないよう、末尾に足していく。
+    SUS2("sus2", listOf(0, 2, 7)),
+    SIXTH("6", listOf(0, 4, 7, 9)),
+    MINOR_SIXTH("m6", listOf(0, 3, 7, 9)),
+    ADD_NINTH("add9", listOf(0, 4, 7, 14)),
+    HALF_DIMINISHED("m7-5", listOf(0, 3, 6, 10)),
+    NINTH("9", listOf(0, 4, 7, 10, 14)),
+    MAJOR_NINTH("M9", listOf(0, 4, 7, 11, 14)),
+    MINOR_NINTH("m9", listOf(0, 3, 7, 10, 14)),
 }
 
 /** 和音。[root] は C=0 の半音番号。 */
@@ -57,8 +67,14 @@ enum class ChordQuality(val suffix: String, val intervals: List<Int>) {
 data class Chord(
     val root: Int = 0,
     val quality: ChordQuality = ChordQuality.MAJOR,
+    /**
+     * ルート以外の音をベースに置くとき（分数コード / オンコード）の音。
+     * 指定が無ければルートをそのまま弾く。
+     */
+    val bass: Int? = null,
 ) {
-    val name: String get() = ROOT_NAMES[root.mod(12)] + quality.suffix
+    val name: String get() = ROOT_NAMES[root.mod(12)] + quality.suffix +
+        (bass?.let { "/" + ROOT_NAMES[it.mod(12)] } ?: "")
 
     /**
      * 実際に鳴らす構成音（MIDI ノート番号）。
@@ -71,11 +87,14 @@ data class Chord(
         return quality.intervals.map { base + it }
     }
 
-    /** ベースが弾くルート音（MIDI ノート番号）。 */
-    fun bassMidi(): Int = BASS_BASE_MIDI + root.mod(12)
+    /** ベースが弾く音（MIDI ノート番号）。分数コードならそちらを弾く。 */
+    fun bassMidi(): Int = BASS_BASE_MIDI + (bass ?: root).mod(12)
 
     /** [semitones] 半音だけ動かしたコード。種類は変わらない。 */
-    fun transposed(semitones: Int): Chord = copy(root = (root + semitones).mod(12))
+    fun transposed(semitones: Int): Chord = copy(
+        root = (root + semitones).mod(12),
+        bass = bass?.let { (it + semitones).mod(12) },
+    )
 
     companion object {
         val ROOT_NAMES = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -87,13 +106,19 @@ data class Chord(
         const val BASS_BASE_MIDI = 36
 
         fun of(name: String): Chord? {
-            val rootLength = if (name.length >= 2 && name[1] == '#') 2 else 1
-            val root = ROOT_NAMES.indexOf(name.take(rootLength))
+            // 「C/E」のように / の後ろが付いていたら、そこはベースの音。
+            val slash = name.indexOf('/')
+            val head = if (slash >= 0) name.take(slash) else name
+            val bass = if (slash >= 0) pitchOf(name.drop(slash + 1)) ?: return null else null
+            val rootLength = if (head.length >= 2 && head[1] == '#') 2 else 1
+            val root = ROOT_NAMES.indexOf(head.take(rootLength))
             if (root < 0) return null
-            val suffix = name.drop(rootLength)
+            val suffix = head.drop(rootLength)
             val quality = ChordQuality.entries.firstOrNull { it.suffix == suffix } ?: return null
-            return Chord(root, quality)
+            return Chord(root, quality, bass)
         }
+
+        private fun pitchOf(name: String): Int? = ROOT_NAMES.indexOf(name).takeIf { it >= 0 }
     }
 }
 
@@ -500,6 +525,11 @@ data class Song(
     val chordStyle: ChordStyle = ChordStyle.BLOCK,
     /** リードの音色。 */
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
+    /**
+     * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
+     * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
+     */
+    val key: MusicKey? = null,
     val updatedAt: Long = 0L,
 ) {
     fun pattern(index: Int): Pattern = patterns[index.coerceIn(patterns.indices)]

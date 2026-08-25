@@ -58,6 +58,8 @@ import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
+import com.example.rhythmbox.core.MusicKey
+import com.example.rhythmbox.core.Scale
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Voice
@@ -258,7 +260,8 @@ fun ChordPickerDialog(
 ) {
     var root by remember { mutableStateOf(current.root.mod(12)) }
     var quality by remember { mutableStateOf(current.quality) }
-    val chord = Chord(root, quality)
+    var bass by remember { mutableStateOf(current.bass) }
+    val chord = Chord(root, quality, bass)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -333,6 +336,7 @@ fun ChordPickerDialog(
                                 modifier = Modifier.height(40.dp).clickable {
                                     root = suggestion.chord.root.mod(12)
                                     quality = suggestion.chord.quality
+                                    bass = suggestion.chord.bass
                                     onPreview(suggestion.chord)
                                 },
                             ) {
@@ -368,7 +372,7 @@ fun ChordPickerDialog(
                                 width = 58.dp,
                                 onClick = {
                                     root = value
-                                    onPreview(Chord(value, quality))
+                                    onPreview(Chord(value, quality, bass))
                                 },
                             )
                         }
@@ -385,11 +389,48 @@ fun ChordPickerDialog(
                                 width = 58.dp,
                                 onClick = {
                                     quality = value
-                                    onPreview(Chord(root, value))
+                                    onPreview(Chord(root, value, bass))
                                 },
                             )
                         }
                     }
+                }
+
+                Spacer(Modifier.height(2.dp))
+                // 分数コード（オンコード）。ベースだけ別の音にすると、
+                // 同じ和音でも進み方の感じが変わる。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("ベース音", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = bass?.let { "${chord.name}（分数コード）" } ?: "ルートのまま",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PickerChip(
+                        label = "なし",
+                        selected = bass == null,
+                        width = 58.dp,
+                        onClick = {
+                            bass = null
+                            onPreview(Chord(root, quality, null))
+                        },
+                    )
+                    // ルート以外の構成音は、そのまま置いて自然に響くベース音。
+                    quality.intervals.drop(1).map { (root + it).mod(12) }.distinct().take(3)
+                        .forEach { value ->
+                            PickerChip(
+                                label = Chord.ROOT_NAMES[value],
+                                selected = bass == value,
+                                width = 58.dp,
+                                onClick = {
+                                    bass = value
+                                    onPreview(Chord(root, quality, value))
+                                },
+                            )
+                        }
                 }
             }
         },
@@ -978,5 +1019,109 @@ fun TransposeDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+    )
+}
+
+/**
+ * 調（キー）と音階を決める。
+ *
+ * 既定はコードからの推定。モードやペンタトニックはコードからは当てられないので、
+ * 使いたい人が選ぶ形にしてある。ここを変えると、コードの候補・旋律の生成・
+ * ピアノロールの色分けがまとめて追従する。
+ */
+@Composable
+fun KeyDialog(
+    current: MusicKey?,
+    detected: MusicKey,
+    onPick: (MusicKey?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val shown = current ?: detected
+    var tonic by remember { mutableIntStateOf(shown.tonic.mod(12)) }
+    var scale by remember { mutableStateOf(shown.scale) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("キーと音階") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = if (current == null) {
+                        "いまは自動（コードから推定して ${detected.name}）"
+                    } else {
+                        "いまは指定: ${current.name}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "ここを変えると、コードの候補・旋律の生成・リード画面の色分けがまとめて変わります。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text("主音", style = MaterialTheme.typography.labelMedium)
+                Chord.ROOT_NAMES.chunked(4).forEachIndexed { rowIndex, names ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        names.forEachIndexed { columnIndex, label ->
+                            val value = rowIndex * 4 + columnIndex
+                            PickerChip(
+                                label = label,
+                                selected = value == tonic,
+                                width = 58.dp,
+                                onClick = { tonic = value },
+                            )
+                        }
+                    }
+                }
+
+                Text("音階", style = MaterialTheme.typography.labelMedium)
+                Scale.entries.forEach { option ->
+                    val selected = option == scale
+                    Surface(
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        contentColor = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { scale = option },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = option.label,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            // どの音を使う音階なのかを、その主音での音名で見せる。
+                            Text(
+                                text = option.intervals
+                                    .joinToString(" ") { Chord.ROOT_NAMES[(tonic + it).mod(12)] },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onPick(MusicKey(tonic, scale)) }) { Text("この調にする") }
+        },
+        dismissButton = {
+            TextButton(onClick = { onPick(null) }) { Text("自動に戻す") }
+        },
     )
 }

@@ -607,7 +607,17 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     // --- 自動生成・レコメンド -----------------------------------------------
 
     /** 曲全体のコードから調を推定する。おすすめの基準になる。 */
-    fun detectedKey(): MusicKey = ChordSuggester.detectKey(songChords())
+    /** 曲の調。指定してあればそれを使い、無ければコードから推定する。 */
+    fun detectedKey(): MusicKey =
+        _uiState.value.song.key ?: ChordSuggester.detectKey(songChords())
+
+    /** 調と音階を指定する。null に戻すと、またコードから推定する。 */
+    fun setKey(key: MusicKey?) {
+        repository.updateCurrentSong { it.copy(key = key) }
+    }
+
+    /** 指定が無いときに推定される調（指定ダイアログの初期値に使う）。 */
+    fun autoKey(): MusicKey = ChordSuggester.detectKey(songChords())
 
     /**
      * [previous] のあと・[next] の前に置いて馴染むコード。

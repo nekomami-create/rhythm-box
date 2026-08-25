@@ -39,6 +39,7 @@ object SongCodec {
                 bpm = song.bpm.coerceIn(Song.MIN_BPM, Song.MAX_BPM),
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
                 swing = song.swing.coerceIn(0f, 1f),
+                key = song.key?.let { it.copy(tonic = it.tonic.mod(12)) },
                 patterns = List(Song.PATTERN_COUNT) { index ->
                     val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
                     // normalized() が、鳴らないステップに残った強弱も落とす。
@@ -77,7 +78,11 @@ object SongCodec {
     }
 
     private fun sanitizeChord(chord: Chord?): Chord =
-        if (chord == null) Chord() else chord.copy(root = chord.root.mod(12))
+        if (chord == null) {
+            Chord()
+        } else {
+            chord.copy(root = chord.root.mod(12), bass = chord.bass?.mod(12))
+        }
 
     private const val MIN_MIDI = 24
     private const val MAX_MIDI = 108

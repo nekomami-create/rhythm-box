@@ -49,6 +49,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     var genreOpen by remember { mutableStateOf(false) }
     var songBuilderOpen by remember { mutableStateOf(false) }
     var transposeOpen by remember { mutableStateOf(false) }
+    var keyOpen by remember { mutableStateOf(false) }
     // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
     var exportScope by remember { mutableStateOf(ExportScope.SONG) }
     var exportRepeats by remember { mutableStateOf(2) }
@@ -128,6 +129,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                         DropdownMenuItem(
                             text = { Text("音声を書き出す (M4A)") },
                             onClick = { menuOpen = false; exportingMidi = false; exportSetupOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("キーと音階を選ぶ") },
+                            onClick = { menuOpen = false; keyOpen = true },
                         )
                         DropdownMenuItem(
                             text = { Text("キーを変える") },
@@ -220,6 +225,14 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                 genreOpen = false
             },
             onDismiss = { genreOpen = false },
+        )
+    }
+    if (keyOpen) {
+        KeyDialog(
+            current = state.song.key,
+            detected = viewModel.autoKey(),
+            onPick = { viewModel.setKey(it); keyOpen = false },
+            onDismiss = { keyOpen = false },
         )
     }
     if (transposeOpen) {

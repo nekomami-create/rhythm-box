@@ -1,11 +1,29 @@
 package com.example.rhythmbox.core
 
+import kotlinx.serialization.Serializable
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-/** 調（キー）。[tonic] は C=0 の半音番号。 */
-data class MusicKey(val tonic: Int, val minor: Boolean) {
-    val name: String get() = Chord.ROOT_NAMES[tonic.mod(12)] + if (minor) "m" else ""
+/**
+ * 調（キー）。[tonic] は C=0 の半音番号。
+ *
+ * メジャー / マイナーだけだった頃の呼び出しをそのまま使えるよう、
+ * 真偽値で作る形も残してある。
+ */
+@Serializable
+data class MusicKey(val tonic: Int, val scale: Scale = Scale.MAJOR) {
+
+    constructor(tonic: Int, minor: Boolean) :
+        this(tonic, if (minor) Scale.NATURAL_MINOR else Scale.MAJOR)
+
+    /** 短調寄りか。 */
+    val minor: Boolean get() = scale.minorish
+
+    val name: String get() = Chord.ROOT_NAMES[tonic.mod(12)] + when (scale) {
+        Scale.MAJOR -> ""
+        Scale.NATURAL_MINOR -> "m"
+        else -> " ${scale.label}"
+    }
 
     /** この調の音階上のコード（I, ii, iii, ...）。 */
     fun diatonicChords(): List<Chord> = degrees().map { (offset, quality) ->
@@ -13,12 +31,34 @@ data class MusicKey(val tonic: Int, val minor: Boolean) {
     }
 
     /** 度数の表記（I, ii, V ...）。 */
-    fun degreeLabels(): List<String> = if (minor) MINOR_LABELS else MAJOR_LABELS
+    fun degreeLabels(): List<String> = degrees().mapIndexed { index, (_, quality) ->
+        val numeral = NUMERALS[index]
+        when (quality) {
+            ChordQuality.MAJOR, ChordQuality.AUGMENTED -> numeral
+            else -> numeral.lowercase()
+        } + when (quality) {
+            ChordQuality.DIMINISHED -> "°"
+            ChordQuality.AUGMENTED -> "+"
+            else -> ""
+        }
+    }
 
     /** この調の音階の音（C=0 の半音番号）。 */
-    fun scalePitches(): Set<Int> = degrees().map { (offset, _) -> (tonic + offset).mod(12) }.toSet()
+    fun scalePitches(): Set<Int> = scale.pitches(tonic)
 
-    internal fun degrees(): List<Pair<Int, ChordQuality>> = if (minor) MINOR_DEGREES else MAJOR_DEGREES
+    /**
+     * 音階の音を 1 つおきに 3 つ積んでコードにする。
+     * メジャーなら I ii iii IV V vi vii°、マイナーなら i ii° III iv v VI VII になる。
+     */
+    internal fun degrees(): List<Pair<Int, ChordQuality>> {
+        val steps = scale.chordSource.intervals
+        return steps.indices.map { degree ->
+            val root = steps[degree]
+            val third = (steps[(degree + 2) % steps.size] - root).mod(12)
+            val fifth = (steps[(degree + 4) % steps.size] - root).mod(12)
+            root to qualityOf(third, fifth)
+        }
+    }
 
     /** [chord] がこの調の何度か。音階上に無ければ null。 */
     fun degreeOf(chord: Chord): Int? {
@@ -27,30 +67,17 @@ data class MusicKey(val tonic: Int, val minor: Boolean) {
     }
 
     companion object {
-        // メジャー: I ii iii IV V vi vii°
-        private val MAJOR_DEGREES = listOf(
-            0 to ChordQuality.MAJOR,
-            2 to ChordQuality.MINOR,
-            4 to ChordQuality.MINOR,
-            5 to ChordQuality.MAJOR,
-            7 to ChordQuality.MAJOR,
-            9 to ChordQuality.MINOR,
-            11 to ChordQuality.DIMINISHED,
-        )
+        private val NUMERALS = listOf("I", "II", "III", "IV", "V", "VI", "VII")
 
-        // ナチュラルマイナー: i ii° III iv v VI VII
-        private val MINOR_DEGREES = listOf(
-            0 to ChordQuality.MINOR,
-            2 to ChordQuality.DIMINISHED,
-            3 to ChordQuality.MAJOR,
-            5 to ChordQuality.MINOR,
-            7 to ChordQuality.MINOR,
-            8 to ChordQuality.MAJOR,
-            10 to ChordQuality.MAJOR,
-        )
-
-        private val MAJOR_LABELS = listOf("I", "ii", "iii", "IV", "V", "vi", "vii°")
-        private val MINOR_LABELS = listOf("i", "ii°", "III", "iv", "v", "VI", "VII")
+        /** 3 度と 5 度の開き方から和音の種類を決める。 */
+        private fun qualityOf(third: Int, fifth: Int): ChordQuality = when {
+            third == 3 && fifth == 6 -> ChordQuality.DIMINISHED
+            third == 3 -> ChordQuality.MINOR
+            third == 4 && fifth == 8 -> ChordQuality.AUGMENTED
+            third == 4 -> ChordQuality.MAJOR
+            // 3 度が無い（sus 的な）並びは、扱いやすいメジャーとして出す。
+            else -> ChordQuality.MAJOR
+        }
     }
 }
 

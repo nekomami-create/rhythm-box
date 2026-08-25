@@ -93,4 +93,57 @@ class ChordTest {
         }
         assertEquals(emptyList<Int>(), ChordStyle.UP.notesAt(emptyList(), 0))
     }
+
+    @Test
+    fun `the added chord types sound the notes their name says`() {
+        assertEquals(listOf(0, 2, 7), ChordQuality.SUS2.intervals)
+        assertEquals(listOf(0, 4, 7, 9), ChordQuality.SIXTH.intervals)
+        assertEquals(listOf(0, 3, 6, 10), ChordQuality.HALF_DIMINISHED.intervals)
+        // 9th は 1 オクターブ上の 2 度。詰めると濁るので上に置く。
+        assertTrue(ChordQuality.ADD_NINTH.intervals.last() > 12)
+        assertEquals(5, ChordQuality.MAJOR_NINTH.intervals.size)
+    }
+
+    @Test
+    fun `every chord type starts on its root and has no repeated notes`() {
+        for (quality in ChordQuality.entries) {
+            assertEquals("$quality", 0, quality.intervals.first())
+            assertEquals("$quality", quality.intervals, quality.intervals.sorted())
+            val classes = quality.intervals.map { it.mod(12) }
+            assertEquals("$quality", classes.size, classes.toSet().size)
+        }
+    }
+
+    @Test
+    fun `every chord type has its own name`() {
+        val suffixes = ChordQuality.entries.map { it.suffix }
+        assertEquals(suffixes.size, suffixes.toSet().size)
+    }
+
+    @Test
+    fun `an on-chord keeps the harmony but moves the bass`() {
+        val plain = Chord(0, ChordQuality.MAJOR)
+        val onE = Chord(0, ChordQuality.MAJOR, bass = 4)
+
+        assertEquals("C/E", onE.name)
+        // 上に乗る和音は変わらない。
+        assertEquals(plain.voicing(), onE.voicing())
+        // 弾くベースの音だけが変わる。
+        assertEquals(plain.bassMidi() + 4, onE.bassMidi())
+    }
+
+    @Test
+    fun `an on-chord survives being written down and read back`() {
+        assertEquals(Chord(0, ChordQuality.MAJOR, bass = 4), Chord.of("C/E"))
+        assertEquals(Chord(5, ChordQuality.MAJOR_SEVENTH, bass = 0), Chord.of("FM7/C"))
+        assertEquals(Chord(2, ChordQuality.MINOR), Chord.of("Dm"))
+        assertNull(Chord.of("C/H"))
+    }
+
+    @Test
+    fun `moving the key moves the bass of an on-chord too`() {
+        val moved = Chord(0, ChordQuality.MAJOR, bass = 4).transposed(2)
+        assertEquals(Chord(2, ChordQuality.MAJOR, bass = 6), moved)
+        assertEquals("D/F#", moved.name)
+    }
 }

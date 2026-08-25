@@ -32,6 +32,8 @@ object Transposer {
                     },
                 )
             },
+            // 調を指定してあるなら、それも一緒に動かす。
+            key = song.key?.let { it.copy(tonic = (it.tonic + shift).mod(12)) },
             patternChords = song.patternChords.map { it.transposed(shift) },
             arrangement = song.arrangement.map { step ->
                 step.copy(chords = step.chords.map { it.transposed(shift) })
