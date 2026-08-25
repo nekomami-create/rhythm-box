@@ -250,8 +250,9 @@ private fun PadButton(
         modifier = modifier.fillMaxSize().pointerInput(Unit) {
             detectTapGestures(
                 onPress = {
-                    hits++
+                    // 先に音を出す。光らせるのは画面の話なので後回しでいい。
                     onHit()
+                    hits++
                 },
             )
         },

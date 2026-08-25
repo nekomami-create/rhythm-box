@@ -12,7 +12,17 @@ import com.example.rhythmbox.core.StepTimeline
  * 画面が見えている間はスレッドを回しっぱなしにして、
  * 再生ボタンやパッドを押した瞬間に音が出るようにしている。
  */
-class AudioOutput(private val engine: PlaybackEngine) {
+class AudioOutput(
+    private val engine: PlaybackEngine,
+    /** 端末が 1 回に受け取りたいフレーム数。ここに合わせて書くと余計な溜め込みが起きない。 */
+    framesPerBurst: Int = DEFAULT_BURST,
+) {
+
+    /**
+     * 1 回に書き込むフレーム数。小さいほど反応が速く、小さすぎると音が途切れる。
+     * 端末が言ってきた単位をそのまま使うのが、いちばん短くて安全な線になる。
+     */
+    private val blockFrames = framesPerBurst.coerceIn(64, 1_024)
 
     /** 曲構成の終端に到達して自然に停止したときに呼ばれる。 */
     var onPlaybackFinished: (() -> Unit)? = null
@@ -31,8 +41,10 @@ class AudioOutput(private val engine: PlaybackEngine) {
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_FLOAT,
-        ).coerceAtLeast(BLOCK_FRAMES * BYTES_PER_FLOAT)
-        val bufferBytes = maxOf(minBytes, BLOCK_FRAMES * BYTES_PER_FLOAT * 4)
+        ).coerceAtLeast(blockFrames * BYTES_PER_FLOAT)
+        // 溜める量が、そのまま叩いてから鳴るまでの遅れになる。
+        // 2 回ぶんだけ持たせて、あとは端末に任せる。
+        val bufferBytes = maxOf(minBytes, blockFrames * BYTES_PER_FLOAT * 2)
 
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -95,7 +107,7 @@ class AudioOutput(private val engine: PlaybackEngine) {
 
     private fun renderLoop(audioTrack: AudioTrack) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val buffer = FloatArray(BLOCK_FRAMES)
+        val buffer = FloatArray(blockFrames)
         var wasPlaying = false
         while (running) {
             val playing = engine.render(buffer)
@@ -107,8 +119,8 @@ class AudioOutput(private val engine: PlaybackEngine) {
     }
 
     private companion object {
-        /** 1 回に書き込むフレーム数。小さいほど反応が速く、小さすぎると音が途切れる。 */
-        const val BLOCK_FRAMES = 256
+        /** 端末が何も言ってこなかったときの単位。 */
+        const val DEFAULT_BURST = 192
         const val BYTES_PER_FLOAT = 4
     }
 }
