@@ -2,6 +2,7 @@ package com.example.rhythmbox.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -33,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -158,39 +161,60 @@ private fun PadTransport(state: RhythmUiState, viewModel: RhythmViewModel) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "パターン ${state.pattern.name}",
-                style = MaterialTheme.typography.labelLarge,
+                text = state.pattern.name,
+                maxLines = 1,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             // 叩く前に切り替えておくと、そのあとの音が強く入る。
-            Surface(
-                color = if (state.padAccent) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                contentColor = if (state.padAccent) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.clickable { viewModel.togglePadAccent() },
-            ) {
-                Text(
-                    text = "強く置く",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (state.padAccent) FontWeight.Bold else FontWeight.Normal,
+            ToggleChip(
+                label = "強く置く",
+                on = state.padAccent,
+                onClick = viewModel::togglePadAccent,
+            )
+            // 拍の目印。曲には入らない。
+            ToggleChip(
+                label = "メトロノーム",
+                on = state.metronome,
+                onClick = viewModel::toggleMetronome,
+            )
+            Spacer(Modifier.weight(1f))
+            // つまみと並ぶ行なので、字を入れると幅が足りずに折り返す。絵だけにする。
+            IconButton(onClick = viewModel::clearPadTake, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.ClearAll,
+                    contentDescription = "打ち込みを消す",
+                    modifier = Modifier.size(18.dp),
                 )
             }
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = viewModel::clearPadTake, contentPadding = TIGHT_BUTTON_PADDING) {
-                Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("消す", maxLines = 1)
-            }
         }
+    }
+}
+
+/** 入り切りの小さなつまみ。押す前に今どうなっているかが分かるよう、色と太字で出す。 */
+@Composable
+private fun ToggleChip(label: String, on: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = if (on) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        contentColor = if (on) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.clickable { onClick() },
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            maxLines = 1,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+        )
     }
 }
 
@@ -221,9 +245,15 @@ private fun PadButton(
     Surface(
         color = color,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxSize().clickable {
-            hits++
-            onHit()
+        // clickable は指を離したときに鳴る。叩いた瞬間に音が出ないと演奏にならないので、
+        // 押し下がりを直接拾う。
+        modifier = modifier.fillMaxSize().pointerInput(Unit) {
+            detectTapGestures(
+                onPress = {
+                    hits++
+                    onHit()
+                },
+            )
         },
     ) {
         Box(contentAlignment = Alignment.Center) {

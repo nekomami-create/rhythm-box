@@ -155,12 +155,20 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            // タブが 5 つあるので、既定の字の大きさだと「パターン」が折り返す。
             TabRow(selectedTabIndex = screen.ordinal) {
                 Screen.entries.forEach { entry ->
                     Tab(
                         selected = screen == entry,
                         onClick = { screen = entry },
-                        text = { Text(entry.label) },
+                        text = {
+                            Text(
+                                text = entry.label,
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
                     )
                 }
             }

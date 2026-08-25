@@ -19,6 +19,11 @@ data class EngineConfig(
     val chordStyle: ChordStyle = ChordStyle.BLOCK,
     /** リードの音色。 */
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
+    /**
+     * メトロノームを鳴らすか。
+     * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
+     */
+    val metronome: Boolean = false,
     val loop: Boolean = true,
 )
 
@@ -64,6 +69,12 @@ class PlaybackEngine(
 
     /** ドラム 1 発ごとの強さ（アクセント / 幽霊音）。 */
     private val slotGain = FloatArray(maxPolyphony) { 1f }
+
+    /** メトロノームのクリック。曲の音とは別に、最後に足すだけにする。 */
+    private val clickDown = DrumSynth.click(sampleRate, downbeat = true)
+    private val clickBeat = DrumSynth.click(sampleRate, downbeat = false)
+    private var clickSample: FloatArray? = null
+    private var clickPos = 0
     private val toneVoices = Array(maxTonePolyphony) { ToneVoice() }
     private var absoluteStep = 0L
     private var nextStepFrame = 0.0
@@ -124,6 +135,7 @@ class PlaybackEngine(
             java.util.Arrays.fill(out, i, i + chunk, 0f)
             renderDrums(out, i, chunk, cfg)
             renderTones(out, i, chunk, cfg)
+            renderClick(out, i, chunk)
             for (j in i until i + chunk) out[j] = limit(out[j])
             framePosition += chunk
             i += chunk
@@ -155,6 +167,27 @@ class PlaybackEngine(
             } else {
                 slotPos[slot] = pos
             }
+        }
+    }
+
+    /**
+     * メトロノームを足す。
+     * 音量つまみもミュートも通さない。目印なので、曲の音量をいじっても聞こえ方が変わらないほうがいい。
+     */
+    private fun renderClick(out: FloatArray, offset: Int, count: Int) {
+        val sample = clickSample ?: return
+        var pos = clickPos
+        var k = 0
+        while (k < count && pos < sample.size) {
+            out[offset + k] += sample[pos]
+            k++
+            pos++
+        }
+        if (pos >= sample.size) {
+            clickSample = null
+            clickPos = 0
+        } else {
+            clickPos = pos
         }
     }
 
@@ -192,6 +225,11 @@ class PlaybackEngine(
         val chord = plan.chordAt(bar)
         val leadBar = plan.leadBarAt(bar)
 
+        // 拍の頭だけ鳴らす。小節の頭は高い音にして、どこが 1 拍目か分かるようにする。
+        if (cfg.metronome && step % 4 == 0) {
+            clickSample = if (step == 0) clickDown else clickBeat
+            clickPos = 0
+        }
         for (voice in 0 until DRUM_COUNT) {
             if (pattern.isOn(voice, step)) triggerDrum(voice, pattern.levelAt(voice, step).gain)
         }
@@ -361,6 +399,7 @@ class PlaybackEngine(
         java.util.Arrays.fill(slotVoice, -1)
         java.util.Arrays.fill(slotPos, 0)
         java.util.Arrays.fill(slotGain, 1f)
+        clickSample = null
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         nextStepFrame = framePosition.toDouble()
@@ -376,6 +415,7 @@ class PlaybackEngine(
         java.util.Arrays.fill(slotVoice, -1)
         java.util.Arrays.fill(slotPos, 0)
         java.util.Arrays.fill(slotGain, 1f)
+        clickSample = null
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         framePosition = 0L

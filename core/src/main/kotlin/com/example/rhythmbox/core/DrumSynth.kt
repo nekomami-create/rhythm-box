@@ -16,6 +16,24 @@ object DrumSynth {
 
     fun renderAll(sampleRate: Int): List<FloatArray> = Voice.entries.map { render(it, sampleRate) }
 
+    /**
+     * メトロノームのクリック。[downbeat] なら小節の頭用に高くする。
+     *
+     * 曲の音に混ざらないよう、ドラムのどれとも被らない澄んだ音にしてある。
+     * 短く切るので、叩くときの目印としてだけ働く。
+     */
+    fun click(sampleRate: Int, downbeat: Boolean): FloatArray {
+        val seconds = 0.045
+        val frequency = if (downbeat) 1_800.0 else 1_200.0
+        val length = (sampleRate * seconds).toInt()
+        return FloatArray(length) { i ->
+            val t = i.toDouble() / sampleRate
+            // 立ち上がりを一瞬だけ鈍らせて、頭のパチッというノイズを抑える。
+            val envelope = exp(-t / 0.012) * (1.0 - exp(-t / 0.0006))
+            (ToneSynth.sine(t * frequency) * envelope * 0.55).toFloat()
+        }
+    }
+
     fun render(voice: Voice, sampleRate: Int): FloatArray = when (voice) {
         Voice.KICK -> kick(sampleRate)
         Voice.SNARE -> snare(sampleRate)

@@ -93,6 +93,8 @@ data class RhythmUiState(
     val padRecording: Boolean = false,
     /** パッドの音を強く置くか。 */
     val padAccent: Boolean = false,
+    /** メトロノームを鳴らすか。曲には残らない、叩くときの目印。 */
+    val metronome: Boolean = false,
     /** リズムの「ランダム」が書き換える範囲。 */
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
@@ -315,6 +317,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update { it.copy(padRecording = true) }
     }
 
+    /** メトロノームの入り切り。曲には保存しない（端末での作業中の設定）。 */
+    fun toggleMetronome() {
+        _uiState.update { it.copy(metronome = !it.metronome) }
+        syncEngine()
+    }
+
     /** 叩いた音を強くするか。押しっぱなしのつまみではなく、切り替えにしてある。 */
     fun togglePadAccent() {
         _uiState.update { it.copy(padAccent = !it.padAccent) }
@@ -383,6 +391,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             swing = song.swing,
             chordStyle = song.chordStyle,
             leadVoice = song.leadVoice,
+            metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
     }

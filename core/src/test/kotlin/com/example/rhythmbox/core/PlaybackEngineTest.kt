@@ -574,6 +574,51 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `the metronome ticks on the beat and is silent otherwise`() {
+        // 既定のパターンには音が入っているので、空のものに差し替えて聞き分ける。
+        val song = Song("s", "test", bpm = bpm).withPattern(0, Pattern.empty("A"))
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0)).copy(metronome = true)
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+        engine.render(buffer)
+
+        // 打ち込みは空なのに、拍の頭 4 か所だけ音が出る。
+        for (step in 0 until STEPS_PER_BAR) {
+            val from = (framesPerStep() * step).toInt()
+            val to = (framesPerStep() * (step + 1)).toInt().coerceAtMost(buffer.size)
+            val peak = (from until to).maxOf { abs(buffer[it]) }
+            if (step % 4 == 0) {
+                assertTrue("step=$step peak=$peak", peak > 0.05f)
+            } else {
+                assertTrue("step=$step peak=$peak", peak < 0.01f)
+            }
+        }
+    }
+
+    @Test
+    fun `the metronome stays out of the music when it is off`() {
+        val song = Song("s", "test", bpm = bpm).withPattern(0, Pattern.empty("A"))
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+        engine.render(buffer)
+
+        // 既定は切。書き出しにクリックが混ざらないことの裏付けでもある。
+        assertTrue(buffer.all { abs(it) < 1e-6f })
+    }
+
+    @Test
+    fun `the downbeat click is not the same as the other beats`() {
+        val down = DrumSynth.click(sampleRate, downbeat = true)
+        val beat = DrumSynth.click(sampleRate, downbeat = false)
+        // 小節の頭だけ高い音にして、1 拍目が分かるようにしてある。
+        assertTrue(magnitudeAt(down, 1_800.0, 0, down.size) > magnitudeAt(beat, 1_800.0, 0, beat.size))
+        assertTrue(magnitudeAt(beat, 1_200.0, 0, beat.size) > magnitudeAt(down, 1_200.0, 0, down.size))
+    }
+
+    @Test
     fun `notes stop after their gate instead of droning on`() {
         val rows = Array(STEP_ROW_COUNT) { "................" }
         rows[ROW_BASS] = "x..............." // 次の音が無いので上限（4 ステップ）まで
