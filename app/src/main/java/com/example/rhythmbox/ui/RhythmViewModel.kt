@@ -20,6 +20,7 @@ import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MidiExporter
 import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.OfflineRenderer
+import com.example.rhythmbox.core.PadRecorder
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
@@ -88,6 +89,10 @@ data class RhythmUiState(
     val canUndo: Boolean = false,
     /** あと何段戻せるか。ボタンに出して、どこまで遡れるか分かるようにする。 */
     val undoDepth: Int = 0,
+    /** パッドで叩いたものを打ち込みに書いているか。 */
+    val padRecording: Boolean = false,
+    /** パッドの音を強く置くか。 */
+    val padAccent: Boolean = false,
     /** リズムの「ランダム」が書き換える範囲。 */
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
@@ -257,6 +262,71 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun previewLead(midi: Int) {
         audio.resume()
         engine.previewNote(Instrument.LEAD, midi)
+    }
+
+    // --- パッド演奏 ---------------------------------------------------------
+
+    /**
+     * パッドを叩いた。まず必ず音を出す（演奏がいちばんの目的なので、
+     * 録音していてもいなくても手応えは同じにする）。
+     * 録音中なら、いま鳴っている位置に合わせて打ち込みへ書く。
+     */
+    fun padHit(row: Int) {
+        val state = _uiState.value
+        previewRow(row)
+        if (!state.padRecording) return
+        val step = recordStep() ?: return
+        val level = if (state.padAccent) Pattern.Level.ACCENT else Pattern.Level.NORMAL
+        val index = state.selectedPattern
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, PadRecorder.record(song.pattern(index), row, step, level))
+        }
+    }
+
+    /** いま叩いた瞬間が、打ち込みのどのステップにあたるか。止まっていれば null。 */
+    private fun recordStep(): Int? {
+        val frame = audio.currentFrame() ?: return null
+        val position = engine.timeline.positionAt(frame) ?: return null
+        return PadRecorder.stepAt(
+            step = position.step,
+            stepFrame = position.frame,
+            hitFrame = frame,
+            framesPerStep = engine.framesPerStep(_uiState.value.song.bpm),
+        )
+    }
+
+    /**
+     * 録音の開始と終了。
+     *
+     * 叩く位置を決めるには何かが鳴っていないといけないので、
+     * 止まっていればパターンのループを始めてから録音に入る。
+     */
+    fun togglePadRecording() {
+        val state = _uiState.value
+        if (state.padRecording) {
+            _uiState.update { it.copy(padRecording = false) }
+            return
+        }
+        // 1 回の録音まるごとを「戻す」で取り消せるように、始める前に控える。
+        snapshotForUndo()
+        if (!state.isPlaying || state.mode != PlayMode.PATTERN) {
+            play(PlayMode.PATTERN)
+        }
+        _uiState.update { it.copy(padRecording = true) }
+    }
+
+    /** 叩いた音を強くするか。押しっぱなしのつまみではなく、切り替えにしてある。 */
+    fun togglePadAccent() {
+        _uiState.update { it.copy(padAccent = !it.padAccent) }
+    }
+
+    /** いま選んでいるパターンの打ち込みを消す（旋律は残す）。 */
+    fun clearPadTake() {
+        val index = _uiState.value.selectedPattern
+        snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withRhythmOf(Pattern.empty("clear")))
+        }
     }
 
     private fun handlePlaybackFinished() {

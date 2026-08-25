@@ -32,6 +32,7 @@ import com.example.rhythmbox.core.SongBuilder
 
 private enum class Screen(val label: String) {
     SEQUENCER("パターン"),
+    PAD("パッド"),
     LEAD("リード"),
     SONG("曲構成"),
     HELP("ヘルプ"),
@@ -167,6 +168,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
             if (!state.ready && screen != Screen.HELP) return@Column
             when (screen) {
                 Screen.SEQUENCER -> SequencerScreen(state, viewModel)
+                Screen.PAD -> PadScreen(state, viewModel)
                 Screen.LEAD -> LeadScreen(state, viewModel)
                 Screen.SONG -> SongScreen(state, viewModel)
                 Screen.HELP -> HelpScreen()

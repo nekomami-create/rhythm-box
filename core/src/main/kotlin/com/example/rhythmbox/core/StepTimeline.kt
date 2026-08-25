@@ -12,7 +12,8 @@ class StepTimeline(capacity: Int = 256) {
     private var writeIndex = 0
     @Volatile private var count = 0
 
-    data class Position(val bar: Int, val step: Int)
+    /** [frame] はそのステップが鳴り始めたフレーム。叩いた位置を細かく測るのに使う。 */
+    data class Position(val bar: Int, val step: Int, val frame: Long = 0L)
 
     fun clear() {
         count = 0
@@ -39,6 +40,6 @@ class StepTimeline(capacity: Int = 256) {
                 bestIndex = i
             }
         }
-        return if (bestIndex < 0) null else Position(bars[bestIndex], steps[bestIndex])
+        return if (bestIndex < 0) null else Position(bars[bestIndex], steps[bestIndex], bestFrame)
     }
 }

@@ -55,6 +55,11 @@ class PlaybackEngineTest {
         return hypot(real, imaginary) / (to - from)
     }
 
+    /** 小節とステップだけを見る（フレームは時刻なので、ここでは問わない）。 */
+    private fun assertStep(bar: Int, step: Int, position: StepTimeline.Position?) {
+        assertEquals(bar to step, position?.let { it.bar to it.step })
+    }
+
     @Test
     fun `steps fire on the beat`() {
         val song = Song("s", "test", bpm = bpm)
@@ -170,9 +175,10 @@ class PlaybackEngineTest {
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
         engine.render(buffer)
 
-        assertEquals(StepTimeline.Position(0, 0), engine.timeline.positionAt(0))
-        assertEquals(StepTimeline.Position(0, 3), engine.timeline.positionAt((framesPerStep() * 3.5).toLong()))
-        assertEquals(StepTimeline.Position(0, 15), engine.timeline.positionAt(Long.MAX_VALUE))
+        // フレームは「そのステップが鳴り始めた時刻」なので、ここでは小節とステップだけを見る。
+        assertStep(0, 0, engine.timeline.positionAt(0))
+        assertStep(0, 3, engine.timeline.positionAt((framesPerStep() * 3.5).toLong()))
+        assertStep(0, 15, engine.timeline.positionAt(Long.MAX_VALUE))
     }
 
     @Test
@@ -214,7 +220,7 @@ class PlaybackEngineTest {
         engine.start()
         engine.render(FloatArray(500))
         assertEquals(1_500L, engine.framePosition)
-        assertEquals(StepTimeline.Position(0, 0), engine.timeline.positionAt(1_200))
+        assertStep(0, 0, engine.timeline.positionAt(1_200))
         assertEquals(null, engine.timeline.positionAt(999))
     }
 

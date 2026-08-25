@@ -83,10 +83,14 @@ class AudioOutput(private val engine: PlaybackEngine) {
         track = null
     }
 
+    /** スピーカーから実際に鳴っているフレーム。叩いた位置を測る基準にする。 */
+    fun currentFrame(): Long? =
+        track?.playbackHeadPosition?.toLong()?.and(0xFFFF_FFFFL)
+
     /** スピーカーから実際に鳴っている位置（表示を音に合わせるために使う）。 */
     fun currentPosition(): StepTimeline.Position? {
-        val played = track?.playbackHeadPosition ?: return null
-        return engine.timeline.positionAt(played.toLong() and 0xFFFF_FFFFL)
+        val played = currentFrame() ?: return null
+        return engine.timeline.positionAt(played)
     }
 
     private fun renderLoop(audioTrack: AudioTrack) {
