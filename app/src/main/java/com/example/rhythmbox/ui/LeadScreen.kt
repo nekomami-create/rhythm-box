@@ -22,7 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Delete
@@ -193,25 +193,35 @@ private fun LeadHeader(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+            // 3 つ並ぶと 1 つぶんの幅が狭い。既定の余白のままだと絵と字がぶつかる。
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    onClick = onGenerate,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = TIGHT_BUTTON_PADDING,
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("ランダム")
+                    Text("ランダム", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                 }
-                OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                OutlinedButton(
+                    onClick = onClear,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = TIGHT_BUTTON_PADDING,
+                ) {
+                    Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("全消し")
+                    Text("全消し", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                 }
                 OutlinedButton(
                     onClick = onUndo,
                     enabled = state.canUndo,
                     modifier = Modifier.weight(1f),
+                    contentPadding = TIGHT_BUTTON_PADDING,
                 ) {
-                    Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("戻す")
+                    Text("戻す", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

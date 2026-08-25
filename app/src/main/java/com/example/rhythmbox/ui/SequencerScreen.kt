@@ -23,7 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -204,11 +205,11 @@ private fun TransportPanel(
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledIconButton(
                     onClick = onPlayToggle,
-                    modifier = Modifier.size(58.dp),
+                    modifier = Modifier.size(46.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = if (playing) {
                             MaterialTheme.colorScheme.secondary
@@ -220,55 +221,51 @@ private fun TransportPanel(
                     Icon(
                         imageVector = if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
                         contentDescription = if (playing) "停止" else "再生",
-                        modifier = Modifier.size(30.dp),
+                        modifier = Modifier.size(26.dp),
                     )
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("テンポ", style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            "${state.song.bpm} BPM",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { onBpmChange(state.song.bpm - 1) },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(Icons.Filled.Remove, contentDescription = "テンポを下げる")
-                        }
-                        Slider(
-                            value = state.song.bpm.toFloat(),
-                            onValueChange = { onBpmChange(it.toInt()) },
-                            valueRange = Song.MIN_BPM.toFloat()..Song.MAX_BPM.toFloat(),
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(
-                            onClick = { onBpmChange(state.song.bpm + 1) },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "テンポを上げる")
-                        }
-                    }
+                Spacer(Modifier.width(8.dp))
+                // テンポは 1 行にまとめる。ラベルを別行に出すほどの情報量ではない。
+                IconButton(
+                    onClick = { onBpmChange(state.song.bpm - 1) },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(Icons.Filled.Remove, contentDescription = "テンポを下げる", modifier = Modifier.size(18.dp))
                 }
+                Slider(
+                    value = state.song.bpm.toFloat(),
+                    onValueChange = { onBpmChange(it.toInt()) },
+                    valueRange = Song.MIN_BPM.toFloat()..Song.MAX_BPM.toFloat(),
+                    modifier = Modifier.weight(1f).height(SLIDER_HEIGHT),
+                )
+                IconButton(
+                    onClick = { onBpmChange(state.song.bpm + 1) },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "テンポを上げる", modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = "${state.song.bpm} BPM",
+                    modifier = Modifier.width(58.dp),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = "音量",
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
                 Slider(
                     value = state.song.masterVolume,
                     onValueChange = onVolumeChange,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).height(SLIDER_HEIGHT),
                 )
-                IconButton(onClick = onOpenMixer) {
-                    Icon(Icons.Filled.Tune, contentDescription = "ミキサー")
+                IconButton(onClick = onOpenMixer, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Filled.Tune, contentDescription = "ミキサー", modifier = Modifier.size(20.dp))
                 }
             }
             // 今どの範囲を回しているのかを言葉で出す。ループの効き方が分かるように。
@@ -381,7 +378,7 @@ private fun PatternSelector(
                     onClick = { styleMenuOpen = true },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("ランダム")
                 }
@@ -411,21 +408,35 @@ private fun PatternSelector(
             selected = scope,
             onSelect = onScopeChange,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
+        // 3 つ並ぶと 1 つぶんの幅が狭い。既定の余白のままだと絵と字がぶつかる。
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(
+                onClick = onClear,
+                modifier = Modifier.weight(1f),
+                contentPadding = TIGHT_BUTTON_PADDING,
+            ) {
+                Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("クリア")
+                Text("クリア", maxLines = 1, style = MaterialTheme.typography.labelLarge)
             }
-            OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+            OutlinedButton(
+                onClick = onCopy,
+                modifier = Modifier.weight(1f),
+                contentPadding = TIGHT_BUTTON_PADDING,
+            ) {
+                Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("コピー")
+                Text("コピー", maxLines = 1, style = MaterialTheme.typography.labelLarge)
             }
-            OutlinedButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+            OutlinedButton(
+                onClick = onUndo,
+                enabled = canUndo,
+                modifier = Modifier.weight(1f),
+                contentPadding = TIGHT_BUTTON_PADDING,
+            ) {
+                Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("戻す")
+                Text("戻す", maxLines = 1, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
