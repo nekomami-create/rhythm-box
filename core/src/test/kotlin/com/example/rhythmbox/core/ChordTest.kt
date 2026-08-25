@@ -57,4 +57,40 @@ class ChordTest {
         assertEquals("A4", midiName(69))
         assertEquals("C2", midiName(36))
     }
+
+    @Test
+    fun `block style keeps playing the whole chord`() {
+        val voicing = listOf(60, 64, 67)
+        repeat(5) { index ->
+            assertEquals(voicing, ChordStyle.BLOCK.notesAt(voicing, index))
+        }
+    }
+
+    @Test
+    fun `up and down walk through the chord one note at a time`() {
+        val voicing = listOf(60, 64, 67)
+        assertEquals(listOf(60), ChordStyle.UP.notesAt(voicing, 0))
+        assertEquals(listOf(64), ChordStyle.UP.notesAt(voicing, 1))
+        assertEquals(listOf(67), ChordStyle.UP.notesAt(voicing, 2))
+        assertEquals(listOf(60), ChordStyle.UP.notesAt(voicing, 3))
+
+        assertEquals(listOf(67), ChordStyle.DOWN.notesAt(voicing, 0))
+        assertEquals(listOf(60), ChordStyle.DOWN.notesAt(voicing, 2))
+    }
+
+    @Test
+    fun `up and down turns around without repeating the ends`() {
+        val voicing = listOf(60, 64, 67)
+        val played = (0 until 8).map { ChordStyle.UP_DOWN.notesAt(voicing, it).single() }
+        assertEquals(listOf(60, 64, 67, 64, 60, 64, 67, 64), played)
+    }
+
+    @Test
+    fun `an arpeggio of one note does not get stuck`() {
+        val voicing = listOf(60)
+        repeat(5) { index ->
+            assertEquals(listOf(60), ChordStyle.UP_DOWN.notesAt(voicing, index))
+        }
+        assertEquals(emptyList<Int>(), ChordStyle.UP.notesAt(emptyList(), 0))
+    }
 }

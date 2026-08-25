@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
@@ -299,6 +300,8 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
             holds = song.tracks.map { it.hold },
+            swing = song.swing,
+            chordStyle = song.chordStyle,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
     }
@@ -752,6 +755,16 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song ->
             song.withTrack(track, song.track(track).copy(hold = hold.coerceIn(0f, 1f)))
         }
+    }
+
+    /** ハネ具合。0 でまっすぐ、0.67 あたりが三連のシャッフル。 */
+    fun setSwing(swing: Float) {
+        repository.updateCurrentSong { it.copy(swing = swing.coerceIn(0f, 1f)) }
+    }
+
+    /** コード行の弾き方（和音 / 上へ / 下へ / 上下）。 */
+    fun setChordStyle(style: ChordStyle) {
+        repository.updateCurrentSong { it.copy(chordStyle = style) }
     }
 
     fun toggleMute(track: Int) {

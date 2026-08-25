@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
+import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
@@ -433,6 +434,7 @@ fun MixerDialog(
     song: Song,
     onVolumeChange: (Int, Float) -> Unit,
     onHoldChange: (Int, Float) -> Unit,
+    onChordStyleChange: (ChordStyle) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -503,9 +505,50 @@ fun MixerDialog(
                             )
                         }
                     }
+                    // コード行だけ、和音をまとめて鳴らすか 1 音ずつ散らすかを選べる。
+                    if (track == Instrument.CHORD.trackIndex) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = "弾き方",
+                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            ChordStyle.entries.forEach { style ->
+                                val on = style == song.chordStyle
+                                Surface(
+                                    color = if (on) {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    contentColor = if (on) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp).clickable { onChordStyleChange(style) },
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = style.label,
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Text(
-                    text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。",
+                    text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。" +
+                        "コードの「弾き方」を和音以外にすると、CHD 行が鳴るたびに 1 音ずつ散らして弾きます。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

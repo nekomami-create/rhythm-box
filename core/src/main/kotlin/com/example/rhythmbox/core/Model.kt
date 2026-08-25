@@ -476,6 +476,13 @@ data class Song(
     val patternChords: List<Chord> = defaultPatternChords(),
     val arrangement: List<ArrangementStep> = emptyList(),
     val tracks: List<TrackSetting> = List(TRACK_COUNT) { TrackSetting() },
+    /**
+     * ハネ具合。0 でまっすぐ（既定）、上げるほど裏の 16 分が後ろにずれる。
+     * 0.67 あたりが三連のシャッフル。
+     */
+    val swing: Float = 0f,
+    /** コード行の弾き方。 */
+    val chordStyle: ChordStyle = ChordStyle.BLOCK,
     val updatedAt: Long = 0L,
 ) {
     fun pattern(index: Int): Pattern = patterns[index.coerceIn(patterns.indices)]
@@ -583,6 +590,50 @@ data class SongLibrary(
     fun remove(id: String): SongLibrary {
         val next = songs.filterNot { it.id == id }
         return copy(songs = next, currentId = if (currentId == id) next.firstOrNull()?.id else currentId)
+    }
+}
+
+/**
+ * コード行の弾き方。
+ *
+ * 和音をまとめて鳴らすだけだと伴奏が硬い。1 音ずつ散らすと、
+ * 同じ打ち込みのままで弾いているように聞こえる。
+ */
+@Serializable
+enum class ChordStyle(val label: String) {
+    /** 和音をまとめて鳴らす（今までの音）。 */
+    BLOCK("和音"),
+
+    /** 低い音から高い音へ 1 つずつ。 */
+    UP("上へ"),
+
+    /** 高い音から低い音へ 1 つずつ。 */
+    DOWN("下へ"),
+
+    /** 上がって下りてを繰り返す。 */
+    UP_DOWN("上下"),
+    ;
+
+    /**
+     * [index] 回目に鳴らす音を [voicing] から選ぶ。BLOCK なら全部。
+     *
+     * 何回目かはステップから数える（状態を持たない）ので、
+     * ループしても同じところで同じ音が鳴る。
+     */
+    fun notesAt(voicing: List<Int>, index: Int): List<Int> {
+        if (this == BLOCK || voicing.isEmpty()) return voicing
+        val size = voicing.size
+        val position = when (this) {
+            UP -> index.mod(size)
+            DOWN -> size - 1 - index.mod(size)
+            // 端を 2 回鳴らさないよう、折り返しは 2*(size-1) 周期にする。
+            else -> {
+                val period = if (size > 1) 2 * (size - 1) else 1
+                val step = index.mod(period)
+                if (step < size) step else period - step
+            }
+        }
+        return listOf(voicing[position])
     }
 }
 

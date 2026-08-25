@@ -13,6 +13,10 @@ data class EngineConfig(
     val mutes: List<Boolean> = List(TRACK_COUNT) { false },
     /** トラックごとの音の伸び（サステイン）。音程のある 3 トラックだけで効く。 */
     val holds: List<Float> = List(TRACK_COUNT) { ToneSynth.DEFAULT_HOLD },
+    /** ハネ具合。0 でまっすぐ。 */
+    val swing: Float = 0f,
+    /** コード行の弾き方。 */
+    val chordStyle: ChordStyle = ChordStyle.BLOCK,
     val loop: Boolean = true,
 )
 
@@ -192,7 +196,7 @@ class PlaybackEngine(
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
             triggerChord(
-                chord.voicing(),
+                cfg.chordStyle.notesAt(chord.voicing(), chordHitIndex(plan, bar, step)),
                 gateFrames(pattern.nextHit(ROW_CHORD, step) - step, timbre, cfg.bpm),
                 timbre,
                 pattern.levelAt(ROW_CHORD, step).gain,
@@ -216,7 +220,31 @@ class PlaybackEngine(
 
         timeline.record(frame = nextStepFrame.toLong(), bar = bar, step = step)
         absoluteStep++
-        nextStepFrame += framesPerStep(cfg.bpm)
+        nextStepFrame += framesPerStep(cfg.bpm) * swingFactor(cfg.swing, step)
+    }
+
+    /**
+     * ハネ。表の 16 分を少し長く、裏を同じだけ短くする。
+     * 2 つで元の長さに戻るので、テンポは変わらないまま裏だけが後ろにずれる。
+     */
+    private fun swingFactor(swing: Float, step: Int): Double {
+        if (swing <= 0f) return 1.0
+        val shift = swing.coerceIn(0f, 1f) * MAX_SWING_SHIFT
+        return if (step % 2 == 0) 1.0 + shift else 1.0 - shift
+    }
+
+    /**
+     * その小節で、このステップが何回目のコードかを数える。
+     * 状態を持たずに数えるので、ループしても分散の並びがずれない。
+     */
+    private fun chordHitIndex(plan: PlaybackPlan, bar: Int, step: Int): Int {
+        if (config.chordStyle == ChordStyle.BLOCK) return 0
+        val bits = plan.patternAt(bar).rowAt(ROW_CHORD)
+        var count = 0
+        for (earlier in 0 until step) {
+            if ((bits shr earlier) and 1 == 1) count++
+        }
+        return count
     }
 
     /**
@@ -500,6 +528,9 @@ class PlaybackEngine(
 
         /** 次の音の直前で切って、同じ音が続くときも打ち直しがわかるようにする。 */
         private const val GATE_RATIO = 0.95
+
+        /** ハネの上限。1 ステップの半分までずらせる（0.67 あたりが三連）。 */
+        private const val MAX_SWING_SHIFT = 0.5
 
         /** タイで伸ばせる上限（4 小節）。書き間違いで延々と鳴り続けないようにする。 */
         private const val MAX_LEAD_HOLD_STEPS = STEPS_PER_BAR * 4

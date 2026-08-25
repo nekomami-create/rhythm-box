@@ -119,6 +119,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onChainToggle = { viewModel.toggle(PlayMode.CHAIN) },
             onBpmChange = viewModel::setBpm,
             onVolumeChange = viewModel::setMasterVolume,
+            onSwingChange = viewModel::setSwing,
             onOpenMixer = { mixerOpen = true },
         )
 
@@ -154,6 +155,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             song = state.song,
             onVolumeChange = viewModel::setTrackVolume,
             onHoldChange = viewModel::setTrackHold,
+            onChordStyleChange = viewModel::setChordStyle,
             onToggleMute = viewModel::toggleMute,
             onUnmuteAll = viewModel::unmuteAll,
             onDismiss = { mixerOpen = false },
@@ -200,6 +202,7 @@ private fun TransportPanel(
     onChainToggle: () -> Unit,
     onBpmChange: (Int) -> Unit,
     onVolumeChange: (Float) -> Unit,
+    onSwingChange: (Float) -> Unit,
     onOpenMixer: () -> Unit,
 ) {
     val playing = state.isPlaying && state.mode == PlayMode.PATTERN
@@ -270,6 +273,28 @@ private fun TransportPanel(
                 IconButton(onClick = onOpenMixer, modifier = Modifier.size(34.dp)) {
                     Icon(Icons.Filled.Tune, contentDescription = "ミキサー", modifier = Modifier.size(20.dp))
                 }
+            }
+            // ハネ。裏の 16 分を後ろにずらす量。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "ハネ",
+                    modifier = Modifier.width(30.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = state.song.swing,
+                    onValueChange = onSwingChange,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).height(SLIDER_HEIGHT),
+                )
+                Text(
+                    text = swingLabel(state.song.swing),
+                    modifier = Modifier.width(58.dp),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             // 今どの範囲を回しているのかを言葉で出す。ループの効き方が分かるように。
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -640,3 +665,11 @@ private fun StepCell(
 
 private val MIN_CELL = 26.dp
 private val CELL_HEIGHT = 34.dp
+
+/** ハネ具合を言葉にする。三連（シャッフル）のあたりが分かるように。 */
+private fun swingLabel(swing: Float): String = when {
+    swing < 0.04f -> "まっすぐ"
+    swing < 0.5f -> "軽く"
+    swing < 0.8f -> "三連"
+    else -> "強め"
+}

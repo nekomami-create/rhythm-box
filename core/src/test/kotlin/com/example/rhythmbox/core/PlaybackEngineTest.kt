@@ -502,6 +502,72 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `swing pushes the offbeat later without changing the tempo`() {
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.of("A", "xxxxxxxxxxxxxxxx"))
+
+        fun onsetsWith(swing: Float): List<Int> {
+            val engine = engine()
+            engine.config = config(song, PlaybackPlan.single(song, 0)).copy(swing = swing)
+            engine.start()
+            val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+            engine.render(buffer)
+            return onsets(buffer)
+        }
+
+        val straight = onsetsWith(0f)
+        val swung = onsetsWith(0.6f)
+        val step = framesPerStep()
+
+        assertEquals(STEPS_PER_BAR, straight.size)
+        assertEquals(STEPS_PER_BAR, swung.size)
+        // 表拍は動かない。
+        assertEquals(straight[0], swung[0])
+        assertEquals(straight[2].toDouble(), swung[2].toDouble(), 1.0)
+        // 裏の 16 分は後ろにずれる。
+        assertTrue("straight=${straight[1]} swung=${swung[1]}", swung[1] > straight[1] + step * 0.2)
+        // 2 つで元の長さに戻るので、小節の頭どうしの間隔は変わらない。
+        assertEquals(straight[4].toDouble(), swung[4].toDouble(), 1.0)
+        assertEquals(straight[8].toDouble(), swung[8].toDouble(), 1.0)
+    }
+
+    @Test
+    fun `no swing means the grid stays exactly where it was`() {
+        val song = Song("s", "test", bpm = bpm)
+            .withPattern(0, Pattern.of("A", "x.x.x.x.x.x.x.x."))
+        val engine = engine()
+        engine.config = config(song, PlaybackPlan.single(song, 0)).copy(swing = 0f)
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
+        engine.render(buffer)
+
+        onsets(buffer).forEachIndexed { index, frame ->
+            assertEquals("hit=$index", (framesPerStep() * 2 * index), frame.toDouble(), 1.0)
+        }
+    }
+
+    @Test
+    fun `an arpeggio plays one note at a time in order`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x.x.x.x........."
+        val song = chordSong(Chord(0, ChordQuality.MAJOR), *rows)
+        val voicing = Chord(0, ChordQuality.MAJOR).voicing()
+
+        val engine = silentDrumEngine()
+        engine.config = config(song, PlaybackPlan.single(song, 0))
+            .copy(chordStyle = ChordStyle.UP)
+        engine.start()
+        val buffer = FloatArray((framesPerStep() * 8).roundToInt())
+        engine.render(buffer)
+
+        // 1 回目は voicing の一番下の音だけが鳴っている。
+        val to = (framesPerStep() * 1.5).toInt()
+        val lowest = magnitudeAt(buffer, ToneSynth.frequency(voicing.first()), 0, to)
+        val second = magnitudeAt(buffer, ToneSynth.frequency(voicing[1]), 0, to)
+        assertTrue("lowest=$lowest second=$second", lowest > second * 4)
+    }
+
+    @Test
     fun `notes stop after their gate instead of droning on`() {
         val rows = Array(STEP_ROW_COUNT) { "................" }
         rows[ROW_BASS] = "x..............." // 次の音が無いので上限（4 ステップ）まで

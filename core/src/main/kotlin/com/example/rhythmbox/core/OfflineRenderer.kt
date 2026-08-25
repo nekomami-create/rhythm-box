@@ -52,6 +52,8 @@ object OfflineRenderer {
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
             holds = song.tracks.map { it.hold },
+            swing = song.swing,
+            chordStyle = song.chordStyle,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

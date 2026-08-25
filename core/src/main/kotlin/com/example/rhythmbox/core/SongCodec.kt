@@ -26,6 +26,7 @@ object SongCodec {
             song.copy(
                 bpm = song.bpm.coerceIn(Song.MIN_BPM, Song.MAX_BPM),
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
+                swing = song.swing.coerceIn(0f, 1f),
                 patterns = List(Song.PATTERN_COUNT) { index ->
                     val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
                     // normalized() が、鳴らないステップに残った強弱も落とす。
