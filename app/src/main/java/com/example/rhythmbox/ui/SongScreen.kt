@@ -214,6 +214,13 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
                 keyName = viewModel.detectedKey().name,
                 neighbours = neighbours,
+                onShuffle = {
+                    viewModel.shuffleChord(
+                        previous = neighbours.first,
+                        next = neighbours.second,
+                        current = step.chordAt(target.barInBlock, song.patternChord(step.patternIndex)),
+                    )
+                },
                 onPreview = viewModel::previewChord,
                 onPick = {
                     viewModel.setArrangementChord(target.stepIndex, target.barInBlock, it)

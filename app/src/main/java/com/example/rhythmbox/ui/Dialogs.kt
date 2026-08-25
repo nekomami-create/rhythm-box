@@ -248,6 +248,8 @@ fun ChordPickerDialog(
     keyName: String? = null,
     /** 前後のコード。「Am → ? → F」のように、何に挟まれているかを見せる。 */
     neighbours: Pair<Chord?, Chord?> = null to null,
+    /** 「おまかせ」で引くコード。null を返したら候補が無かったということ。 */
+    onShuffle: (() -> Chord?)? = null,
     onPreview: (Chord) -> Unit,
     onPick: (Chord) -> Unit,
     onDismiss: () -> Unit,
@@ -288,10 +290,25 @@ fun ChordPickerDialog(
                         after != null -> "${after.name} の前に合うコード"
                         else -> "このキーでよく使うコード"
                     }
-                    Text(
-                        text = heading + if (keyName != null) "（$keyName）" else "",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = heading + if (keyName != null) "（$keyName）" else "",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (onShuffle != null) {
+                            // この小節だけ引き直す。押すたびに違うものが出る。
+                            TextButton(onClick = {
+                                onShuffle()?.let {
+                                    root = it.root.mod(12)
+                                    quality = it.quality
+                                    onPreview(it)
+                                }
+                            }) {
+                                Text("おまかせ")
+                            }
+                        }
+                    }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),

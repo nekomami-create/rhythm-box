@@ -2,6 +2,7 @@ package com.example.rhythmbox.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -262,5 +263,47 @@ class ChordSuggesterTest {
         val suggestions = ChordSuggester.suggest(null, MusicKey(0, minor = false), next = c)
         assertTrue(suggestions.map { it.chord }.contains(g))
         assertTrue("$suggestions", suggestions.first().chord in listOf(g, f, em))
+    }
+
+    @Test
+    fun `picking one chord stays in the key and avoids the neighbours`() {
+        val key = MusicKey(0, minor = false)
+        val previous = Chord(0, ChordQuality.MAJOR) // C
+        val next = Chord(7, ChordQuality.MAJOR) // G
+        val diatonic = key.diatonicChords().map { it.root.mod(12) }.toSet()
+
+        repeat(200) { seed ->
+            val picked = ChordSuggester.pickOne(previous, key, next, Random(seed))
+            assertNotNull(picked)
+            assertTrue("$picked", picked!!.root.mod(12) in diatonic)
+            // 前後と同じコードは繰り返しになるので出さない。
+            assertTrue("$picked", picked != previous && picked != next)
+        }
+    }
+
+    @Test
+    fun `picking one chord never returns what is already there`() {
+        val key = MusicKey(0, minor = false)
+        val current = Chord(5, ChordQuality.MAJOR) // F
+        repeat(200) { seed ->
+            val picked = ChordSuggester.pickOne(
+                previous = Chord(0, ChordQuality.MAJOR),
+                key = key,
+                next = null,
+                random = Random(seed),
+                exclude = current,
+            )
+            assertTrue("$picked", picked != current)
+        }
+    }
+
+    @Test
+    fun `picking one chord is not always the same answer`() {
+        val key = MusicKey(0, minor = false)
+        val seen = (0 until 200)
+            .mapNotNull { ChordSuggester.pickOne(Chord(0, ChordQuality.MAJOR), key, null, Random(it)) }
+            .toSet()
+        // 重みつきの抽選なので、押すたびに違うものが出る。
+        assertTrue("seen=$seen", seen.size >= 3)
     }
 }

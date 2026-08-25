@@ -81,6 +81,10 @@ data class RhythmUiState(
     val selectedLeadBar: Int = 0,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
+    /** リズムの「ランダム」が書き換える範囲。 */
+    val rhythmScope: GenerateScope = GenerateScope.PATTERN,
+    /** 旋律の「ランダム」が書き換える範囲。 */
+    val leadScope: GenerateScope = GenerateScope.PATTERN,
     /** 書き出し中の進捗（0.0〜1.0）。書き出していなければ null。 */
     val exportProgress: Float? = null,
     /** 書き出しが終わったときに出す文言。 */
@@ -395,12 +399,43 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun generateMelody() {
         val state = _uiState.value
         val index = state.selectedPattern
-        val song = state.song
-        // 曲構成で 4 小節使われているのに旋律が 1 小節ぶんしか無ければ、そのぶんまで広げる。
-        val block = song.arrangement.firstOrNull { it.patternIndex == index }
-        val bars = maxOf(song.pattern(index).leadBarCount, block?.repeat ?: 1)
-            .coerceAtMost(Pattern.MAX_LEAD_BARS)
+        val bar = state.selectedLeadBar
         snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            when (state.leadScope) {
+                GenerateScope.BAR -> song.withPattern(index, melodyBar(song, index, bar))
+                GenerateScope.PATTERN -> song.withPattern(index, melodyPattern(song, index))
+                // 直前のパターンの続きから書けるよう、書き換えたものを次に渡していく。
+                GenerateScope.ALL -> usedPatterns(song).fold(song) { acc, target ->
+                    acc.withPattern(target, melodyPattern(acc, target))
+                }
+            }
+        }
+        if (state.leadScope != GenerateScope.BAR) {
+            val bars = leadBarCount(_uiState.value.song, index)
+            _uiState.update { it.copy(selectedLeadBar = it.selectedLeadBar.coerceIn(0, bars - 1)) }
+        }
+    }
+
+    /** [bar] 小節目だけを書き直したパターン。前後の小節はそのまま残す。 */
+    private fun melodyBar(song: Song, index: Int, bar: Int): Pattern {
+        val pattern = song.pattern(index)
+        val generated = MelodyGenerator.generate(
+            chord = leadChords(song, index, bar + 1).last(),
+            key = detectedKey(),
+            random = Random,
+            // ひとつ前の小節の終わりから書き始めるので、繋ぎ目で音が飛ばない。
+            previous = if (bar > 0) pattern.leadBars.getOrNull(bar - 1) else null,
+            density = MelodyDensity.NORMAL,
+        )
+        return pattern.withLeads(
+            pattern.leadBars.mapIndexed { line, notes -> if (line == bar) generated else notes },
+        )
+    }
+
+    /** そのパターンの旋律を全小節ぶん書き直したパターン。 */
+    private fun melodyPattern(song: Song, index: Int): Pattern {
+        val bars = leadBarCount(song, index)
         val leads = MelodyGenerator.generateBars(
             chords = leadChords(song, index, bars),
             key = detectedKey(),
@@ -408,8 +443,17 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             density = MelodyDensity.NORMAL,
             previous = if (index > 0) song.pattern(index - 1).leadBars.lastOrNull() else null,
         )
-        repository.updateCurrentSong { it.withPattern(index, it.pattern(index).withLeads(leads)) }
-        _uiState.update { it.copy(selectedLeadBar = it.selectedLeadBar.coerceIn(0, bars - 1)) }
+        return song.pattern(index).withLeads(leads)
+    }
+
+    /**
+     * そのパターンが旋律を何小節ぶん持つか。
+     * 曲構成で 4 小節使われているのに 1 小節ぶんしか無ければ、そのぶんまで広げる。
+     */
+    private fun leadBarCount(song: Song, index: Int): Int {
+        val block = song.arrangement.firstOrNull { it.patternIndex == index }
+        return maxOf(song.pattern(index).leadBarCount, block?.repeat ?: 1)
+            .coerceAtMost(Pattern.MAX_LEAD_BARS)
     }
 
     /** [bar] 回目の小節で鳴るコード。曲構成で使われていれば、そこのコードを見る。 */
@@ -485,18 +529,51 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         return previous to null
     }
 
+    fun setRhythmScope(scope: GenerateScope) {
+        _uiState.update { it.copy(rhythmScope = scope) }
+    }
+
+    fun setLeadScope(scope: GenerateScope) {
+        _uiState.update { it.copy(leadScope = scope) }
+    }
+
+    /** 「全パターン」で書き換える対象。中身のあるものだけを触り、空のパターンは残す。 */
+    private fun usedPatterns(song: Song): List<Int> =
+        song.patterns.indices.filter { !song.pattern(it).isEmpty() }
+            .ifEmpty { listOf(_uiState.value.selectedPattern) }
+
+    /**
+     * 1 小節ぶんだけコードを引き直す。前後の小節に馴染むものから重み付きで 1 つ選ぶ。
+     * いま入っているコードは候補から外すので、押せば必ず何かが変わる。
+     */
+    fun shuffleChord(previous: Chord?, next: Chord?, current: Chord): Chord? =
+        ChordSuggester.pickOne(
+            previous = previous,
+            key = detectedKey(),
+            next = next,
+            random = Random,
+            exclude = current,
+        )
+
     /** リズムを自動生成する。[style] が null ならスタイルもおまかせ。リードは触らない。 */
     fun generateRhythm(style: RhythmStyle?) {
-        val index = _uiState.value.selectedPattern
-        val current = _uiState.value.song.pattern(index)
-        snapshotForUndo()
-        val generated = if (style == null) {
-            PatternGenerator.generateAny(Random, current.name)
-        } else {
-            PatternGenerator.generate(style, Random, current.name)
+        val state = _uiState.value
+        val targets = when (state.rhythmScope) {
+            GenerateScope.ALL -> usedPatterns(state.song)
+            else -> listOf(state.selectedPattern)
         }
+        snapshotForUndo()
         repository.updateCurrentSong { song ->
-            song.withPattern(index, song.pattern(index).copy(rows = generated.rows))
+            targets.fold(song) { acc, index ->
+                val current = acc.pattern(index)
+                // スタイルはパターンごとに引き直す（おまかせなら全部違う型になる）。
+                val generated = if (style == null) {
+                    PatternGenerator.generateAny(Random, current.name)
+                } else {
+                    PatternGenerator.generate(style, Random, current.name)
+                }
+                acc.withPattern(index, current.copy(rows = generated.rows))
+            }
         }
     }
 

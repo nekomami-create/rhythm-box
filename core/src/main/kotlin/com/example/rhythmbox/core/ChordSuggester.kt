@@ -187,6 +187,33 @@ object ChordSuggester {
     }
 
     /**
+     * 1 小節ぶんだけコードを選び直す。前後の小節に馴染むものから、重みに応じて 1 つ引く。
+     *
+     * いちばん重い候補を返すと、押すたびに同じコードが出て「おまかせ」にならない。
+     * かといって一様に引くと繋がりが崩れるので、[suggest] の重みをそのまま
+     * 抽選の確率として使う。
+     */
+    fun pickOne(
+        previous: Chord?,
+        key: MusicKey,
+        next: Chord? = null,
+        random: Random = Random.Default,
+        /** これは出さない（今そこにあるコード）。 */
+        exclude: Chord? = null,
+    ): Chord? {
+        val candidates = suggest(previous, key, next, limit = 6)
+            .filter { it.chord != exclude && it.weight > 0.0 }
+        if (candidates.isEmpty()) return null
+        val total = candidates.sumOf { it.weight }
+        var ticket = random.nextDouble() * total
+        for (candidate in candidates) {
+            ticket -= candidate.weight
+            if (ticket <= 0.0) return candidate.chord
+        }
+        return candidates.last().chord
+    }
+
+    /**
      * [chord]（この調の [degree] 度）が、[previous] のあと・[next] の前にどれだけ馴染むか。
      * 両側が分かっているときは相乗平均を取り、片側だけに寄り過ぎないようにする。
      */

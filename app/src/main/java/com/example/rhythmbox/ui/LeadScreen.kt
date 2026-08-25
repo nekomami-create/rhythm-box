@@ -88,6 +88,13 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        // 「ランダム」がどこまで書き換えるか。気に入った小節を巻き添えにしないため。
+        ScopeChips(
+            scopes = listOf(GenerateScope.BAR, GenerateScope.PATTERN, GenerateScope.ALL),
+            selected = state.leadScope,
+            onSelect = viewModel::setLeadScope,
+        )
+
         // 同じパターンを繰り返すとき、旋律だけは小節ごとに変えられる。
         LeadBarSelector(
             count = pattern.leadBarCount,

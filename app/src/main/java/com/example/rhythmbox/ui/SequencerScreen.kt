@@ -130,6 +130,8 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onCopy = { copyTargetOpen = true },
             onChordClick = { chordPickerOpen = true },
             onGenerate = viewModel::generateRhythm,
+            scope = state.rhythmScope,
+            onScopeChange = viewModel::setRhythmScope,
             onUndo = viewModel::undoGenerate,
         )
 
@@ -173,6 +175,9 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
             keyName = viewModel.detectedKey().name,
             neighbours = neighbours,
+            onShuffle = {
+                viewModel.shuffleChord(neighbours.first, neighbours.second, state.patternChord)
+            },
             onPreview = viewModel::previewChord,
             onPick = {
                 viewModel.setPatternChord(it)
@@ -302,6 +307,8 @@ private fun PatternSelector(
     onCopy: () -> Unit,
     onChordClick: () -> Unit,
     onGenerate: (RhythmStyle?) -> Unit,
+    scope: GenerateScope,
+    onScopeChange: (GenerateScope) -> Unit,
     onUndo: () -> Unit,
 ) {
     var styleMenuOpen by remember { mutableStateOf(false) }
@@ -398,6 +405,12 @@ private fun PatternSelector(
                 }
             }
         }
+        // 「ランダム」がどこまで書き換えるか。
+        ScopeChips(
+            scopes = listOf(GenerateScope.PATTERN, GenerateScope.ALL),
+            selected = scope,
+            onSelect = onScopeChange,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
