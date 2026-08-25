@@ -17,6 +17,7 @@ import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.MelodyDensity
 import com.example.rhythmbox.core.MelodyGenerator
+import com.example.rhythmbox.core.MidiExporter
 import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.OfflineRenderer
 import com.example.rhythmbox.core.Pattern
@@ -28,6 +29,7 @@ import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongBuilder
+import com.example.rhythmbox.core.SongCodec
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
@@ -863,14 +865,61 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         return "$bars 小節 ・ 約 ${formatDuration(seconds)}"
     }
 
-    /** 保存ダイアログに出すファイル名。ファイル名に使えない文字は _ に置き換える。 */
-    fun suggestedFileName(): String {
-        val name = _uiState.value.song.name
-            .trim()
-            .map { if (it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') it else '_' }
-            .joinToString("")
-            .ifBlank { "BreakBox" }
-        return "$name.m4a"
+    /** 保存ダイアログに出すファイル名の芯（ファイル名に使えない文字は _ に置き換える）。 */
+    private fun safeName(): String = _uiState.value.song.name
+        .trim()
+        .map { if (it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') it else '_' }
+        .joinToString("")
+        .ifBlank { "BreakBox" }
+
+    /** 保存ダイアログに出すファイル名。 */
+    fun suggestedFileName(): String = "${safeName()}.m4a"
+
+    fun suggestedMidiName(): String = "${safeName()}.mid"
+
+    fun suggestedSongName(): String = "${safeName()}.breakbox.json"
+
+    /** [destination] に MIDI を書き出す。 */
+    fun exportMidi(destination: Uri, scope: ExportScope, repeats: Int) {
+        val song = _uiState.value.song
+        val plan = exportPlan(scope, repeats)
+        val message = runCatching {
+            val bytes = MidiExporter.export(song, plan)
+            container.fileExporter.write(destination, bytes)
+            bytes.size
+        }.fold(
+            onSuccess = { "MIDI を書き出しました（${plan.barCount} 小節 ・ ${it / 1024 + 1} KB）" },
+            onFailure = { "書き出せませんでした: ${it.message ?: it::class.java.simpleName}" },
+        )
+        _uiState.update { it.copy(exportMessage = message) }
+    }
+
+    /** [destination] に、いま開いている曲を 1 ファイルとして書き出す。 */
+    fun exportSongFile(destination: Uri) {
+        val song = _uiState.value.song
+        val message = runCatching {
+            container.fileExporter.write(destination, SongCodec.encodeSong(song).toByteArray())
+        }.fold(
+            onSuccess = { "「${song.name}」を書き出しました" },
+            onFailure = { "書き出せませんでした: ${it.message ?: it::class.java.simpleName}" },
+        )
+        _uiState.update { it.copy(exportMessage = message) }
+    }
+
+    /** 曲のファイルを読み込んで、ライブラリに足す（今の曲は上書きしない）。 */
+    fun importSongFile(source: Uri) {
+        val message = runCatching {
+            val song = SongCodec.decodeSong(container.fileExporter.readText(source))
+                ?: error("BreakBox の曲ファイルではないようです")
+            stop()
+            clearUndo()
+            repository.addSong(song)
+            song.name
+        }.fold(
+            onSuccess = { "「$it」を読み込みました" },
+            onFailure = { "読み込めませんでした: ${it.message ?: it::class.java.simpleName}" },
+        )
+        _uiState.update { it.copy(exportMessage = message) }
     }
 
     /** [destination] に M4A を書き出す。 */

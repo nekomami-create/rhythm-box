@@ -12,6 +12,18 @@ object SongCodec {
 
     fun encode(library: SongLibrary): String = json.encodeToString(SongLibrary.serializer(), library)
 
+    /**
+     * 曲を 1 つだけ書き出す（持ち出し・受け渡し用）。
+     * ライブラリと同じ形にしておくと、読む側は 1 つの経路で扱える。
+     */
+    fun encodeSong(song: Song): String = encode(SongLibrary(listOf(song), song.id))
+
+    /**
+     * 書き出した曲を読む。ライブラリ形式のファイルを渡されたときは先頭の曲を返す。
+     * 読めなければ null。
+     */
+    fun decodeSong(text: String): Song? = decode(text)?.songs?.firstOrNull()
+
     /** 壊れたファイルでもアプリを落とさないよう、読めなければ null を返す。 */
     fun decode(text: String): SongLibrary? = runCatching {
         json.decodeFromString(SongLibrary.serializer(), text)

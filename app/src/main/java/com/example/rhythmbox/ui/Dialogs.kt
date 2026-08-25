@@ -572,6 +572,8 @@ private fun holdLabel(hold: Float): String = when {
 @Composable
 fun ExportDialog(
     state: RhythmUiState,
+    /** MIDI として書き出すか（false なら音声）。 */
+    midi: Boolean = false,
     lengthLabel: (ExportScope, Int) -> String,
     onExport: (ExportScope, Int) -> Unit,
     onDismiss: () -> Unit,
@@ -584,7 +586,7 @@ fun ExportDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("音声を書き出す") },
+        title = { Text(if (midi) "MIDI を書き出す" else "音声を書き出す") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExportScope.entries.forEach { option ->
@@ -664,7 +666,13 @@ fun ExportDialog(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "M4A (AAC) で保存します。ミュートしたトラックは入りません。",
+                    text = if (midi) {
+                        "標準 MIDI ファイル (.mid) で保存します。DAW に読み込んで続きを作れます。" +
+                            "ドラムはチャンネル 10、コード / ベース / リードはそれぞれ別のトラックに入ります。" +
+                            "強弱とハネもそのまま入ります。音そのものではないので、ミュートや音量は反映されません。"
+                    } else {
+                        "M4A (AAC) で保存します。ミュートしたトラックは入りません。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

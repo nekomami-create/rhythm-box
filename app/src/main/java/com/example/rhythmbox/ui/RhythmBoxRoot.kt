@@ -50,10 +50,27 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
     var exportScope by remember { mutableStateOf(ExportScope.SONG) }
     var exportRepeats by remember { mutableStateOf(2) }
+    // 書き出しの設定ダイアログを、音声と MIDI のどちらから開いたか。
+    var exportingMidi by remember { mutableStateOf(false) }
     val createAudioFile = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/mp4"),
     ) { uri ->
         if (uri != null) viewModel.exportAudio(uri, exportScope, exportRepeats)
+    }
+    val createMidiFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/midi"),
+    ) { uri ->
+        if (uri != null) viewModel.exportMidi(uri, exportScope, exportRepeats)
+    }
+    val createSongFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) viewModel.exportSongFile(uri)
+    }
+    val openSongFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) viewModel.importSongFile(uri)
     }
 
     Scaffold(
@@ -108,7 +125,23 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                         )
                         DropdownMenuItem(
                             text = { Text("音声を書き出す (M4A)") },
-                            onClick = { menuOpen = false; exportSetupOpen = true },
+                            onClick = { menuOpen = false; exportingMidi = false; exportSetupOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("MIDI を書き出す") },
+                            onClick = { menuOpen = false; exportingMidi = true; exportSetupOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("曲をファイルに保存") },
+                            onClick = { menuOpen = false; createSongFile.launch(viewModel.suggestedSongName()) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("曲のファイルを読み込む") },
+                            onClick = {
+                                menuOpen = false
+                                // 端末によっては json を認識しないので、すべてのファイルから選べるようにする。
+                                openSongFile.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            },
                         )
                     }
                 },
@@ -177,12 +210,17 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     if (exportSetupOpen) {
         ExportDialog(
             state = state,
+            midi = exportingMidi,
             lengthLabel = viewModel::exportLengthLabel,
             onExport = { scope, repeats ->
                 exportScope = scope
                 exportRepeats = repeats
                 exportSetupOpen = false
-                createAudioFile.launch(viewModel.suggestedFileName())
+                if (exportingMidi) {
+                    createMidiFile.launch(viewModel.suggestedMidiName())
+                } else {
+                    createAudioFile.launch(viewModel.suggestedFileName())
+                }
             },
             onDismiss = { exportSetupOpen = false },
         )

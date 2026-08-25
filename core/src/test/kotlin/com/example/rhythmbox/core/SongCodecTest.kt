@@ -129,4 +129,33 @@ class SongCodecTest {
         assertTrue(removed.remove("id-1").songs.isEmpty())
         assertNull(removed.remove("id-1").current())
     }
+
+    @Test
+    fun `a single song can be written out and read back`() {
+        val song = Song.newSong("id-x", "持ち出す曲", now = 5L)
+            .copy(bpm = 137, swing = 0.4f, chordStyle = ChordStyle.UP_DOWN)
+            .let { it.withPattern(0, Pattern.of("A", "x...x...x...x...").withLevel(0, 0, Pattern.Level.ACCENT)) }
+
+        val restored = SongCodec.decodeSong(SongCodec.encodeSong(song))
+
+        assertNotNull(restored)
+        assertEquals("持ち出す曲", restored!!.name)
+        assertEquals(137, restored.bpm)
+        assertEquals(0.4f, restored.swing, 1e-6f)
+        assertEquals(ChordStyle.UP_DOWN, restored.chordStyle)
+        assertEquals(Pattern.Level.ACCENT, restored.pattern(0).levelAt(0, 0))
+    }
+
+    @Test
+    fun `a library file can also be read as a single song`() {
+        val restored = SongCodec.decodeSong(SongCodec.encode(library))
+        assertNotNull(restored)
+        assertEquals("はじめての曲", restored!!.name)
+    }
+
+    @Test
+    fun `something that is not a song file reads as nothing`() {
+        assertNull(SongCodec.decodeSong("{\"これは\": \"曲ではない\""))
+        assertNull(SongCodec.decodeSong(""))
+    }
 }

@@ -81,6 +81,27 @@ class SongRepository(
         return copy.id
     }
 
+    /**
+     * 読み込んだ曲をライブラリに足す。
+     *
+     * id は必ず作り直す。書き出した本人が読み込んだときに、
+     * 同じ id の曲を上書きしてしまわないようにするため。
+     * 同じ名前がすでにあれば、末尾に番号を付けて区別する。
+     */
+    fun addSong(song: Song): String {
+        val taken = _library.value.songs.map { it.name }.toSet()
+        var name = song.name.ifBlank { "読み込んだ曲" }
+        var suffix = 2
+        while (name in taken) {
+            name = "${song.name} ($suffix)"
+            suffix++
+        }
+        val added = song.copy(id = UUID.randomUUID().toString(), name = name, updatedAt = now())
+        _library.value = _library.value.replace(added)
+        scheduleSave()
+        return added.id
+    }
+
     fun deleteSong(id: String) {
         val next = _library.value.remove(id)
         _library.value = if (next.songs.isEmpty()) newLibrary() else next

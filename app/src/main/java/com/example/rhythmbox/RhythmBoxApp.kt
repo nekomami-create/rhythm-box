@@ -5,6 +5,7 @@ import com.example.rhythmbox.audio.AudioExporter
 import com.example.rhythmbox.audio.AudioOutput
 import com.example.rhythmbox.core.DrumSynth
 import com.example.rhythmbox.core.PlaybackEngine
+import com.example.rhythmbox.files.FileExporter
 import com.example.rhythmbox.data.SongRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -24,6 +25,8 @@ class AppContainer(private val application: Application) {
     val audioOutput: AudioOutput by lazy { AudioOutput(engine) }
 
     val audioExporter: AudioExporter by lazy { AudioExporter(application) }
+
+    val fileExporter: FileExporter by lazy { FileExporter(application) }
 
     val songRepository: SongRepository by lazy {
         SongRepository(File(application.filesDir, "songs.json"), scope)
