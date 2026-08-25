@@ -134,6 +134,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onCopy = { copyTargetOpen = true },
             onChordClick = { chordPickerOpen = true },
             onGenerate = viewModel::generateRhythm,
+            undoDepth = state.undoDepth,
             scope = state.rhythmScope,
             onScopeChange = viewModel::setRhythmScope,
             onUndo = viewModel::undoGenerate,
@@ -156,6 +157,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onVolumeChange = viewModel::setTrackVolume,
             onHoldChange = viewModel::setTrackHold,
             onChordStyleChange = viewModel::setChordStyle,
+            onLeadVoiceChange = viewModel::setLeadVoice,
             onToggleMute = viewModel::toggleMute,
             onUnmuteAll = viewModel::unmuteAll,
             onDismiss = { mixerOpen = false },
@@ -332,6 +334,7 @@ private fun PatternSelector(
     onCopy: () -> Unit,
     onChordClick: () -> Unit,
     onGenerate: (RhythmStyle?) -> Unit,
+    undoDepth: Int,
     scope: GenerateScope,
     onScopeChange: (GenerateScope) -> Unit,
     onUndo: () -> Unit,
@@ -464,7 +467,7 @@ private fun PatternSelector(
             ) {
                 Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("戻す", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                Text(undoLabel(undoDepth), maxLines = 1, style = MaterialTheme.typography.labelLarge)
             }
         }
     }

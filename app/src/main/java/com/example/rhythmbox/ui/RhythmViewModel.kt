@@ -30,6 +30,8 @@ import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongBuilder
 import com.example.rhythmbox.core.SongCodec
+import com.example.rhythmbox.core.ToneSynth
+import com.example.rhythmbox.core.Transposer
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
@@ -84,6 +86,8 @@ data class RhythmUiState(
     val selectedLeadBar: Int = 0,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
+    /** あと何段戻せるか。ボタンに出して、どこまで遡れるか分かるようにする。 */
+    val undoDepth: Int = 0,
     /** リズムの「ランダム」が書き換える範囲。 */
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
@@ -152,7 +156,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     private var currentPlan: PlaybackPlan? = null
 
     /** 自動生成をやり直すための、直前の曲まるごとの控え。 */
-    private var undoSong: Song? = null
+    /**
+     * 自動生成の前の曲を、新しいものから順に積んでおく。
+     * 1 段しか戻せないと「2 回押してしまった」だけで元に戻せなくなる。
+     */
+    private val undoStack = ArrayDeque<Song>()
 
     init {
         audio.onPlaybackFinished = {
@@ -304,6 +312,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             holds = song.tracks.map { it.hold },
             swing = song.swing,
             chordStyle = song.chordStyle,
+            leadVoice = song.leadVoice,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
     }
@@ -642,23 +651,30 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 自動生成の前に、今の曲を控えておく。 */
     private fun snapshotForUndo() {
-        undoSong = _uiState.value.song
-        _uiState.update { it.copy(canUndo = true) }
+        undoStack.addLast(_uiState.value.song)
+        // 際限なく持つとメモリを食うので、古いものから捨てる。
+        while (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+        _uiState.update { it.copy(canUndo = true, undoDepth = undoStack.size) }
     }
 
-    /** 直前の自動生成を取り消す。 */
+    /** 自動生成を 1 段ずつ取り消す。 */
     fun undoGenerate() {
-        val previous = undoSong ?: return
+        val songId = _uiState.value.song.id
         // 別の曲に切り替わっていたら戻さない（別の曲を上書きしてしまうため）。
-        if (previous.id == _uiState.value.song.id) {
+        while (undoStack.isNotEmpty()) {
+            val previous = undoStack.removeLast()
+            if (previous.id != songId) continue
             repository.updateCurrentSong { previous }
+            break
         }
-        clearUndo()
+        _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), undoDepth = undoStack.size) }
     }
 
     private fun clearUndo() {
-        undoSong = null
-        if (_uiState.value.canUndo) _uiState.update { it.copy(canUndo = false) }
+        undoStack.clear()
+        if (_uiState.value.canUndo) {
+            _uiState.update { it.copy(canUndo = false, undoDepth = 0) }
+        }
     }
 
     /** 調の推定に使うコード。曲構成があればその並び、無ければパターンのコード。 */
@@ -767,6 +783,21 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** コード行の弾き方（和音 / 上へ / 下へ / 上下）。 */
     fun setChordStyle(style: ChordStyle) {
         repository.updateCurrentSong { it.copy(chordStyle = style) }
+    }
+
+    /** リードの音色。 */
+    fun setLeadVoice(voice: ToneSynth.LeadVoice) {
+        repository.updateCurrentSong { it.copy(leadVoice = voice) }
+    }
+
+    /**
+     * 曲まるごとのキーを [semitones] 半音だけ動かす。
+     * 「戻す」で元に戻せるよう、控えを取ってから書き換える。
+     */
+    fun transpose(semitones: Int) {
+        if (semitones == 0) return
+        snapshotForUndo()
+        repository.updateCurrentSong { Transposer.transpose(it, semitones) }
     }
 
     fun toggleMute(track: Int) {
@@ -998,6 +1029,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
         /** オート作曲で最初に選ばれている小節数。 */
         const val DEFAULT_SONG_BARS = 8
+
+        /** 何段まで戻せるか。 */
+        private const val MAX_UNDO = 20
 
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { RhythmViewModel(container) }

@@ -79,4 +79,32 @@ class ToneSynthTest {
             }
         }
     }
+
+    @Test
+    fun `each lead voice has its own set of harmonics`() {
+        val used = ToneSynth.LeadVoice.entries.map { voice ->
+            ToneSynth.timbre(Instrument.LEAD, voice).partials.map { it.harmonic }
+        }
+        // 4 つとも別物であること（どれを選んでも同じ音、では意味がない）。
+        assertEquals(used.size, used.toSet().size)
+        // 基音は必ず入っている。
+        assertTrue(used.all { 1 in it })
+    }
+
+    @Test
+    fun `the lead voice does not change the other parts`() {
+        val chord = ToneSynth.timbre(Instrument.CHORD)
+        val bass = ToneSynth.timbre(Instrument.BASS)
+        for (voice in ToneSynth.LeadVoice.entries) {
+            assertEquals(chord, ToneSynth.timbre(Instrument.CHORD, voice))
+            assertEquals(bass, ToneSynth.timbre(Instrument.BASS, voice))
+        }
+    }
+
+    @Test
+    fun `the bell rings longer than the others`() {
+        val bell = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.BELL)
+        val square = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.SQUARE)
+        assertTrue("bell=${bell.decay} square=${square.decay}", bell.decay > square.decay)
+    }
 }

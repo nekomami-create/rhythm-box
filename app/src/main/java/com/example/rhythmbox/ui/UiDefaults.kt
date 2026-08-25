@@ -11,3 +11,9 @@ val TIGHT_BUTTON_PADDING = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
 
 /** スライダーの高さ。既定は 48dp あって縦に場所を取りすぎるので詰める。 */
 val SLIDER_HEIGHT = 30.dp
+
+/**
+ * 「戻す」ボタンの文字。あと何段さかのぼれるかを出す。
+ * 押せる回数が分からないと、どこまで戻したのか見失う。
+ */
+fun undoLabel(depth: Int): String = if (depth > 1) "戻す $depth" else "戻す"

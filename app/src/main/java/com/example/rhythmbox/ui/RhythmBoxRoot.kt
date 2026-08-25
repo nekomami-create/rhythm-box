@@ -47,6 +47,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     var exportSetupOpen by remember { mutableStateOf(false) }
     var genreOpen by remember { mutableStateOf(false) }
     var songBuilderOpen by remember { mutableStateOf(false) }
+    var transposeOpen by remember { mutableStateOf(false) }
     // 保存先を選ぶ画面から戻ってきたときに使う、選んだ書き出し条件。
     var exportScope by remember { mutableStateOf(ExportScope.SONG) }
     var exportRepeats by remember { mutableStateOf(2) }
@@ -128,6 +129,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             onClick = { menuOpen = false; exportingMidi = false; exportSetupOpen = true },
                         )
                         DropdownMenuItem(
+                            text = { Text("キーを変える") },
+                            onClick = { menuOpen = false; transposeOpen = true },
+                        )
+                        DropdownMenuItem(
                             text = { Text("MIDI を書き出す") },
                             onClick = { menuOpen = false; exportingMidi = true; exportSetupOpen = true },
                         )
@@ -205,6 +210,13 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                 genreOpen = false
             },
             onDismiss = { genreOpen = false },
+        )
+    }
+    if (transposeOpen) {
+        TransposeDialog(
+            keyName = viewModel.detectedKey().name,
+            onTranspose = { viewModel.transpose(it) },
+            onDismiss = { transposeOpen = false },
         )
     }
     if (exportSetupOpen) {

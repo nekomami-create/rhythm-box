@@ -221,7 +221,7 @@ private fun LeadHeader(
                 ) {
                     Icon(Icons.Filled.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("戻す", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                    Text(undoLabel(state.undoDepth), maxLines = 1, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

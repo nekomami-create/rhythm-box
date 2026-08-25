@@ -17,6 +17,8 @@ data class EngineConfig(
     val swing: Float = 0f,
     /** コード行の弾き方。 */
     val chordStyle: ChordStyle = ChordStyle.BLOCK,
+    /** リードの音色。 */
+    val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
     val loop: Boolean = true,
 )
 
@@ -275,7 +277,7 @@ class PlaybackEngine(
     /** 「音の伸び」つまみを反映した、そのトラックの音色。 */
     private fun timbreOf(cfg: EngineConfig, instrument: Instrument): ToneSynth.Timbre =
         with(ToneSynth) {
-            timbre(instrument).withHold(
+            timbre(instrument, cfg.leadVoice).withHold(
                 cfg.holds.getOrElse(instrument.trackIndex) { ToneSynth.DEFAULT_HOLD },
             )
         }

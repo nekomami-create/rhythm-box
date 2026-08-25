@@ -106,10 +106,42 @@ object ToneSynth {
     /** つまみの真ん中。ここが今までの音。 */
     const val DEFAULT_HOLD = 0.5f
 
-    fun timbre(instrument: Instrument): Timbre = when (instrument) {
+    /**
+     * リードの音色。倍音の組み合わせで性格が決まる。
+     *
+     * 奇数倍音だけなら細くて芯のある音（矩形波寄り）、
+     * 倍音を順に並べると太くざらつく音（のこぎり波寄り）、
+     * 上の倍音をごく薄くすると柔らかい音になる。
+     */
+    @kotlinx.serialization.Serializable
+    enum class LeadVoice(val label: String, internal val partials: List<Partial>) {
+        SQUARE(
+            "スクエア",
+            listOf(Partial(1, 1.0f), Partial(3, 0.33f), Partial(5, 0.20f), Partial(7, 0.13f)),
+        ),
+        SAW(
+            "ノコギリ",
+            listOf(Partial(1, 1.0f), Partial(2, 0.50f), Partial(3, 0.33f), Partial(4, 0.25f), Partial(5, 0.20f)),
+        ),
+        SOFT(
+            "やわらか",
+            listOf(Partial(1, 1.0f), Partial(2, 0.22f), Partial(3, 0.08f)),
+        ),
+        BELL(
+            "ベル",
+            listOf(Partial(1, 1.0f), Partial(3, 0.45f), Partial(6, 0.30f), Partial(9, 0.14f)),
+        ),
+    }
+
+    fun timbre(instrument: Instrument, lead: LeadVoice = LeadVoice.SQUARE): Timbre = when (instrument) {
         Instrument.CHORD -> CHORD
         Instrument.BASS -> BASS
-        Instrument.LEAD -> LEAD
+        Instrument.LEAD -> LEAD.copy(
+            partials = lead.partials,
+            // ベルは余韻を長めにしないと、それらしく聞こえない。
+            decay = if (lead == LeadVoice.BELL) LEAD.decay * 2.2 else LEAD.decay,
+            sustain = if (lead == LeadVoice.BELL) LEAD.sustain * 0.45f else LEAD.sustain,
+        )
     }
 
     /** MIDI ノート番号 -> 周波数 (Hz)。A4 = 69 = 440Hz。 */

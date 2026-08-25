@@ -59,6 +59,7 @@ import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.Song
+import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Voice
 
 /** トップバーのメニューから開くダイアログの種類。 */
@@ -435,6 +436,7 @@ fun MixerDialog(
     onVolumeChange: (Int, Float) -> Unit,
     onHoldChange: (Int, Float) -> Unit,
     onChordStyleChange: (ChordStyle) -> Unit,
+    onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -503,6 +505,46 @@ fun MixerDialog(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+                    // リード行だけ、音色を選べる。
+                    if (track == Instrument.LEAD.trackIndex) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = "音色",
+                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            ToneSynth.LeadVoice.entries.forEach { voice ->
+                                val on = voice == song.leadVoice
+                                Surface(
+                                    color = if (on) {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    contentColor = if (on) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp).clickable { onLeadVoiceChange(voice) },
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = voice.label,
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     // コード行だけ、和音をまとめて鳴らすか 1 音ずつ散らすかを選べる。
@@ -878,4 +920,63 @@ private fun GenreOptionRow(label: String, checked: Boolean, onChange: (Boolean) 
         Checkbox(checked = checked, onCheckedChange = onChange)
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+/** 曲まるごとのキーを上げ下げする。 */
+@Composable
+fun TransposeDialog(
+    keyName: String,
+    onTranspose: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("キーを変える") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "いまのキー: $keyName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "コード・ベース・リードをまとめて動かします。曲の形は変わりません。" +
+                        "リードが音域からはみ出すときは、曲ごとオクターブで折り返して収めます。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // よく使う動かし幅だけを並べる。半音単位で刻めても迷うだけなので。
+                listOf(
+                    listOf(-5 to "-5", -4 to "-4", -3 to "-3", -2 to "-2", -1 to "-1"),
+                    listOf(1 to "+1", 2 to "+2", 3 to "+3", 4 to "+4", 5 to "+5"),
+                ).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { (shift, label) ->
+                            PickerChip(
+                                label = label,
+                                selected = false,
+                                width = 54.dp,
+                                onClick = { onTranspose(shift) },
+                            )
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PickerChip(
+                        label = "1 オクターブ下",
+                        selected = false,
+                        width = 130.dp,
+                        onClick = { onTranspose(-12) },
+                    )
+                    PickerChip(
+                        label = "1 オクターブ上",
+                        selected = false,
+                        width = 130.dp,
+                        onClick = { onTranspose(12) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+    )
 }

@@ -74,6 +74,9 @@ data class Chord(
     /** ベースが弾くルート音（MIDI ノート番号）。 */
     fun bassMidi(): Int = BASS_BASE_MIDI + root.mod(12)
 
+    /** [semitones] 半音だけ動かしたコード。種類は変わらない。 */
+    fun transposed(semitones: Int): Chord = copy(root = (root + semitones).mod(12))
+
     companion object {
         val ROOT_NAMES = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
@@ -483,6 +486,8 @@ data class Song(
     val swing: Float = 0f,
     /** コード行の弾き方。 */
     val chordStyle: ChordStyle = ChordStyle.BLOCK,
+    /** リードの音色。 */
+    val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
     val updatedAt: Long = 0L,
 ) {
     fun pattern(index: Int): Pattern = patterns[index.coerceIn(patterns.indices)]
