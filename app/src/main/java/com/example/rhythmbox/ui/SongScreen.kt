@@ -30,7 +30,9 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -123,6 +125,19 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 IconButton(onClick = viewModel::undoGenerate, enabled = state.canUndo) {
                     Icon(Icons.Filled.Undo, contentDescription = "生成を戻す")
                 }
+            }
+            // 旋律は前のコードに合わせて書かれているので、進行を変えると和音から外れる。
+            // 勝手に消さないよう既定は切にして、要るときだけ追従させる。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = state.followMelody,
+                    onCheckedChange = viewModel::setFollowMelody,
+                )
+                Text(
+                    text = "コードを変えたら旋律も作り直す",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 

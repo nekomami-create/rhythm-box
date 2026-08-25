@@ -81,14 +81,34 @@ class ToneSynthTest {
     }
 
     @Test
-    fun `each lead voice has its own set of harmonics`() {
-        val used = ToneSynth.LeadVoice.entries.map { voice ->
-            ToneSynth.timbre(Instrument.LEAD, voice).partials.map { it.harmonic }
-        }
-        // 4 つとも別物であること（どれを選んでも同じ音、では意味がない）。
-        assertEquals(used.size, used.toSet().size)
+    fun `every lead voice really sounds different`() {
+        // 倍音の番号だけでは足りない（スクエアとトライアングルは同じ奇数倍音で、
+        // 違うのはその大きさと包絡線）。音色まるごとで見分ける。
+        val timbres = ToneSynth.LeadVoice.entries.map { ToneSynth.timbre(Instrument.LEAD, it) }
+        assertEquals(timbres.size, timbres.toSet().size)
         // 基音は必ず入っている。
-        assertTrue(used.all { 1 in it })
+        assertTrue(timbres.all { timbre -> timbre.partials.any { it.harmonic == 1 } })
+    }
+
+    @Test
+    fun `no lead voice runs off the ends of the envelope`() {
+        for (voice in ToneSynth.LeadVoice.entries) {
+            val timbre = ToneSynth.timbre(Instrument.LEAD, voice)
+            assertTrue("$voice", timbre.sustain in 0f..0.95f)
+            assertTrue("$voice", timbre.attack > 0.0 && timbre.decay > 0.0)
+            assertTrue("$voice", timbre.partials.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `plucked voices die away and held voices do not`() {
+        val pluck = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.PLUCK)
+        val organ = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.ORGAN)
+        assertTrue("pluck=${pluck.sustain} organ=${organ.sustain}", pluck.sustain < organ.sustain)
+        assertTrue("pluck=${pluck.decay} organ=${organ.decay}", pluck.decay < organ.decay)
+        // 息で吹く音は立ち上がりが遅い。
+        val flute = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.FLUTE)
+        assertTrue(flute.attack > pluck.attack)
     }
 
     @Test

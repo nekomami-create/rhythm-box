@@ -107,14 +107,22 @@ object ToneSynth {
     const val DEFAULT_HOLD = 0.5f
 
     /**
-     * リードの音色。倍音の組み合わせで性格が決まる。
+     * リードの音色。
      *
-     * 奇数倍音だけなら細くて芯のある音（矩形波寄り）、
-     * 倍音を順に並べると太くざらつく音（のこぎり波寄り）、
-     * 上の倍音をごく薄くすると柔らかい音になる。
+     * 倍音の組み合わせで音の芯が決まり、包絡線の伸び縮みで弾き方の感じが決まる。
+     * 同じ倍音でも、すぐ減衰すれば弾いた音、長く残ればふくらむ音に聞こえる。
      */
     @kotlinx.serialization.Serializable
-    enum class LeadVoice(val label: String, internal val partials: List<Partial>) {
+    enum class LeadVoice(
+        val label: String,
+        internal val partials: List<Partial>,
+        /** 立ち上がりの遅さ。1.0 で基準どおり。 */
+        internal val attackScale: Double = 1.0,
+        /** 減衰の遅さ。 */
+        internal val decayScale: Double = 1.0,
+        /** 減衰後に残る音量の割合。 */
+        internal val sustainScale: Float = 1.0f,
+    ) {
         SQUARE(
             "スクエア",
             listOf(Partial(1, 1.0f), Partial(3, 0.33f), Partial(5, 0.20f), Partial(7, 0.13f)),
@@ -130,6 +138,48 @@ object ToneSynth {
         BELL(
             "ベル",
             listOf(Partial(1, 1.0f), Partial(3, 0.45f), Partial(6, 0.30f), Partial(9, 0.14f)),
+            decayScale = 2.2,
+            sustainScale = 0.45f,
+        ),
+        TRIANGLE(
+            // 奇数倍音が急に小さくなる。三角波に近く、細くて澄んだ音。
+            "トライアングル",
+            listOf(Partial(1, 1.0f), Partial(3, 0.11f), Partial(5, 0.04f), Partial(7, 0.02f)),
+        ),
+        PLUCK(
+            // すぐ落ちて残らない。弦をはじいたような歯切れ。
+            "プラック",
+            listOf(Partial(1, 1.0f), Partial(2, 0.45f), Partial(3, 0.28f), Partial(4, 0.16f)),
+            decayScale = 0.45,
+            sustainScale = 0.12f,
+        ),
+        ORGAN(
+            // 整数倍音を薄く重ねて、減衰せずに伸ばす。
+            "オルガン",
+            listOf(Partial(1, 1.0f), Partial(2, 0.5f), Partial(3, 0.26f), Partial(4, 0.16f), Partial(8, 0.09f)),
+            decayScale = 1.8,
+            sustainScale = 1.45f,
+        ),
+        BRASS(
+            // 低い倍音が厚く、立ち上がりが少し遅い。吹き込む感じ。
+            "ブラス",
+            listOf(Partial(1, 1.0f), Partial(2, 0.7f), Partial(3, 0.5f), Partial(4, 0.3f), Partial(5, 0.18f)),
+            attackScale = 4.0,
+            sustainScale = 1.3f,
+        ),
+        FLUTE(
+            // ほぼ基音だけ。ゆっくり立ち上げると息を吹き込んだように聞こえる。
+            "フルート",
+            listOf(Partial(1, 1.0f), Partial(2, 0.12f)),
+            attackScale = 6.0,
+            sustainScale = 1.4f,
+        ),
+        GLASS(
+            // 高いところに倍音を飛ばして、短く切る。硬くて澄んだ音。
+            "グラス",
+            listOf(Partial(1, 1.0f), Partial(4, 0.35f), Partial(7, 0.22f), Partial(11, 0.12f)),
+            decayScale = 0.7,
+            sustainScale = 0.3f,
         ),
     }
 
@@ -138,9 +188,10 @@ object ToneSynth {
         Instrument.BASS -> BASS
         Instrument.LEAD -> LEAD.copy(
             partials = lead.partials,
-            // ベルは余韻を長めにしないと、それらしく聞こえない。
-            decay = if (lead == LeadVoice.BELL) LEAD.decay * 2.2 else LEAD.decay,
-            sustain = if (lead == LeadVoice.BELL) LEAD.sustain * 0.45f else LEAD.sustain,
+            attack = LEAD.attack * lead.attackScale,
+            decay = LEAD.decay * lead.decayScale,
+            // 伸ばし続ける音色は 1 を超えないように止める。
+            sustain = (LEAD.sustain * lead.sustainScale).coerceIn(0f, 0.95f),
         )
     }
 

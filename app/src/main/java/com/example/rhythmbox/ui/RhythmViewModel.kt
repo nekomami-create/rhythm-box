@@ -95,6 +95,11 @@ data class RhythmUiState(
     val padAccent: Boolean = false,
     /** メトロノームを鳴らすか。曲には残らない、叩くときの目印。 */
     val metronome: Boolean = false,
+    /**
+     * 起承転結・終わりでコードを作り直したとき、旋律も一緒に作り直すか。
+     * 既定は切（手で書いた旋律を勝手に消さない）。
+     */
+    val followMelody: Boolean = false,
     /** リズムの「ランダム」が書き換える範囲。 */
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
@@ -541,11 +546,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** そのパターンの旋律を全小節ぶん書き直したパターン。 */
-    private fun melodyPattern(song: Song, index: Int): Pattern {
+    private fun melodyPattern(song: Song, index: Int, key: MusicKey = detectedKey()): Pattern {
         val bars = leadBarCount(song, index)
         val leads = MelodyGenerator.generateBars(
             chords = leadChords(song, index, bars),
-            key = detectedKey(),
+            key = key,
             random = Random,
             density = MelodyDensity.NORMAL,
             previous = if (index > 0) song.pattern(index - 1).leadBars.lastOrNull() else null,
@@ -731,11 +736,30 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** 小節ごとのコード列を、曲構成のブロックに割り振って書き戻す。 */
     private fun applyChords(song: Song, chords: List<Chord>) {
         snapshotForUndo()
-        var index = 0
-        val arrangement = song.arrangement.map { step ->
-            step.copy(chords = List(step.repeat) { chords.getOrElse(index++) { Chord() } })
+        val follow = _uiState.value.followMelody
+        repository.updateCurrentSong { current ->
+            var index = 0
+            val arrangement = current.arrangement.map { step ->
+                step.copy(chords = List(step.repeat) { chords.getOrElse(index++) { Chord() } })
+            }
+            val rewritten = current.copy(arrangement = arrangement)
+            if (!follow) return@updateCurrentSong rewritten
+            // 旋律は前のコードに合わせて書かれているので、進行を変えると和音から外れる。
+            // 調も新しいコードから取り直す（古い進行のまま推定すると、ずれた調で作ってしまう）。
+            val key = rewritten.key ?: ChordSuggester.detectKey(
+                PlaybackPlan.arrangement(rewritten).bars.map { it.chord },
+            )
+            rewritten.arrangement.map { it.patternIndex }.distinct()
+                .filter { it in rewritten.patterns.indices }
+                .fold(rewritten) { acc, target ->
+                    acc.withPattern(target, melodyPattern(acc, target, key))
+                }
         }
-        repository.updateCurrentSong { it.copy(arrangement = arrangement) }
+    }
+
+    /** 進行を作り直したときに旋律も追従させるか。 */
+    fun setFollowMelody(follow: Boolean) {
+        _uiState.update { it.copy(followMelody = follow) }
     }
 
     /** 自動生成の前に、今の曲を控えておく。 */

@@ -471,6 +471,7 @@ private fun PickerChip(
 }
 
 /** トラックごとの音量・ミュート（ドラム 8 音色 + コード / ベース / リード）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MixerDialog(
     song: Song,
@@ -550,13 +551,15 @@ fun MixerDialog(
                     }
                     // リード行だけ、音色を選べる。
                     if (track == Instrument.LEAD.trackIndex) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        // 音色が 10 種類あるので、1 行に並べず折り返す。
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(start = 8.dp),
                         ) {
                             Text(
                                 text = "音色",
-                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                modifier = Modifier.padding(top = 6.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
