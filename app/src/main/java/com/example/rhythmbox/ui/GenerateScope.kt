@@ -82,3 +82,9 @@ fun ScopeChips(
         }
     }
 }
+
+/** パッドで何を鳴らすか。 */
+enum class PadMode(val label: String) {
+    DRUM("ドラム"),
+    CHORD("コード"),
+}

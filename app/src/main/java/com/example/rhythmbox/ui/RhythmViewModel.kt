@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
@@ -93,6 +94,8 @@ data class RhythmUiState(
     val padRecording: Boolean = false,
     /** パッドの音を強く置くか。 */
     val padAccent: Boolean = false,
+    /** パッドでドラムを叩くか、コードを弾くか。 */
+    val padMode: PadMode = PadMode.DRUM,
     /** メトロノームを鳴らすか。曲には残らない、叩くときの目印。 */
     val metronome: Boolean = false,
     /**
@@ -288,6 +291,86 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { song ->
             song.withPattern(index, PadRecorder.record(song.pattern(index), row, step, level))
         }
+    }
+
+    /** パッドに並べる 12 個。自分で決めていなければ調から作る。 */
+    fun chordPads(): List<Chord> =
+        ChordPads.resolve(_uiState.value.song.chordPads, detectedKey())
+
+    fun setPadMode(mode: PadMode) {
+        _uiState.update { it.copy(padMode = mode) }
+    }
+
+    /** [index] のパッドに別の和音を割り当てる。 */
+    fun setChordPad(index: Int, chord: Chord) {
+        if (index !in 0 until ChordPads.COUNT) return
+        val pads = chordPads()
+        repository.updateCurrentSong { song ->
+            song.copy(chordPads = List(ChordPads.COUNT) { if (it == index) chord else pads[it] })
+        }
+    }
+
+    /** パッドの並びを、いまの調の既定に戻す。 */
+    fun resetChordPads() {
+        snapshotForUndo()
+        repository.updateCurrentSong { it.copy(chordPads = emptyList()) }
+    }
+
+    /**
+     * コードパッドを叩いた。まず鳴らし、録音中なら曲に書く。
+     *
+     * コードは「小節に 1 つ」なので、ステップごとには置けない。
+     * 鳴っている小節のコードを差し替え、あわせて CHD 行のその位置を鳴らす形にする。
+     * 曲を流しながら順に叩けば、そのまま進行が入っていく。
+     */
+    fun chordPadHit(index: Int) {
+        val chord = chordPads().getOrNull(index) ?: return
+        audio.resume()
+        engine.previewChord(chord)
+        if (!_uiState.value.padRecording) return
+
+        val frame = audio.currentFrame() ?: return
+        val position = engine.timeline.positionAt(frame) ?: return
+        val step = PadRecorder.stepAt(
+            step = position.step,
+            stepFrame = position.frame,
+            hitFrame = frame,
+            framesPerStep = engine.framesPerStep(_uiState.value.song.bpm),
+        )
+        // 書き込む先は「いま鳴っている小節」。選んでいるパターンとは限らない。
+        val plan = currentPlan ?: return
+        val bar = plan.barAt(position.bar)
+        val level = if (_uiState.value.padAccent) Pattern.Level.ACCENT else Pattern.Level.NORMAL
+        repository.updateCurrentSong { song ->
+            val withStep = song.withPattern(
+                bar.patternIndex,
+                PadRecorder.record(song.pattern(bar.patternIndex), ROW_CHORD, step, level),
+            )
+            placeChord(withStep, position.bar, chord)
+        }
+    }
+
+    /**
+     * [barIndex] 小節目のコードを [chord] にする。
+     * 曲構成があればその小節を、無ければパターンのコードを差し替える。
+     */
+    private fun placeChord(song: Song, barIndex: Int, chord: Chord): Song {
+        if (song.arrangement.isEmpty()) {
+            return song.withPatternChord(_uiState.value.selectedPattern, chord)
+        }
+        // 曲構成はブロックの並びなので、頭から小節を数えて該当のブロックを探す。
+        var first = 0
+        val arrangement = song.arrangement.map { step ->
+            val slots = step.repeat.coerceAtLeast(1)
+            val inBlock = barIndex - first
+            first += slots
+            if (inBlock in 0 until slots) {
+                step.withChord(inBlock, chord, song.patternChord(step.patternIndex))
+            } else {
+                step
+            }
+        }
+        return song.copy(arrangement = arrangement)
     }
 
     /** いま叩いた瞬間が、打ち込みのどのステップにあたるか。止まっていれば null。 */

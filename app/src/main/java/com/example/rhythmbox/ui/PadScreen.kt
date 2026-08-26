@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
@@ -61,6 +63,8 @@ private val PADS: List<Pad> = buildList {
 
 @Composable
 fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
+    // 長押しで開くコードの割り当て画面。開いているパッドの番号を持つ。
+    var editingPad by remember { mutableStateOf<Int?>(null) }
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -68,10 +72,15 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         PadTransport(state, viewModel)
 
         Text(
-            text = if (state.padRecording) {
-                "叩いた音がパターン ${state.pattern.name} に入ります。近いステップに寄せて置きます。"
-            } else {
-                "パッドを叩くと音が出ます。録音を押すと、叩いたものが打ち込みに入ります。"
+            text = when {
+                state.padRecording && state.padMode == PadMode.CHORD ->
+                    "弾いたコードが、いま鳴っている小節に入ります。流しながら順に叩いてください。"
+                state.padRecording ->
+                    "叩いた音がパターン ${state.pattern.name} に入ります。近いステップに寄せて置きます。"
+                state.padMode == PadMode.CHORD ->
+                    "押すとコードが鳴ります。長押しでそのパッドの和音を選び直せます。"
+                else ->
+                    "パッドを叩くと音が出ます。録音を押すと、叩いたものが打ち込みに入ります。"
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (state.padRecording) {
@@ -81,30 +90,95 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             },
         )
 
-        // 上 3 段（ドラム 8 + コード）。
-        PADS.chunked(3).forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                row.forEach { pad ->
-                    PadButton(
-                        pad = pad,
-                        playing = state.playingStep >= 0 && state.pattern.isOn(pad.row, state.playingStep),
-                        modifier = Modifier.weight(1f),
-                        onHit = { viewModel.padHit(pad.row) },
-                    )
-                }
+        when (state.padMode) {
+            PadMode.DRUM -> DrumPads(state, viewModel)
+            PadMode.CHORD -> ChordPadGrid(state, viewModel, editing = { editingPad = it })
+        }
+    }
+
+    editingPad?.let { index ->
+        val pads = viewModel.chordPads()
+        val neighbours = pads.getOrNull(index - 1) to pads.getOrNull(index + 1)
+        ChordPickerDialog(
+            title = "${index + 1} 番のパッド",
+            current = pads[index],
+            suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
+            keyName = viewModel.detectedKey().name,
+            neighbours = neighbours,
+            onShuffle = {
+                viewModel.shuffleChord(neighbours.first, neighbours.second, pads[index])
+            },
+            onPreview = viewModel::previewChord,
+            onPick = {
+                viewModel.setChordPad(index, it)
+                editingPad = null
+            },
+            onDismiss = { editingPad = null },
+        )
+    }
+}
+
+/** ドラム 8 音色 + コード + ベース。鳴らせる音がグリッドの行と同じなので、そのまま打ち込みになる。 */
+@Composable
+private fun ColumnScope.DrumPads(state: RhythmUiState, viewModel: RhythmViewModel) {
+    PADS.chunked(3).forEach { row ->
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            row.forEach { pad ->
+                PadButton(
+                    label = pad.label,
+                    caption = pad.caption,
+                    melodic = pad.row >= DRUM_COUNT,
+                    playing = state.playingStep >= 0 && state.pattern.isOn(pad.row, state.playingStep),
+                    modifier = Modifier.weight(1f),
+                    onHit = { viewModel.padHit(pad.row) },
+                )
             }
         }
-        // いちばん下の段はベースだけ。幅いっぱいに置いて押しやすくする。
-        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            PadButton(
-                pad = Pad(ROW_BASS, "BAS", "ベース"),
-                playing = state.playingStep >= 0 && state.pattern.isOn(ROW_BASS, state.playingStep),
-                modifier = Modifier.weight(1f),
-                onHit = { viewModel.padHit(ROW_BASS) },
-            )
+    }
+    // いちばん下の段はベースだけ。幅いっぱいに置いて押しやすくする。
+    Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+        PadButton(
+            label = "BAS",
+            caption = "ベース",
+            melodic = true,
+            playing = state.playingStep >= 0 && state.pattern.isOn(ROW_BASS, state.playingStep),
+            modifier = Modifier.weight(1f),
+            onHit = { viewModel.padHit(ROW_BASS) },
+        )
+    }
+}
+
+/** 調のコードを 12 個並べる。3 列 x 4 段にちょうど収まる。 */
+@Composable
+private fun ColumnScope.ChordPadGrid(
+    state: RhythmUiState,
+    viewModel: RhythmViewModel,
+    editing: (Int) -> Unit,
+) {
+    val pads = viewModel.chordPads()
+    val degrees = viewModel.detectedKey().degreeLabels()
+    val diatonic = viewModel.detectedKey().diatonicChords()
+    pads.chunked(3).forEachIndexed { rowIndex, row ->
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            row.forEachIndexed { columnIndex, chord ->
+                val index = rowIndex * 3 + columnIndex
+                PadButton(
+                    label = chord.name,
+                    // 度数が分かると、押しているうちに進行の形が見えてくる。
+                    caption = degrees.getOrNull(diatonic.indexOfFirst { it.root == chord.root }) ?: "",
+                    melodic = true,
+                    playing = false,
+                    modifier = Modifier.weight(1f),
+                    onHit = { viewModel.chordPadHit(index) },
+                    onHold = { editing(index) },
+                )
+            }
         }
     }
 }
@@ -113,6 +187,16 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 private fun PadTransport(state: RhythmUiState, viewModel: RhythmViewModel) {
     val playing = state.isPlaying
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // ドラムを叩くか、コードを弾くか。同じ画面で切り替える。
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PadMode.entries.forEach { mode ->
+                ToggleChip(
+                    label = mode.label,
+                    on = state.padMode == mode,
+                    onClick = { viewModel.setPadMode(mode) },
+                )
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(
                 onClick = { viewModel.toggle(PlayMode.PATTERN) },
@@ -179,6 +263,15 @@ private fun PadTransport(state: RhythmUiState, viewModel: RhythmViewModel) {
                 onClick = viewModel::toggleMetronome,
             )
             Spacer(Modifier.weight(1f))
+            if (state.padMode == PadMode.CHORD) {
+                IconButton(onClick = viewModel::resetChordPads, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "パッドの並びを調から作り直す",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
             // つまみと並ぶ行なので、字を入れると幅が足りずに折り返す。絵だけにする。
             IconButton(onClick = viewModel::clearPadTake, modifier = Modifier.size(32.dp)) {
                 Icon(
@@ -220,10 +313,14 @@ private fun ToggleChip(label: String, on: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun PadButton(
-    pad: Pad,
+    label: String,
+    caption: String,
+    melodic: Boolean,
     playing: Boolean,
     modifier: Modifier,
     onHit: () -> Unit,
+    /** 長押ししたとき。コードのパッドだけ、割り当てを選び直せる。 */
+    onHold: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     // 押した瞬間だけ光らせる。少し残してから消すと、叩いた手応えになる。
@@ -235,7 +332,6 @@ private fun PadButton(
         delay(FLASH_MS)
         lit = false
     }
-    val melodic = pad.row >= DRUM_COUNT
     val color = when {
         lit -> scheme.tertiary
         playing -> if (melodic) scheme.secondary else scheme.primary
@@ -247,28 +343,33 @@ private fun PadButton(
         shape = RoundedCornerShape(12.dp),
         // clickable は指を離したときに鳴る。叩いた瞬間に音が出ないと演奏にならないので、
         // 押し下がりを直接拾う。
-        modifier = modifier.fillMaxSize().pointerInput(Unit) {
+        modifier = modifier.fillMaxSize().pointerInput(onHold) {
             detectTapGestures(
                 onPress = {
                     // 先に音を出す。光らせるのは画面の話なので後回しでいい。
                     onHit()
                     hits++
                 },
+                onLongPress = onHold?.let { { _ -> it() } },
             )
         },
     ) {
         Box(contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = pad.label,
+                    text = label,
+                    maxLines = 1,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                Text(
-                    text = pad.caption,
-                    fontSize = 10.sp,
-                    color = scheme.onSurfaceVariant,
-                )
+                if (caption.isNotEmpty()) {
+                    Text(
+                        text = caption,
+                        maxLines = 1,
+                        fontSize = 10.sp,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

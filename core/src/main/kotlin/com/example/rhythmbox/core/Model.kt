@@ -530,6 +530,11 @@ data class Song(
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
      */
     val key: MusicKey? = null,
+    /**
+     * コードパッドに並べる和音。空なら調から作る（調を変えると付いてくる）。
+     * 1 つでも自分で決めたら、その時点で 12 個ぶんを持つ。
+     */
+    val chordPads: List<Chord> = emptyList(),
     val updatedAt: Long = 0L,
 ) {
     fun pattern(index: Int): Pattern = patterns[index.coerceIn(patterns.indices)]
