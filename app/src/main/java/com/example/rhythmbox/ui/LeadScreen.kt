@@ -23,10 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ClearAll
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
@@ -75,8 +72,8 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         LeadHeader(
             state = state,
             muted = leadTrack.muted,
-            barLabel = "${state.selectedLeadBar + 1} 小節目 ・ コード " +
-                "${viewModel.chordForLeadBar(state.selectedLeadBar).name} ・ " +
+            barLabel = "${state.selectedBar + 1} 小節目 ・ コード " +
+                "${viewModel.chordForBar(state.selectedBar).name} ・ " +
                 "${pattern.leadNoteCount()} 音",
             onPlayToggle = { viewModel.toggle(PlayMode.PATTERN) },
             onToggleMute = { viewModel.toggleMute(Instrument.LEAD.trackIndex) },
@@ -98,19 +95,20 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onSelect = viewModel::setLeadScope,
         )
 
-        // 同じパターンを繰り返すとき、旋律だけは小節ごとに変えられる。
-        LeadBarSelector(
-            count = pattern.leadBarCount,
-            selected = state.selectedLeadBar,
-            playing = state.playingLeadBar.takeIf { state.playingPattern == state.selectedPattern } ?: -1,
-            chordAt = viewModel::chordForLeadBar,
-            onSelect = viewModel::selectLeadBar,
-            onCountChange = viewModel::setLeadBarCount,
+        // パターンの中の何小節目を書いているか。打ち込みの画面と同じ帯を出している。
+        PatternBarSelector(
+            count = pattern.barCount,
+            selected = state.selectedBar,
+            playing = state.playingPatternBar.takeIf { state.playingPattern == state.selectedPattern } ?: -1,
+            chordAt = viewModel::chordForBar,
+            onSelect = viewModel::selectBar,
+            onCountChange = viewModel::setBarCount,
             onClearBar = viewModel::clearLeadBar,
+            clearLabel = "この小節の音を消す",
         )
 
         // いま書いている小節のコード。どの音が構成音かを鍵盤の色で見せる。
-        val barChord = viewModel.chordForLeadBar(state.selectedLeadBar)
+        val barChord = viewModel.chordForBar(state.selectedBar)
         val key = viewModel.detectedKey()
         ChordLegend(chord = barChord, keyName = key.name)
 
@@ -119,7 +117,7 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 PianoRollRow(
                     midi = midi,
                     pattern = pattern,
-                    leadBar = state.selectedLeadBar,
+                    leadBar = state.selectedBar,
                     role = noteRole(midi, barChord, key),
                     degree = chordDegreeLabel(midi, barChord),
                     playingStep = playingStep,
@@ -273,76 +271,6 @@ private fun ChordLegend(chord: Chord, keyName: String) {
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun LeadBarSelector(
-    count: Int,
-    selected: Int,
-    playing: Int,
-    chordAt: (Int) -> Chord,
-    onSelect: (Int) -> Unit,
-    onCountChange: (Int) -> Unit,
-    onClearBar: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(count) { bar ->
-            val isSelected = bar == selected
-            val isPlaying = bar == playing
-            Surface(
-                color = when {
-                    isPlaying -> MaterialTheme.colorScheme.tertiary
-                    isSelected -> MaterialTheme.colorScheme.secondary
-                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                contentColor = if (isSelected || isPlaying) {
-                    MaterialTheme.colorScheme.onSecondary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.height(42.dp).clickable { onSelect(bar) },
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = "${bar + 1}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(text = chordAt(bar).name, fontSize = 10.sp)
-                }
-            }
-        }
-        IconButton(
-            onClick = { onCountChange(count + 1) },
-            enabled = count < Pattern.MAX_LEAD_BARS,
-            modifier = Modifier.size(34.dp),
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "小節を増やす", modifier = Modifier.size(18.dp))
-        }
-        IconButton(
-            onClick = { onCountChange(count - 1) },
-            enabled = count > 1,
-            modifier = Modifier.size(34.dp),
-        ) {
-            Icon(Icons.Filled.Remove, contentDescription = "小節を減らす", modifier = Modifier.size(18.dp))
-        }
-        IconButton(onClick = onClearBar, modifier = Modifier.size(34.dp)) {
-            Icon(
-                Icons.Filled.Delete,
-                contentDescription = "この小節の音を消す",
-                modifier = Modifier.size(18.dp),
-            )
-        }
     }
 }
 

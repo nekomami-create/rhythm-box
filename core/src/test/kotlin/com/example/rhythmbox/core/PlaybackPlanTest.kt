@@ -108,8 +108,8 @@ class PlaybackPlanTest {
     fun `each bar of a block knows which melody to play`() {
         val plan = PlaybackPlan.arrangement(song)
         // 1 ブロック目は 2 小節なので、旋律は 1 小節目 / 2 小節目
-        assertEquals(listOf(0, 1, 0, 0, 1, 2), plan.bars.map { it.leadBar })
-        assertEquals(1, plan.leadBarAt(1))
+        assertEquals(listOf(0, 1, 0, 0, 1, 2), plan.bars.map { it.patternBar })
+        assertEquals(1, plan.patternBarAt(1))
     }
 
     @Test
@@ -117,7 +117,7 @@ class PlaybackPlanTest {
         val tuned = song.withPattern(0, song.pattern(0).withLeadBarCount(4))
         val plan = PlaybackPlan.single(tuned, 0)
         assertEquals(4, plan.barCount)
-        assertEquals(listOf(0, 1, 2, 3), plan.bars.map { it.leadBar })
+        assertEquals(listOf(0, 1, 2, 3), plan.bars.map { it.patternBar })
         // 旋律が 1 小節ぶんだけのパターンは、これまでどおり 1 小節ループ
         assertEquals(1, PlaybackPlan.single(song, 2).barCount)
     }

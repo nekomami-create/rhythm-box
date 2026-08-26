@@ -223,7 +223,7 @@ class PlaybackEngine(
         val step = (absoluteStep % STEPS_PER_BAR).toInt()
         val pattern = plan.patternAt(bar)
         val chord = plan.chordAt(bar)
-        val leadBar = plan.leadBarAt(bar)
+        val leadBar = plan.patternBarAt(bar)
 
         // 拍の頭だけ鳴らす。小節の頭は高い音にして、どこが 1 拍目か分かるようにする。
         if (cfg.metronome && step % 4 == 0) {
@@ -304,12 +304,12 @@ class PlaybackEngine(
                 if (cursorBar >= plan.barCount) break
             }
             val pattern = plan.patternAt(cursorBar)
-            if (pattern.leadAt(plan.leadBarAt(cursorBar), cursorStep) != Pattern.TIE) break
+            if (pattern.leadAt(plan.patternBarAt(cursorBar), cursorStep) != Pattern.TIE) break
             held++
         }
         if (held > 1) return (held * framesPerStep(cfg.bpm) * GATE_RATIO).toLong()
         val pattern = plan.patternAt(bar)
-        return gateFrames(pattern.nextLead(plan.leadBarAt(bar), step) - step, timbre, cfg.bpm)
+        return gateFrames(pattern.nextLead(plan.patternBarAt(bar), step) - step, timbre, cfg.bpm)
     }
 
     /** 「音の伸び」つまみを反映した、そのトラックの音色。 */

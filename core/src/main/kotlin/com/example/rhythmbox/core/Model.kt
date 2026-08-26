@@ -123,13 +123,52 @@ data class Chord(
 }
 
 /**
- * 1 小節ぶんのパターン。
+ * 1 小節ぶんの打ち込み（ドラム・コード・ベースの ON/OFF と強弱）。
+ *
+ * パターンが 2 小節以上のとき、2 小節目から先をこれで持つ。
+ * 1 小節目は [Pattern] が直接持ったままにしてある。そうしておくと、
+ * 小節数を足す前に保存した曲がそのまま読めるし、
+ * 新しい曲を古いアプリが読んでも 1 小節目だけは鳴る。
+ */
+@Serializable
+data class BarGrid(
+    val rows: List<Int> = List(STEP_ROW_COUNT) { 0 },
+    val accents: List<Int> = emptyList(),
+    val ghosts: List<Int> = emptyList(),
+) {
+    fun rowAt(row: Int): Int = rows.getOrElse(row) { 0 } and Pattern.STEP_MASK
+
+    fun isEmpty(): Boolean = rows.all { it and Pattern.STEP_MASK == 0 }
+
+    fun hitCount(): Int = rows.sumOf { (it and Pattern.STEP_MASK).countOneBits() }
+
+    /** 行数が足りない・鳴らないステップに強弱だけ残った中身を整える。 */
+    fun normalized(): BarGrid = BarGrid(
+        rows = List(STEP_ROW_COUNT) { rowAt(it) },
+        accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
+        ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
+    )
+
+    private fun maskAt(masks: List<Int>, row: Int): Int =
+        masks.getOrElse(row) { 0 } and Pattern.STEP_MASK
+
+    private fun compact(masks: List<Int>): List<Int> =
+        if (masks.all { it and Pattern.STEP_MASK == 0 }) emptyList() else masks
+}
+
+/**
+ * 1 つのパターン。長さは 1 小節から [MAX_BARS] 小節まで。
+ *
  * ドラム・コード・ベースの ON/OFF は [rows] の 1 要素（Int）のビットで持つ（bit n = ステップ n）。
+ * [rows] / [accents] / [ghosts] が 1 小節目で、2 小節目から先は [extraBars] に入る。
+ * この形にしてあるのは、1 小節しか持てなかった頃の保存データがそのまま読めるから。
  *
  * リードだけは音程が要るので、ステップごとの MIDI ノート番号を [leads] に持つ（[REST] は休符）。
- * [leads] は「繰り返し何回目か」ごとに 1 小節ぶんずつ入っている。
- * ドラムは 4 小節同じでも構わないが、旋律は下のコードが変わるたびに変えないと
- * 曲として成立しないため、リードだけ小節ごとに持てるようにしてある。
+ * [leads] も小節ごとに 1 本ずつ入っている。
+ *
+ * 小節を指定して読む・書くときは [at] と [toggleAt] などを使う。
+ * 引数に小節を取らない [isOn] / [toggle] などは 1 小節目に効くので、
+ * 鳴らす側は必ず [at]（実際には [PlaybackPlan.patternAt]）を通すこと。
  */
 @Serializable
 data class Pattern(
@@ -143,6 +182,11 @@ data class Pattern(
     val accents: List<Int> = emptyList(),
     /** 弱く鳴らすステップ（[rows] と同じ形のビット）。 */
     val ghosts: List<Int> = emptyList(),
+    /**
+     * 2 小節目から先の打ち込み。1 小節のパターンでは空。
+     * 1 小節目は上の [rows] / [accents] / [ghosts] がそのまま持っている。
+     */
+    val extraBars: List<BarGrid> = emptyList(),
 ) {
     /** 実際に使う旋律の一覧。旧形式しか無いときはそれを 1 小節ぶんとして扱う。 */
     val leadBars: List<List<Int>>
@@ -155,6 +199,112 @@ data class Pattern(
 
     /** 旋律を何小節ぶん持っているか。 */
     val leadBarCount: Int get() = leadBars.size
+
+    /**
+     * このパターンの長さ（小節数）。
+     *
+     * 打ち込みと旋律の長いほうに合わせる。旋律だけ複数小節ぶん持てた頃に保存した曲は
+     * 打ち込みが 1 小節ぶんしか無いので、そこは旋律のほうで拾う。
+     */
+    val barCount: Int get() = maxOf(gridCount, leadBarCount).coerceIn(1, MAX_BARS)
+
+    /** 打ち込みを何小節ぶん持っているか。旋律より短いことがある（古い保存データ）。 */
+    private val gridCount: Int get() = 1 + extraBars.size
+
+    /** [bar] 小節目の打ち込み。持っている数より先を訊かれたら頭から繰り返す。 */
+    fun gridAt(bar: Int): BarGrid {
+        val index = bar.mod(barCount).mod(gridCount)
+        return if (index == 0) BarGrid(rows, accents, ghosts) else extraBars[index - 1]
+    }
+
+    /**
+     * [bar] 小節目の打ち込みだけを持つ、1 小節ぶんのパターン。
+     *
+     * 旋律は削らずに残してあるので、返ってきたものに [leadAt] もそのまま使える。
+     * その代わり返り値の [barCount] は旋律ぶんだけ元のまま残る。
+     * 打ち込みはもう 1 小節ぶんしかないので、何小節目を訊いても同じものが返る。
+     *
+     * 再生と書き出しは [PlaybackPlan.patternAt] がここを通すので、
+     * 鳴らす側は小節数を意識しなくていい。
+     */
+    fun at(bar: Int): Pattern {
+        if (extraBars.isEmpty()) return this
+        val grid = gridAt(bar)
+        return copy(
+            rows = grid.rows,
+            accents = grid.accents,
+            ghosts = grid.ghosts,
+            extraBars = emptyList(),
+        )
+    }
+
+    /** [bar] 小節目の打ち込みを差し替える。 */
+    fun withGrid(bar: Int, grid: BarGrid): Pattern {
+        val fixed = grid.normalized()
+        val index = bar.mod(barCount)
+        if (index == 0 && gridCount == 1) {
+            return copy(rows = fixed.rows, accents = fixed.accents, ghosts = fixed.ghosts)
+        }
+        // 打ち込みが旋律より短いパターンに書き込むときは、
+        // 足りない小節を今の中身で埋めてから差し替える（鳴り方は変わらない）。
+        val grids = List(barCount) { gridAt(it) }.toMutableList()
+        grids[index] = fixed
+        return copy(
+            rows = grids[0].rows,
+            accents = grids[0].accents,
+            ghosts = grids[0].ghosts,
+            extraBars = grids.drop(1),
+        )
+    }
+
+    /** [bar] 小節目だけを 1 小節ぶんのパターンとして書き換える。 */
+    private fun editBar(bar: Int, edit: (Pattern) -> Pattern): Pattern =
+        withGrid(bar, edit(at(bar)).gridAt(0))
+
+    fun toggleAt(bar: Int, row: Int, step: Int): Pattern = editBar(bar) { it.toggle(row, step) }
+
+    fun setAt(bar: Int, row: Int, step: Int, on: Boolean): Pattern =
+        editBar(bar) { it.set(row, step, on) }
+
+    fun clearRowAt(bar: Int, row: Int): Pattern = editBar(bar) { it.clearRow(row) }
+
+    fun cycleLevelAt(bar: Int, row: Int, step: Int): Pattern =
+        editBar(bar) { it.cycleLevel(row, step) }
+
+    fun withLevelsAt(bar: Int, row: Int, accent: Int, ghost: Int): Pattern =
+        editBar(bar) { it.withLevels(row, accent, ghost) }
+
+    /** [other] のリズム（打ち込みと強弱）を [bar] 小節目だけに受け取る。 */
+    fun withRhythmAt(bar: Int, other: Pattern): Pattern =
+        editBar(bar) { it.withRhythmOf(other) }
+
+    /** 打ち込みだけを全小節ぶん消す（旋律と長さはそのまま）。 */
+    fun clearedRhythm(): Pattern = copy(
+        rows = List(STEP_ROW_COUNT) { 0 },
+        accents = emptyList(),
+        ghosts = emptyList(),
+        extraBars = List(extraBars.size) { BarGrid() },
+    )
+
+    /**
+     * 小節数を [count] に変える。
+     *
+     * 増やしたぶんは今ある小節を順に写す。1 小節のループを 2 小節に伸ばしたときに
+     * 後半が無音になると、長さが変わったのではなく壊れたように聞こえるため。
+     * 減らすぶんは切り落とす（戻しても中身は返らない）。
+     */
+    fun withBarCount(count: Int): Pattern {
+        val target = count.coerceIn(1, MAX_BARS)
+        if (target == barCount && target == gridCount && target == leadBarCount) return this
+        val grids = List(target) { gridAt(it) }
+        val bars = leadBars
+        return copy(
+            rows = grids[0].rows,
+            accents = grids[0].accents,
+            ghosts = grids[0].ghosts,
+            extraBars = grids.drop(1),
+        ).withLeads(List(target) { bars[it.mod(bars.size)] })
+    }
 
     fun isOn(row: Int, step: Int): Boolean = (rowAt(row) shr step) and 1 == 1
 
@@ -349,12 +499,11 @@ data class Pattern(
         return REST
     }
 
-    /** 旋律を何小節ぶん持つかを変える。増やしたぶんは空。 */
-    fun withLeadBarCount(count: Int): Pattern {
-        val target = count.coerceIn(1, MAX_LEAD_BARS)
-        val bars = leadBars
-        return withLeads(List(target) { bars.getOrElse(it) { emptyLead() } })
-    }
+    /**
+     * 以前の名前。旋律だけ複数小節ぶん持てた頃の呼び方で、今は
+     * パターンの長さそのものを変える [withBarCount] と同じ。
+     */
+    fun withLeadBarCount(count: Int): Pattern = withBarCount(count)
 
     fun withLeads(bars: List<List<Int>>): Pattern = copy(
         lead = emptyList(),
@@ -370,20 +519,23 @@ data class Pattern(
     /** 旋律をすべて消して 1 小節ぶんに戻す。 */
     fun clearAllLeads(): Pattern = withLeads(listOf(emptyLead()))
 
+    /** 中身も長さも空に戻す（1 小節の空パターン）。 */
     fun cleared(): Pattern = copy(
         rows = List(STEP_ROW_COUNT) { 0 },
         accents = emptyList(),
         ghosts = emptyList(),
+        extraBars = emptyList(),
         lead = emptyList(),
         leads = listOf(emptyLead()),
     )
 
     fun isEmpty(): Boolean =
-        rows.all { it and STEP_MASK == 0 } && leadBars.all { line -> line.all { it == REST } }
+        (0 until gridCount).all { gridAt(it).isEmpty() } &&
+            leadBars.all { line -> line.all { it == REST } }
 
     fun leadNoteCount(): Int = leadBars.sumOf { line -> line.count { isNote(it) } }
 
-    fun hitCount(): Int = rows.sumOf { Integer.bitCount(it and STEP_MASK) } + leadNoteCount()
+    fun hitCount(): Int = (0 until gridCount).sumOf { gridAt(it).hitCount() } + leadNoteCount()
 
     /** 古い保存データ（行数が足りない・旧形式の旋律）を今の形に揃える。 */
     fun normalized(): Pattern = copy(
@@ -391,6 +543,7 @@ data class Pattern(
         // 鳴らないステップに強弱だけ残っていても意味がないので落とす。
         accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
         ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
+        extraBars = extraBars.take(MAX_BARS - 1).map { it.normalized() },
         lead = emptyList(),
         leads = leadBars.map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
     )
@@ -438,8 +591,11 @@ data class Pattern(
         /** 実際に発音する音（休符でもタイでもない）か。 */
         fun isNote(value: Int): Boolean = value >= 0
 
-        /** 1 つのパターンが持てる旋律の小節数の上限。 */
-        const val MAX_LEAD_BARS = 8
+        /** 1 つのパターンが持てる小節数の上限。 */
+        const val MAX_BARS = 8
+
+        /** 以前の名前。旋律だけ複数小節ぶん持てた頃の呼び方。 */
+        const val MAX_LEAD_BARS = MAX_BARS
 
         /** 巡回の順番。押すたびに 普通 → 強 → 弱 と変わって元に戻る。 */
         fun next(level: Level): Level = when (level) {

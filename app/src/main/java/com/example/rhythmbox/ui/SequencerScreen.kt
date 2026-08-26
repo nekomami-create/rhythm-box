@@ -134,14 +134,29 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onCopy = { copyTargetOpen = true },
             onChordClick = { chordPickerOpen = true },
             onGenerate = viewModel::generateRhythm,
+            barCount = state.pattern.barCount,
             undoDepth = state.undoDepth,
             scope = state.rhythmScope,
             onScopeChange = viewModel::setRhythmScope,
             onUndo = viewModel::undoGenerate,
         )
 
+        // パターンが 2 小節以上あるときに、どの小節を打ち込んでいるか。
+        // ＋ / − がパターンの長さそのものを変える。
+        PatternBarSelector(
+            count = state.pattern.barCount,
+            selected = state.selectedBar,
+            playing = state.playingPatternBar.takeIf { state.playingPattern == state.selectedPattern } ?: -1,
+            chordAt = viewModel::chordForBar,
+            onSelect = viewModel::selectBar,
+            onCountChange = viewModel::setBarCount,
+            onClearBar = viewModel::clearBar,
+            clearLabel = "この小節の打ち込みを消す",
+        )
+
         StepGrid(
-            pattern = state.pattern,
+            // 打ち込みは開いている 1 小節ぶんだけを渡す。
+            pattern = state.pattern.at(state.selectedBar),
             song = state.song,
             playingStep = state.gridStep,
             onToggle = viewModel::toggleStep,
@@ -334,6 +349,8 @@ private fun PatternSelector(
     onCopy: () -> Unit,
     onChordClick: () -> Unit,
     onGenerate: (RhythmStyle?) -> Unit,
+    /** 選んでいるパターンの長さ。範囲チップに「この小節」を出すかどうかに使う。 */
+    barCount: Int,
     undoDepth: Int,
     scope: GenerateScope,
     onScopeChange: (GenerateScope) -> Unit,
@@ -434,8 +451,13 @@ private fun PatternSelector(
             }
         }
         // 「ランダム」がどこまで書き換えるか。
+        // 1 小節のパターンでは「この小節」と「このパターン」が同じなので出さない。
         ScopeChips(
-            scopes = listOf(GenerateScope.PATTERN, GenerateScope.ALL),
+            scopes = if (barCount > 1) {
+                listOf(GenerateScope.BAR, GenerateScope.PATTERN, GenerateScope.ALL)
+            } else {
+                listOf(GenerateScope.PATTERN, GenerateScope.ALL)
+            },
             selected = scope,
             onSelect = onScopeChange,
         )

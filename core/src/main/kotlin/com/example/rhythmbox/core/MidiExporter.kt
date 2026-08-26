@@ -67,7 +67,7 @@ object MidiExporter {
         for (bar in 0 until plan.barCount) {
             val pattern = plan.patternAt(bar)
             val chord = plan.chordAt(bar)
-            val leadBar = plan.leadBarAt(bar)
+            val leadBar = plan.patternBarAt(bar)
             for (step in 0 until STEPS_PER_BAR) {
                 val at = bar * STEPS_PER_BAR + step
                 val start = starts[at]
@@ -138,11 +138,11 @@ object MidiExporter {
                 cursorBar++
                 if (cursorBar >= plan.barCount) break
             }
-            if (plan.patternAt(cursorBar).leadAt(plan.leadBarAt(cursorBar), cursorStep) != Pattern.TIE) break
+            if (plan.patternAt(cursorBar).leadAt(plan.patternBarAt(cursorBar), cursorStep) != Pattern.TIE) break
             held++
         }
         if (held > 1) return spanTicks(starts, at, held, bar, plan.barCount)
-        val next = plan.patternAt(bar).nextLead(plan.leadBarAt(bar), step)
+        val next = plan.patternAt(bar).nextLead(plan.patternBarAt(bar), step)
         return spanTicks(starts, at, minOf(next - step, LEAD_MAX_STEPS), bar, plan.barCount)
     }
 

@@ -131,7 +131,7 @@ private fun ColumnScope.DrumPads(state: RhythmUiState, viewModel: RhythmViewMode
                     label = pad.label,
                     caption = pad.caption,
                     melodic = pad.row >= DRUM_COUNT,
-                    playing = state.playingStep >= 0 && state.pattern.isOn(pad.row, state.playingStep),
+                    playing = state.playingStep >= 0 && state.soundingPattern.isOn(pad.row, state.playingStep),
                     modifier = Modifier.weight(1f),
                     onHit = { viewModel.padHit(pad.row) },
                 )
@@ -144,7 +144,7 @@ private fun ColumnScope.DrumPads(state: RhythmUiState, viewModel: RhythmViewMode
             label = "BAS",
             caption = "ベース",
             melodic = true,
-            playing = state.playingStep >= 0 && state.pattern.isOn(ROW_BASS, state.playingStep),
+            playing = state.playingStep >= 0 && state.soundingPattern.isOn(ROW_BASS, state.playingStep),
             modifier = Modifier.weight(1f),
             onHit = { viewModel.padHit(ROW_BASS) },
         )
