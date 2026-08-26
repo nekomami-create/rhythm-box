@@ -71,7 +71,6 @@ object MidiExporter {
             for (step in 0 until STEPS_PER_BAR) {
                 val at = bar * STEPS_PER_BAR + step
                 val start = starts[at]
-                val level = pattern.levelAt(0, step)
 
                 for (voice in Voice.entries) {
                     if (!pattern.isOn(voice.ordinal, step)) continue
@@ -109,7 +108,8 @@ object MidiExporter {
                         start = start,
                         length = leadTicks(starts, plan, bar, step, at),
                         midi = lead,
-                        velocity = velocityOf(level).coerceAtLeast(100),
+                        // 旋律には強弱を持たせていないので、どの音も同じ強さで書く。
+                        velocity = LEAD_VELOCITY,
                     )
                 }
             }
@@ -276,6 +276,9 @@ object MidiExporter {
 
     private fun shortBytes(value: Int): List<Byte> =
         listOf(((value shr 8) and 0xFF).toByte(), (value and 0xFF).toByte())
+
+    /** 旋律の強さ。ドラムの普通の音と同じにしておく。 */
+    private const val LEAD_VELOCITY = 100
 
     private const val BASS_MAX_STEPS = 4
     private const val LEAD_MAX_STEPS = 4

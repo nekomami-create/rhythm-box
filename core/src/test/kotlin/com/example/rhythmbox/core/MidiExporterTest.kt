@@ -175,6 +175,27 @@ class MidiExporterTest {
         assertEquals(60_000_000 / 140, micros, 2)
     }
 
+    @Test
+    fun `the lead velocity does not follow the kick`() {
+        // 旋律の強さをドラムの行から取っていたことがあった。
+        // キックにアクセントを付けても、旋律の音は変わらないはず。
+        val lead = MutableList(STEPS_PER_BAR) { Pattern.REST }
+        lead[0] = 72
+        lead[4] = 74
+        val pattern = Pattern.of("A", "x...x...........")
+            .withLevel(0, 0, Pattern.Level.ACCENT)
+            .withLevel(0, 4, Pattern.Level.GHOST)
+            .withLeads(listOf(lead))
+        val song = Song("s", "test").withPattern(0, pattern)
+
+        val notes = notesOf(MidiExporter.export(song, PlaybackPlan.single(song, 0)))
+            .filter { it.midi == 72 || it.midi == 74 }
+            .sortedBy { it.start }
+
+        assertEquals(2, notes.size)
+        assertEquals(notes[0].velocity, notes[1].velocity)
+    }
+
     private fun assertEquals(expected: Int, actual: Int, tolerance: Int) {
         assertTrue("expected=$expected actual=$actual", kotlin.math.abs(expected - actual) <= tolerance)
     }
