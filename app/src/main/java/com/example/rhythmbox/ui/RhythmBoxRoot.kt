@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -84,6 +86,25 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
                 actions = {
+                    // 鳴っているところに画面を合わせるか。チェーンや曲を流していると
+                    // パターンも小節も次々に変わるので、既定は入にしてある。
+                    FilledIconToggleButton(
+                        checked = state.following,
+                        onCheckedChange = viewModel::setFollowPlayback,
+                    ) {
+                        Icon(
+                            if (state.following) {
+                                Icons.Filled.MyLocation
+                            } else {
+                                Icons.Filled.LocationSearching
+                            },
+                            contentDescription = if (state.following) {
+                                "鳴っているところへの追従をやめる"
+                            } else {
+                                "鳴っているところに画面を合わせる"
+                            },
+                        )
+                    }
                     // 曲構成を最後まで再生したあと頭に戻るかどうか。どの画面からでも切り替えられる。
                     FilledIconToggleButton(
                         checked = state.loopSong,

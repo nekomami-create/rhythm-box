@@ -86,6 +86,21 @@ data class RhythmUiState(
     val playingPatternBar: Int = -1,
     /** グリッドとピアノロールで編集している、パターンの中の小節。 */
     val selectedBar: Int = 0,
+    /**
+     * 鳴っているところに画面を合わせるか（本人の設定）。
+     *
+     * チェーンや曲を流しているときは、鳴っているパターン・小節が次々に変わる。
+     * 合わせておかないと、聴いている音と画面に出ているものが別物になる。
+     */
+    val followPlayback: Boolean = true,
+    /**
+     * 追従を一時的に止めているか。
+     *
+     * 流しながら別の小節を開いたら、そこを見たいということなので追いかけない。
+     * ただしそれは「今この曲を見たい」だけなので、次に再生を始めたら戻す。
+     * 本人が切ったのか、たまたま別の場所を開いているだけなのかを混ぜないための区別。
+     */
+    val followSuspended: Boolean = false,
     /** 自動生成の直前の状態に戻せるか。 */
     val canUndo: Boolean = false,
     /** あと何段戻せるか。ボタンに出して、どこまで遡れるか分かるようにする。 */
@@ -113,6 +128,9 @@ data class RhythmUiState(
     val exportMessage: String? = null,
 ) {
     val pattern: Pattern get() = song.pattern(selectedPattern)
+
+    /** いま実際に追従しているか。画面のスイッチもこれを出す。 */
+    val following: Boolean get() = followPlayback && !followSuspended
 
     /** チェーン再生で回すパターン。中身のあるものを A→H の順に並べる。 */
     val chain: List<Int>
@@ -168,6 +186,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     private val engine = container.engine
     private val audio = container.audioOutput
     private val repository = container.songRepository
+    private val keepAlive = container.keepAlive
 
     private val _uiState = MutableStateFlow(RhythmUiState())
     val uiState: StateFlow<RhythmUiState> = _uiState.asStateFlow()
@@ -188,6 +207,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         audio.onPlaybackFinished = {
             // 音声スレッドから呼ばれるのでメインに戻してから状態を更新する。
             viewModelScope.launch { handlePlaybackFinished() }
+        }
+        // 通知の「停止」から止められるようにする。音を持っているのはこちらなので、
+        // サービスは押されたことを伝えてくるだけ。
+        keepAlive.onStopRequested = {
+            viewModelScope.launch { stop() }
         }
         viewModelScope.launch {
             repository.load()
@@ -215,12 +239,20 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onScreenResumed() {
         audio.resume()
+        // 画面を消しているあいだは位置の更新を止めてある。見る人が戻ったら再開する。
+        if (_uiState.value.isPlaying && positionJob == null) startPositionUpdates()
     }
 
     fun onScreenPaused() {
-        stop()
-        audio.pause()
         viewModelScope.launch { repository.saveNow() }
+        if (_uiState.value.isPlaying) {
+            // 鳴っている間は音声スレッドを畳まない（前面サービスがプロセスを保つ）。
+            // 見えていない画面のために位置を数え続ける必要は無いので、そこだけ止める。
+            positionJob?.cancel()
+            positionJob = null
+            return
+        }
+        audio.pause()
     }
 
     // --- 再生 ---------------------------------------------------------------
@@ -229,15 +261,25 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val state = _uiState.value
         if (mode == PlayMode.SONG && state.song.arrangement.isEmpty()) return
         if (mode == PlayMode.CHAIN && state.chain.isEmpty()) return
-        _uiState.update { it.copy(mode = mode, isPlaying = true) }
+        // 鳴らし始めるのは「聴きたい」ということなので、
+        // 別の小節を開いていたぶんの一時停止はここで解く（本人が切った設定は残す）。
+        _uiState.update { it.copy(mode = mode, isPlaying = true, followSuspended = false) }
         syncEngine()
         audio.resume()
         engine.start()
+        // 画面を消してもプロセスを畳ませない。通知から止められるようにもなる。
+        keepAlive.start(state.song.name)
         startPositionUpdates()
     }
 
     fun stop() {
         engine.stop()
+        clearPlayingState()
+    }
+
+    /** 鳴っていない状態に戻す。自分で止めても自然に終わっても、後始末は同じ。 */
+    private fun clearPlayingState() {
+        keepAlive.stop()
         positionJob?.cancel()
         positionJob = null
         _uiState.update {
@@ -437,17 +479,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun handlePlaybackFinished() {
-        positionJob?.cancel()
-        positionJob = null
-        _uiState.update {
-            it.copy(
-                isPlaying = false,
-                playingStep = -1,
-                playingBar = -1,
-                playingPattern = -1,
-                playingPatternBar = -1,
-            )
-        }
+        clearPlayingState()
     }
 
     private fun startPositionUpdates() {
@@ -456,13 +488,26 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             while (isActive) {
                 val position = audio.currentPosition()
                 val bar = position?.let { currentPlan?.bars?.getOrNull(it.bar) }
-                _uiState.update {
-                    it.copy(
+                _uiState.update { state ->
+                    // 曲構成では、パターンの長さを超える回数ぶん並べられる（2 小節の
+                    // パターンを 8 小節ぶん、など）。折り返した番号のほうが画面と噛み合う。
+                    val patternBar = bar
+                        ?.let { it.patternBar.mod(state.song.pattern(it.patternIndex).barCount) }
+                        ?: -1
+                    val moved = state.copy(
                         playingStep = position?.step ?: -1,
                         playingBar = position?.bar ?: -1,
                         playingPattern = bar?.patternIndex ?: -1,
-                        playingPatternBar = bar?.patternBar ?: -1,
+                        playingPatternBar = patternBar,
                     )
+                    if (bar == null || !state.following) {
+                        moved
+                    } else {
+                        moved.copy(
+                            selectedPattern = bar.patternIndex.coerceIn(state.song.patterns.indices),
+                            selectedBar = patternBar,
+                        )
+                    }
                 }
                 delay(POSITION_POLL_MS)
             }
@@ -500,7 +545,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun selectPattern(index: Int) {
         clearUndo()
         _uiState.update {
-            it.copy(selectedPattern = index.coerceIn(it.song.patterns.indices), selectedBar = 0)
+            it.copy(
+                selectedPattern = index.coerceIn(it.song.patterns.indices),
+                selectedBar = 0,
+                followSuspended = true,
+            )
         }
         syncEngine()
     }
@@ -535,7 +584,17 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 編集する小節（パターンの中の何小節目か）を選ぶ。 */
     fun selectBar(bar: Int) {
-        _uiState.update { it.copy(selectedBar = bar.coerceIn(0, it.pattern.barCount - 1)) }
+        _uiState.update {
+            it.copy(
+                selectedBar = bar.coerceIn(0, it.pattern.barCount - 1),
+                followSuspended = true,
+            )
+        }
+    }
+
+    /** 鳴っているところに画面を合わせるかどうか。押した時点の一時停止も解く。 */
+    fun setFollowPlayback(on: Boolean) {
+        _uiState.update { it.copy(followPlayback = on, followSuspended = false) }
     }
 
     /** パターンの長さ（小節数）を変える。 */
@@ -1274,6 +1333,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     override fun onCleared() {
         audio.onPlaybackFinished = null
+        keepAlive.onStopRequested = null
+        // 画面が完全に畳まれたのに通知だけ残る、という状態を作らない。
+        keepAlive.stop()
         super.onCleared()
     }
 

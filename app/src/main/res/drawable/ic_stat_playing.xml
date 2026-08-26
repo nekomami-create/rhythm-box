@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  通知バーに出る印。ステータスバーの絵は色を落として形だけが残るので、
+  塗りつぶしの単純な形にしてある（細い線だと潰れて何か分からなくなる）。
+  BreakBox らしく、ステップシーケンサーの並びを模した 4 本の棒。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,9h3v6H3z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.5,5h3v14h-3z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,10.5h3v3h-3z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19.5,7h3v10h-3z" />
+</vector>

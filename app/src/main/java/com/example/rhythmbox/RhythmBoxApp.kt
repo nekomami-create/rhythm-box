@@ -8,6 +8,7 @@ import com.example.rhythmbox.audio.AudioOutput
 import com.example.rhythmbox.core.DrumSynth
 import com.example.rhythmbox.core.PlaybackEngine
 import com.example.rhythmbox.files.FileExporter
+import com.example.rhythmbox.playback.KeepAlive
 import com.example.rhythmbox.data.SongRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -52,6 +53,9 @@ class AppContainer(private val application: Application) {
     val audioExporter: AudioExporter by lazy { AudioExporter(application) }
 
     val fileExporter: FileExporter by lazy { FileExporter(application) }
+
+    /** 再生中に前面サービスを立てて、画面を消しても音が止まらないようにする。 */
+    val keepAlive: KeepAlive by lazy { KeepAlive(application) }
 
     val songRepository: SongRepository by lazy {
         SongRepository(File(application.filesDir, "songs.json"), scope)

@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      画面を消しても音を止めないために、再生中だけ前面サービスを立てる。
+      通知は義務であると同時に、画面を見ずに止められる場所でもある。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".RhythmBoxApp"
         android:allowBackup="true"
@@ -21,6 +29,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
     </application>
 

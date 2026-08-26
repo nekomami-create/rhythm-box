@@ -159,6 +159,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             pattern = state.pattern.at(state.selectedBar),
             song = state.song,
             playingStep = state.gridStep,
+            follow = state.following,
             onToggle = viewModel::toggleStep,
             onCycleLevel = viewModel::cycleStepLevel,
             onPreview = viewModel::previewRow,
@@ -502,6 +503,8 @@ private fun StepGrid(
     pattern: Pattern,
     song: Song,
     playingStep: Int,
+    /** 再生位置に合わせて横へ送るか（画面上部の追従スイッチ）。 */
+    follow: Boolean,
     onToggle: (Int, Int) -> Unit,
     onCycleLevel: (Int, Int) -> Unit,
     onPreview: (Int) -> Unit,
@@ -514,6 +517,8 @@ private fun StepGrid(
         val available = maxWidth - labelWidth - gap
         val fitted = (available - gap * (STEPS_PER_BAR - 1)) / STEPS_PER_BAR
         val cellWidth = if (fitted < MIN_CELL) MIN_CELL else fitted
+        // 16 ステップが入りきらない幅のときだけ効く（入りきるなら maxValue が 0）。
+        FollowPlayhead(scroll, playingStep, cellWidth, gap, follow)
 
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             Row {

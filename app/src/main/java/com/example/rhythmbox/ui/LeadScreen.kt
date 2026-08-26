@@ -112,6 +112,8 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         val key = viewModel.detectedKey()
         ChordLegend(chord = barChord, keyName = key.name)
 
+        FollowPlayhead(horizontalScroll, playingStep, CELL_WIDTH, CELL_GAP, state.following)
+
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             for (midi in HIGHEST_MIDI downTo LOWEST_MIDI) {
                 PianoRollRow(
@@ -335,7 +337,7 @@ private fun PianoRollRow(
         Spacer(Modifier.width(4.dp))
         Row(
             modifier = Modifier.horizontalScroll(scrollState),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
         ) {
             repeat(STEPS_PER_BAR) { step ->
                 val head = pattern.leadAt(leadBar, step) == midi
@@ -373,3 +375,6 @@ private fun PianoRollRow(
 
 private val ROW_HEIGHT = 22.dp
 private val CELL_WIDTH = 28.dp
+
+/** マスの間隔。再生位置を追いかけて横へ送るときの計算にも使う。 */
+private val CELL_GAP = 3.dp

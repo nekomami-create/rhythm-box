@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BreakBox</string>
+
+    <!-- 再生中に出る通知（画面を消しても音を止めないために要る） -->
+    <string name="playing_channel_name">再生中</string>
+    <string name="playing_channel_description">画面を消しているあいだも音を鳴らし続けるための表示です。</string>
+    <string name="playing_notification_text">再生中 ・ 押すと BreakBox に戻ります</string>
+    <string name="playing_notification_stop">停止</string>
 </resources>
