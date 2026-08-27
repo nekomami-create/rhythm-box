@@ -314,11 +314,21 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         syncEngine()
     }
 
+    /**
+     * 叩く直前に、音声スレッドが回っていることだけ確かめる。
+     *
+     * resume() と pause() は同じ錠を取る。pause() は音声スレッドの
+     * 終了を最大 500 ms 待つので、止める処理と重なったところで叩くと、
+     * 錠が空くまで UI スレッドごと止まる。すでに回っているなら
+     * 錠に触る必要はないので、先に見てから呼ぶ。
+     */
+    private fun ensureAudio() {
+        if (!audio.isRunning) audio.resume()
+    }
+
     /** グリッドの行（ドラム / コード / ベース）を単発で試聴する。 */
     fun previewRow(row: Int) {
-        // resume() は同期メソッドなので、鳴らしている最中は触らない。
-        // 叩くたびに錠を取りに行くと、止める処理と重なったときに待たされる。
-        if (!audio.isRunning) audio.resume()
+        ensureAudio()
         when (row) {
             ROW_CHORD -> engine.previewChord(_uiState.value.patternChord)
             ROW_BASS -> engine.previewNote(Instrument.BASS, _uiState.value.patternChord.bassMidi())
@@ -327,12 +337,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun previewChord(chord: Chord) {
-        audio.resume()
+        ensureAudio()
         engine.previewChord(chord)
     }
 
     fun previewLead(midi: Int) {
-        audio.resume()
+        ensureAudio()
         engine.previewNote(Instrument.LEAD, midi)
     }
 
@@ -391,7 +401,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun chordPadHit(index: Int) {
         val chord = chordPads().getOrNull(index) ?: return
-        audio.resume()
+        ensureAudio()
         engine.previewChord(chord)
         if (!_uiState.value.padRecording) return
 
