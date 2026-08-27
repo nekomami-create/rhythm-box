@@ -79,6 +79,8 @@ class GameMusicTest {
             ProgressionTemplate.GAME_BOSS,
             ProgressionTemplate.GAME_DUNGEON,
             ProgressionTemplate.GAME_QUEST,
+            ProgressionTemplate.GAME_TOWN,
+            ProgressionTemplate.GAME_CAVERN,
         )) {
             val key = template.keyFor(cMajor)
             val allowed = key.scalePitches().toSet()
@@ -112,18 +114,43 @@ class GameMusicTest {
     // --- ジャンル -----------------------------------------------------------
 
     @Test
-    fun `the game genres ask for the chip sound and the ones before them do not`() {
-        val game = setOf(Genre.GAME_FIELD, Genre.GAME_BOSS, Genre.GAME_TITLE)
+    fun `only the game genre asks for the chip sound`() {
         for (genre in Genre.entries) {
-            assertEquals("${genre.label}", genre in game, genre.chip)
+            assertEquals("${genre.label}", genre == Genre.GAME, genre.chip)
         }
     }
 
     @Test
-    fun `the game genres run fast`() {
-        for (genre in listOf(Genre.GAME_FIELD, Genre.GAME_BOSS)) {
-            assertTrue("${genre.label} が遅い", genre.bpmRange.first >= 140)
+    fun `the game genre is the only one with scenes to choose from`() {
+        assertEquals(GameScene.entries, Genre.GAME.scenes)
+        for (genre in Genre.entries - Genre.GAME) {
+            assertTrue("${genre.label} に場面がある", genre.scenes.isEmpty())
         }
+    }
+
+    @Test
+    fun `every scene brings its own tempo, progressions and lead`() {
+        // 場面ごとに速さも明暗もまるで違うので、1 つには畳めない。
+        val recipes = GameScene.entries.map { it.recipe() }
+        assertTrue("どの場面もチップ音源", recipes.all { it.chip })
+        assertTrue("速さが場面ごとに違う", recipes.map { it.bpmRange }.distinct().size == recipes.size)
+        assertTrue("進行が場面ごとに違う", recipes.map { it.progressions }.distinct().size == recipes.size)
+        // 戦闘は歩く場面より速く、洞窟はいちばん遅い。
+        assertTrue(GameScene.BOSS.recipe().bpmRange.first > GameScene.FIELD.recipe().bpmRange.first)
+        assertTrue(GameScene.DUNGEON.recipe().bpmRange.first < GameScene.TOWN.recipe().bpmRange.first)
+    }
+
+    @Test
+    fun `the town progression stays bright while still using a flat seventh`() {
+        // ミクソリディアンなので、長三和音の I のまま ♭VII が入る。
+        assertEquals(listOf("C", "A#", "F", "C"), names(ProgressionTemplate.GAME_TOWN))
+    }
+
+    @Test
+    fun `the cavern progression leans on the flat second`() {
+        // フリジアンの ♭II（半音上の長三和音）が独特の緊張を作る。
+        // ♭VII のほうはフリジアンでは短三和音になる。
+        assertEquals(listOf("Cm", "C#", "A#m", "Cm"), names(ProgressionTemplate.GAME_CAVERN))
     }
 
     // --- 音源 ---------------------------------------------------------------
@@ -133,7 +160,8 @@ class GameMusicTest {
         val chordChip = ToneSynth.timbre(Instrument.CHORD, set = SoundSet.CHIP)
         val bassChip = ToneSynth.timbre(Instrument.BASS, set = SoundSet.CHIP)
 
-        assertEquals(ToneSynth.Waveform.Pulse(0.25f), chordChip.wave)
+        // 細いパルスはアルペジオで回すと刺さるので、コードは丸い矩形波にしてある。
+        assertEquals(ToneSynth.Waveform.Pulse(0.5f), chordChip.wave)
         assertEquals(ToneSynth.Waveform.ChipTriangle, bassChip.wave)
         // リードは 1 音ずつ選ぶものなので、音源の切り替えでは動かない。
         assertEquals(
@@ -163,6 +191,41 @@ class GameMusicTest {
             .songs
             .first()
         assertEquals(SoundSet.CHIP, restored.soundSet)
+    }
+
+    @Test
+    fun `every scene drives its rhythm with the chip pattern`() {
+        for (scene in GameScene.entries) {
+            assertEquals(listOf(RhythmStyle.CHIP_DRIVE), scene.recipe().rhythms)
+        }
+    }
+
+    @Test
+    fun `each scene picks a lead voice that suits it`() {
+        // どれもパルス波。細さで場面の軽さ・重さを付け分けている。
+        for (scene in GameScene.entries) {
+            val wave = ToneSynth.timbre(Instrument.LEAD, scene.recipe().leadVoice).wave
+            assertTrue("${scene.label} がパルス波でない", wave is ToneSynth.Waveform.Pulse)
+        }
+        assertEquals(ToneSynth.LeadVoice.PULSE_12, GameScene.TOWN.recipe().leadVoice)
+        assertEquals(ToneSynth.LeadVoice.PULSE_50, GameScene.DUNGEON.recipe().leadVoice)
+    }
+
+    @Test
+    fun `the arpeggio speed is remembered with the song`() {
+        val saved = Song(id = "s", name = "曲").copy(arpeggioSpeed = ArpeggioSpeed.SLOW)
+        val restored = SongCodec.decode(SongCodec.encode(SongLibrary(listOf(saved), "s")))!!
+            .songs
+            .first()
+        assertEquals(ArpeggioSpeed.SLOW, restored.arpeggioSpeed)
+    }
+
+    @Test
+    fun `a song saved before the speed could be chosen opens on the gentler default`() {
+        val json = """
+            {"songs": [{"id": "old", "name": "前の形"}], "currentId": "old"}
+        """.trimIndent()
+        assertEquals(ArpeggioSpeed.NORMAL, SongCodec.decode(json)!!.current()!!.arpeggioSpeed)
     }
 
     @Test

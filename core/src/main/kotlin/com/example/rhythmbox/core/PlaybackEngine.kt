@@ -26,6 +26,8 @@ data class EngineConfig(
     val drumKit: DrumKit = DrumKit.NORMAL,
     /** コードとベースの音の作り方。 */
     val soundSet: SoundSet = SoundSet.NORMAL,
+    /** 高速アルペジオで音を進める速さ。 */
+    val arpeggioSpeed: ArpeggioSpeed = ArpeggioSpeed.NORMAL,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -265,6 +267,7 @@ class PlaybackEngine(
                 timbre,
                 pattern.levelAt(ROW_CHORD, step).gain,
                 arpeggio,
+                cfg.arpeggioSpeed.ticks,
             )
         }
         if (pattern.isOn(ROW_BASS, step)) {
@@ -385,9 +388,12 @@ class PlaybackEngine(
         timbre: ToneSynth.Timbre,
         velocity: Float = 1f,
         arpeggio: IntArray? = null,
+        arpeggioTicks: Int = ToneSynth.ARPEGGIO_TICKS,
     ) {
         releaseInstrument(Instrument.CHORD)
-        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre, velocity, arpeggio)
+        for (midi in midis) {
+            startTone(Instrument.CHORD, midi, gate, timbre, velocity, arpeggio, arpeggioTicks)
+        }
     }
 
     private fun triggerNote(
@@ -415,6 +421,7 @@ class PlaybackEngine(
         timbre: ToneSynth.Timbre,
         velocity: Float,
         arpeggio: IntArray? = null,
+        arpeggioTicks: Int = ToneSynth.ARPEGGIO_TICKS,
     ) {
         var target: ToneVoice? = null
         var quietest: ToneVoice? = null
@@ -425,7 +432,8 @@ class PlaybackEngine(
             }
             if (quietest == null || voice.level < quietest.level) quietest = voice
         }
-        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre, velocity, arpeggio)
+        (target ?: quietest)
+            ?.start(instrument, midi, gate, sampleRate, timbre, velocity, arpeggio, arpeggioTicks)
     }
 
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
@@ -500,6 +508,7 @@ class PlaybackEngine(
         private var framesPerTick = 1
         private var framesToTick = 1
         private var arpCount = 0
+        private var arpTicks = ToneSynth.ARPEGGIO_TICKS
         private val arpOffsets = IntArray(MAX_ARPEGGIO)
 
         private enum class Stage { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE }
@@ -517,6 +526,8 @@ class PlaybackEngine(
              * 渡すと 1 声部で和音に聞こえる。
              */
             arpeggio: IntArray? = null,
+            /** 音を 1 つ進めるまでの刻み数。 */
+            arpeggioTicks: Int = ToneSynth.ARPEGGIO_TICKS,
         ) {
             val frequency = ToneSynth.frequency(midi)
             this.instrument = instrument
@@ -547,6 +558,7 @@ class PlaybackEngine(
             baseDuty = duty
 
             modulation = timbre.modulation
+            arpTicks = arpeggioTicks.coerceAtLeast(1)
             arpCount = 0
             if (arpeggio != null) {
                 val count = minOf(arpeggio.size, MAX_ARPEGGIO)
@@ -649,7 +661,7 @@ class PlaybackEngine(
          */
         private fun applyModulation() {
             var semitones = ToneSynth.semitoneOffset(modulation, tick)
-            if (arpCount > 0) semitones += arpOffsets[ToneSynth.arpeggioIndex(tick, arpCount)]
+            if (arpCount > 0) semitones += arpOffsets[ToneSynth.arpeggioIndex(tick, arpCount, arpTicks)]
             phaseStep = if (semitones == 0.0) baseStep else baseStep * 2.0.pow(semitones / 12.0)
             if (waveKind == WAVE_PULSE) duty = ToneSynth.dutyAt(modulation, tick, baseDuty)
         }

@@ -106,6 +106,26 @@ data class ProgressionTemplate(
             scale = Scale.DORIAN,
         )
 
+        /**
+         * I - ♭VII - IV - I。ミクソリディアンなので長調のまま ♭VII が入る。
+         * 明るいのにどこか素朴で、街や村の音。
+         */
+        val GAME_TOWN = ProgressionTemplate(
+            "I-♭VII-IV-I",
+            listOf(0, 6, 3, 0),
+            scale = Scale.MIXOLYDIAN,
+        )
+
+        /**
+         * i - ♭II - ♭VII - i。フリジアンの ♭II が独特の緊張を作る。
+         * 洞窟や地下の、落ち着かない感じ。
+         */
+        val GAME_CAVERN = ProgressionTemplate(
+            "i-♭II-♭VII-i",
+            listOf(0, 1, 6, 0),
+            scale = Scale.PHRYGIAN,
+        )
+
         /** ii7 - V7 - IM7。ジャズ寄りの落ち着いた響き。 */
         val TWO_FIVE_ONE = ProgressionTemplate(
             "ii-V-I",
@@ -122,6 +142,100 @@ data class ProgressionTemplate(
 
 /** 旋律の詰め込み具合。 */
 enum class MelodyDensity { SPARSE, NORMAL, BUSY }
+
+/**
+ * 当てはめる中身。ジャンルそのものからも、ゲームの場面からも作れる。
+ *
+ * ジャンルと場面で同じ形にしておくと、当てはめる側はどちらから来たかを
+ * 気にせず済む。
+ */
+data class GenreRecipe(
+    val bpmRange: IntRange,
+    val rhythms: List<RhythmStyle>,
+    val progressions: List<ProgressionTemplate>,
+    val melodyDensity: MelodyDensity,
+    /** チップ音源で鳴らすか。 */
+    val chip: Boolean,
+    /** チップで鳴らすときのリードの音色。 */
+    val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.PULSE_25,
+) {
+    fun pickBpm(random: Random = Random.Default): Int =
+        bpmRange.first + random.nextInt(bpmRange.last - bpmRange.first + 1)
+
+    fun pickRhythm(random: Random = Random.Default): RhythmStyle = rhythms.random(random)
+
+    fun pickProgression(random: Random = Random.Default): ProgressionTemplate =
+        progressions.random(random)
+}
+
+/**
+ * ゲーム音楽の場面。
+ *
+ * ゲーム音楽は 1 つの型ではなく、場面ごとに速さも明暗もまるで違う。
+ * ジャンルを 5 つに割るとほかのジャンルと並びが釣り合わないので、
+ * 「ゲーム音楽」の中の選択肢として持たせている。
+ */
+enum class GameScene(
+    val label: String,
+    val description: String,
+    private val bpmRange: IntRange,
+    private val progressions: List<ProgressionTemplate>,
+    private val melodyDensity: MelodyDensity,
+    private val leadVoice: ToneSynth.LeadVoice,
+) {
+    TITLE(
+        "タイトル",
+        "堂々と。長調で開ける",
+        104..124,
+        listOf(ProgressionTemplate.CANON, ProgressionTemplate.POP_PUNK),
+        MelodyDensity.NORMAL,
+        // 丸い矩形波。飾らずに旋律を出す。
+        ToneSynth.LeadVoice.PULSE_50,
+    ),
+    FIELD(
+        "フィールド",
+        "速め。歩き続ける進行",
+        142..162,
+        listOf(ProgressionTemplate.GAME_FIELD, ProgressionTemplate.GAME_QUEST),
+        MelodyDensity.BUSY,
+        ToneSynth.LeadVoice.PULSE_25,
+    ),
+    TOWN(
+        "街",
+        "のんびり。明るいのに素朴",
+        108..126,
+        listOf(ProgressionTemplate.GAME_TOWN, ProgressionTemplate.FIFTIES),
+        MelodyDensity.NORMAL,
+        // いちばん細いパルス。素朴で軽い音になる。
+        ToneSynth.LeadVoice.PULSE_12,
+    ),
+    DUNGEON(
+        "ダンジョン",
+        "遅め。暗く落ちていく",
+        92..112,
+        listOf(ProgressionTemplate.GAME_DUNGEON, ProgressionTemplate.GAME_CAVERN),
+        MelodyDensity.SPARSE,
+        ToneSynth.LeadVoice.PULSE_50,
+    ),
+    BOSS(
+        "ボス戦",
+        "かなり速い。緊張した進行",
+        168..186,
+        listOf(ProgressionTemplate.GAME_BOSS, ProgressionTemplate.GAME_CAVERN),
+        MelodyDensity.BUSY,
+        ToneSynth.LeadVoice.PULSE_25,
+    ),
+    ;
+
+    fun recipe(): GenreRecipe = GenreRecipe(
+        bpmRange = bpmRange,
+        rhythms = listOf(RhythmStyle.CHIP_DRIVE),
+        progressions = progressions,
+        melodyDensity = melodyDensity,
+        chip = true,
+        leadVoice = leadVoice,
+    )
+}
 
 /**
  * ジャンルのプリセット。
@@ -141,6 +255,11 @@ enum class Genre(
      * 立てておくと、当てたときに音色とドラムもチップのものに切り替わる。
      */
     val chip: Boolean = false,
+    /**
+     * 場面の選択肢。空でなければ、当てはめる前にどれかを選ぶ。
+     * ゲーム音楽は場面ごとに速さも明暗もまるで違うので、1 つには畳めない。
+     */
+    val scenes: List<GameScene> = emptyList(),
 ) {
     ROCK(
         "ロック",
@@ -186,33 +305,25 @@ enum class Genre(
         listOf(ProgressionTemplate.DANCE_LOOP, ProgressionTemplate.KOMURO),
         MelodyDensity.NORMAL,
     ),
-    GAME_FIELD(
-        "ゲーム（フィールド）",
-        "チップ音源・速め。歩き続ける進行",
-        142..162,
+    GAME(
+        "ゲーム音楽",
+        "チップ音源。場面を選べます",
+        92..186,
         listOf(RhythmStyle.CHIP_DRIVE),
         listOf(ProgressionTemplate.GAME_FIELD, ProgressionTemplate.GAME_QUEST),
         MelodyDensity.BUSY,
         chip = true,
-    ),
-    GAME_BOSS(
-        "ゲーム（ボス）",
-        "チップ音源・かなり速い。緊張した進行",
-        168..186,
-        listOf(RhythmStyle.CHIP_DRIVE),
-        listOf(ProgressionTemplate.GAME_BOSS, ProgressionTemplate.GAME_DUNGEON),
-        MelodyDensity.BUSY,
-        chip = true,
-    ),
-    GAME_TITLE(
-        "ゲーム（タイトル）",
-        "チップ音源・堂々と。長調で開ける",
-        104..124,
-        listOf(RhythmStyle.CHIP_DRIVE),
-        listOf(ProgressionTemplate.CANON, ProgressionTemplate.POP_PUNK),
-        MelodyDensity.NORMAL,
-        chip = true,
+        scenes = GameScene.entries,
     );
+
+    /** 場面を選ばなかったときの中身。 */
+    fun recipe(): GenreRecipe = GenreRecipe(
+        bpmRange = bpmRange,
+        rhythms = rhythms,
+        progressions = progressions,
+        melodyDensity = melodyDensity,
+        chip = chip,
+    )
 
     fun pickBpm(random: Random = Random.Default): Int =
         bpmRange.first + random.nextInt(bpmRange.last - bpmRange.first + 1)

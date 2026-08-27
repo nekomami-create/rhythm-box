@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
+import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordPads
@@ -15,7 +16,9 @@ import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
 import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.EngineConfig
+import com.example.rhythmbox.core.GameScene
 import com.example.rhythmbox.core.Genre
+import com.example.rhythmbox.core.GenreRecipe
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.MelodyDensity
 import com.example.rhythmbox.core.MelodyGenerator
@@ -26,9 +29,9 @@ import com.example.rhythmbox.core.PadRecorder
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
-import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.ROW_BASS
 import com.example.rhythmbox.core.ROW_CHORD
+import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongBuilder
@@ -542,6 +545,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             leadVibrato = song.leadVibrato,
             drumKit = song.drumKit,
             soundSet = song.soundSet,
+            arpeggioSpeed = song.arpeggioSpeed,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1005,43 +1009,66 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
      * ジャンルを 1 つ選んで、[bars] 小節の曲をまるごと作る（[genre] が null ならジャンルもおまかせ）。
      * 旋律も小節ごとに作る（同じ旋律を 4 回繰り返すと、下のコードが変わったときに合わなくなるため）。
      */
-    fun generateSong(genre: Genre?, bars: Int = DEFAULT_SONG_BARS) {
+    fun generateSong(genre: Genre?, scene: GameScene?, bars: Int = DEFAULT_SONG_BARS) {
         val chosen = genre ?: Genre.entries.random(Random)
+        val recipe = recipeFor(chosen, scene)
         val key = detectedKey()
         snapshotForUndo()
-        repository.updateCurrentSong { SongBuilder.build(it, chosen, key, bars, Random) }
+        repository.updateCurrentSong { song ->
+            SongBuilder.build(withChipSoundIf(song, recipe), recipe, key, bars, Random)
+        }
         // 作ったあとは前半のパターンを開いておく（やり直しの控えは残す）。
         _uiState.update { it.copy(selectedPattern = SongBuilder.FIRST_PATTERN) }
         syncEngine()
     }
 
     /**
+     * 当てはめる中身。場面を持つジャンルは、選ばれていなければ 1 つ引く。
+     * 「おまかせ」でゲーム音楽が出たときも、どれかの場面にはなる。
+     */
+    private fun recipeFor(genre: Genre, scene: GameScene?): GenreRecipe = when {
+        scene != null -> scene.recipe()
+        genre.scenes.isNotEmpty() -> genre.scenes.random(Random).recipe()
+        else -> genre.recipe()
+    }
+
+    /**
+     * チップ音源で鳴らす中身なら、音色とドラムと弾き方をまとめて切り替える。
+     * どれか 1 つだけでは「ゲーム音楽っぽさ」にならない。
+     */
+    private fun withChipSoundIf(song: Song, recipe: GenreRecipe): Song =
+        if (!recipe.chip) {
+            song
+        } else {
+            song.copy(
+                soundSet = SoundSet.CHIP,
+                drumKit = DrumKit.CHIP,
+                leadVoice = recipe.leadVoice,
+                chordStyle = ChordStyle.CHIP_ARPEGGIO,
+            )
+        }
+
+    /**
      * ジャンルのプリセットを当てはめる。
      * テンポ・コード進行・リズム・旋律をまとめて設定するので、
      * ドラムの型だけを変えるより「そのジャンルらしく」なる。
      */
-    fun applyGenre(genre: Genre, options: GenreOptions) {
+    fun applyGenre(genre: Genre, scene: GameScene?, options: GenreOptions) {
         val state = _uiState.value
         val index = state.selectedPattern
+        val recipe = recipeFor(genre, scene)
         // 進行の型が音階を決めているなら、そちらに合わせて解決する。
         // 主音は曲のまま残すので、同じ音を中心にしたまま雰囲気だけが変わる。
-        val progression = genre.pickProgression(Random)
+        val progression = recipe.pickProgression(Random)
         val key = progression.keyFor(detectedKey())
         snapshotForUndo()
         repository.updateCurrentSong { song ->
             var next = song
             if (options.tempo) {
-                next = next.copy(bpm = genre.pickBpm(Random))
+                next = next.copy(bpm = recipe.pickBpm(Random))
             }
-            if (options.sound && genre.chip) {
-                // 音色とドラムと弾き方をまとめて切り替える。
-                // どれか 1 つだけでは「ゲーム音楽っぽさ」にならない。
-                next = next.copy(
-                    soundSet = SoundSet.CHIP,
-                    drumKit = DrumKit.CHIP,
-                    leadVoice = ToneSynth.LeadVoice.PULSE_25,
-                    chordStyle = ChordStyle.CHIP_ARPEGGIO,
-                )
+            if (options.sound) {
+                next = withChipSoundIf(next, recipe)
             }
             if (options.chords) {
                 // 使った音階を曲の調として残す。残さないとコードから推定し直され、
@@ -1064,7 +1091,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             }
             if (options.rhythm) {
                 val generated = PatternGenerator.generate(
-                    style = genre.pickRhythm(Random),
+                    style = recipe.pickRhythm(Random),
                     random = Random,
                     name = next.pattern(index).name,
                 )
@@ -1075,7 +1102,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                     chord = next.patternChord(index),
                     key = key,
                     random = Random,
-                    density = genre.melodyDensity,
+                    density = recipe.melodyDensity,
                 )
                 next = next.withPattern(index, next.pattern(index).withLeads(listOf(lead)))
             }
@@ -1135,6 +1162,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** コードとベースの音の作り方。 */
     fun setSoundSet(set: SoundSet) {
         repository.updateCurrentSong { it.copy(soundSet = set) }
+    }
+
+    /** 高速アルペジオで音を進める速さ。 */
+    fun setArpeggioSpeed(speed: ArpeggioSpeed) {
+        repository.updateCurrentSong { it.copy(arpeggioSpeed = speed) }
     }
 
     /**

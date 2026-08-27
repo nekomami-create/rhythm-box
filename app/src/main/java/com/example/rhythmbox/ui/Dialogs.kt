@@ -51,11 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DrumKit
+import com.example.rhythmbox.core.GameScene
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
@@ -484,6 +486,7 @@ fun MixerDialog(
     onLeadVibratoChange: (Float) -> Unit,
     onDrumKitChange: (DrumKit) -> Unit,
     onSoundSetChange: (SoundSet) -> Unit,
+    onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -740,6 +743,53 @@ fun MixerDialog(
                                 }
                             }
                         }
+                        // 高速アルペジオのときだけ、回す速さを選べる。
+                        // 速いほどきらめくが、そのぶん耳に刺さりやすい。
+                        if (song.chordStyle.chipArpeggio) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = "速さ",
+                                    modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                ArpeggioSpeed.entries.forEach { speed ->
+                                    val on = speed == song.arpeggioSpeed
+                                    Surface(
+                                        color = if (on) {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        },
+                                        contentColor = if (on) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier
+                                            .height(28.dp)
+                                            .clickable { onArpeggioSpeedChange(speed) },
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = speed.label,
+                                                modifier = Modifier.padding(horizontal = 8.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (on) {
+                                                    FontWeight.Bold
+                                                } else {
+                                                    FontWeight.Normal
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Text(
@@ -939,10 +989,11 @@ fun GenreDialog(
     /** 小節数を選ばせるなら、その選択肢（空なら出さない）。 */
     barChoices: List<Int> = emptyList(),
     defaultBars: Int = 8,
-    onApply: (Genre?, GenreOptions, Int) -> Unit,
+    onApply: (Genre?, GameScene?, GenreOptions, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var genre by remember { mutableStateOf<Genre?>(if (allowRandom) null else Genre.JPOP) }
+    var scene by remember { mutableStateOf(GameScene.FIELD) }
     var options by remember { mutableStateOf(GenreOptions()) }
     var bars by remember { mutableIntStateOf(defaultBars) }
     var barMenuOpen by remember { mutableStateOf(false) }
@@ -1038,6 +1089,40 @@ fun GenreDialog(
                     }
                 }
 
+                // ゲーム音楽は場面ごとに速さも明暗もまるで違うので、そこから選ぶ。
+                val scenes = genre?.scenes.orEmpty()
+                if (scenes.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text("場面", style = MaterialTheme.typography.labelMedium)
+                    scenes.forEach { entry ->
+                        val selected = entry == scene
+                        Surface(
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().clickable { scene = entry },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = entry.label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                )
+                                Text(
+                                    text = entry.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (showOptions) {
                     Spacer(Modifier.height(2.dp))
                     Text("当てはめるもの", style = MaterialTheme.typography.labelMedium)
@@ -1065,7 +1150,7 @@ fun GenreDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onApply(genre, options, bars) },
+                onClick = { onApply(genre, scene.takeIf { genre?.scenes?.isNotEmpty() == true }, options, bars) },
                 enabled = !showOptions ||
                     options.tempo || options.chords || options.rhythm || options.melody,
             ) {

@@ -177,6 +177,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onLeadVibratoChange = viewModel::setLeadVibrato,
             onDrumKitChange = viewModel::setDrumKit,
             onSoundSetChange = viewModel::setSoundSet,
+            onArpeggioSpeedChange = viewModel::setArpeggioSpeed,
             onToggleMute = viewModel::toggleMute,
             onUnmuteAll = viewModel::unmuteAll,
             onDismiss = { mixerOpen = false },

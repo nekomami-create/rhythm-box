@@ -227,8 +227,8 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
             allowRandom = true,
             barChoices = SongBuilder.BAR_CHOICES,
             defaultBars = RhythmViewModel.DEFAULT_SONG_BARS,
-            onApply = { genre, _, bars ->
-                viewModel.generateSong(genre, bars)
+            onApply = { genre, scene, _, bars ->
+                viewModel.generateSong(genre, scene, bars)
                 songBuilderOpen = false
             },
             onDismiss = { songBuilderOpen = false },
@@ -241,8 +241,8 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
             note = "コード進行は定番の型をそのまま並べます。曲構成がまだ無いときは作ります。",
             showOptions = true,
             allowRandom = false,
-            onApply = { genre, options, _ ->
-                if (genre != null) viewModel.applyGenre(genre, options)
+            onApply = { genre, scene, options, _ ->
+                if (genre != null) viewModel.applyGenre(genre, scene, options)
                 genreOpen = false
             },
             onDismiss = { genreOpen = false },

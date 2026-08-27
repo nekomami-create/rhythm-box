@@ -66,13 +66,35 @@ class ChipModulationTest {
 
     @Test
     fun `the arpeggio walks the chord tones and starts over`() {
-        val order = (0 until 9).map { ToneSynth.arpeggioIndex(it, 3) }
-        assertEquals(listOf(0, 1, 2, 0, 1, 2, 0, 1, 2), order)
+        // 既定は 2 刻みで 1 音進む。1 刻みごと（実機と同じ速さ）だと 3 音で
+        // ひとまわりが 20Hz になり、耳がざらつきとして拾ってしまう。
+        val order = (0 until 12).map { ToneSynth.arpeggioIndex(it, 3) }
+        assertEquals(listOf(0, 0, 1, 1, 2, 2, 0, 0, 1, 1, 2, 2), order)
+    }
+
+    @Test
+    fun `the arpeggio can be slowed down or sped up`() {
+        assertEquals(
+            listOf(0, 1, 2, 0, 1, 2),
+            (0 until 6).map { ToneSynth.arpeggioIndex(it, 3, ArpeggioSpeed.FAST.ticks) },
+        )
+        assertEquals(
+            listOf(0, 0, 0, 1, 1, 1),
+            (0 until 6).map { ToneSynth.arpeggioIndex(it, 3, ArpeggioSpeed.SLOW.ticks) },
+        )
+        // 速さは「刻み数」なので、遅いほど値が大きい。
+        assertTrue(ArpeggioSpeed.FAST.ticks < ArpeggioSpeed.NORMAL.ticks)
+        assertTrue(ArpeggioSpeed.NORMAL.ticks < ArpeggioSpeed.SLOW.ticks)
     }
 
     @Test
     fun `a chord with no notes does not break the walk`() {
         assertEquals(0, ToneSynth.arpeggioIndex(7, 0))
+        // 刻み数が 0 でも止まらない。1 刻みとして扱う（0 で割らない）。
+        assertEquals(
+            ToneSynth.arpeggioIndex(7, 3, ticks = 1),
+            ToneSynth.arpeggioIndex(7, 3, ticks = 0),
+        )
     }
 
     @Test
@@ -87,7 +109,7 @@ class ChipModulationTest {
     // --- 実際に鳴らしてみる -------------------------------------------------
 
     @Test
-    fun `the arpeggio steps through the chord tones every sixtieth of a second`() {
+    fun `the arpeggio steps through the chord tones as it is told to`() {
         // 全体をまとめて周波数分析しても構成音は出てこない。1 つの音が
         // 途切れ途切れに現れ、しかも戻るたびに位相が繋がっていないので打ち消し合う。
         // その打ち消し合い（元の音の周りに並ぶ側波帯）こそが、和音ではなく
@@ -99,7 +121,8 @@ class ChipModulationTest {
             val strengths = tones.map { magnitudeIn(out, it, tick * framesPerTick, framesPerTick) }
             strengths.indices.maxBy { strengths[it] }
         }
-        assertEquals(listOf(0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2), loudestEachTick)
+        // 既定は 2 刻みで 1 音進むので、同じ音が 2 回ずつ続く。
+        assertEquals(listOf(0, 0, 1, 1, 2, 2, 0, 0, 1, 1, 2, 2), loudestEachTick)
     }
 
     @Test

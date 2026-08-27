@@ -347,17 +347,21 @@ object ToneSynth {
 
 
     /**
-     * チップ音源のコード。細めのパルスにしてあるのは、高速アルペジオで
-     * 回したときに 1 音ずつの粒が聞き分けられるようにするため。
+     * チップ音源のコード。
+     *
+     * 細いパルスのほうが粒は立つが、高速アルペジオで回すと耳に刺さる。
+     * きらめきはアルペジオ側が出してくれるので、音そのものは丸くしておく。
      */
     private val CHIP_CHORD = CHORD.copy(
-        wave = Waveform.Pulse(0.25f),
+        // 矩形波。細いパルスは倍音が高いところまで伸びていて、
+        // アルペジオで回すと側波帯まで一緒に立ち上がって刺さる。
+        wave = Waveform.Pulse(0.5f),
         attack = 0.002,
         decay = 0.60,
         // 実機のチャンネルは押している間ずっと同じ音量なので、ほぼ減衰させない。
         sustain = 0.90f,
         release = 0.05,
-        gain = 0.30f,
+        gain = 0.24f,
     )
 
     /** チップ音源のベース。ファミコンで低音を受け持っていたのが三角波チャンネル。 */
@@ -472,16 +476,16 @@ object ToneSynth {
 
     /**
      * [tick] 番目に鳴らす、和音の何番目の音か。
-     * [count] 個を順に回すだけ。回り終わったら頭に戻る。
+     * [count] 個を [ticks] 刻みごとに順に回すだけ。回り終わったら頭に戻る。
      */
-    fun arpeggioIndex(tick: Int, count: Int): Int =
-        if (count <= 0) 0 else (tick / ARPEGGIO_TICKS).mod(count)
+    fun arpeggioIndex(tick: Int, count: Int, ticks: Int = ARPEGGIO_TICKS): Int =
+        if (count <= 0) 0 else (tick / ticks.coerceAtLeast(1)).mod(count)
 
     /** 変調の刻み。実機の 1 フレームに合わせてある。 */
     const val TICKS_PER_SECOND = 60.0
 
-    /** 高速アルペジオが音を 1 つ進める間隔（1/60 秒ごと）。 */
-    const val ARPEGGIO_TICKS = 1
+    /** 高速アルペジオが音を 1 つ進める間隔の既定（1/60 秒を 1 とする）。 */
+    const val ARPEGGIO_TICKS = 2
 
     /** 三角波の段数と、1 周期ぶんの枠（上り 16 + 下り 16）。 */
     const val TRIANGLE_LEVELS = 16

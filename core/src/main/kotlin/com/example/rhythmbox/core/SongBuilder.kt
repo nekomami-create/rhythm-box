@@ -45,7 +45,7 @@ object SongBuilder {
 
     fun build(
         base: Song,
-        genre: Genre,
+        recipe: GenreRecipe,
         key: MusicKey,
         bars: Int = 8,
         random: Random = Random.Default,
@@ -54,11 +54,11 @@ object SongBuilder {
     ): Song {
         val total = normalizeBars(bars)
         val layout = patternLayout(total)
-        val progression = genre.pickProgression(random)
+        val progression = recipe.pickProgression(random)
         val chords = progression.fill(key, total)
-        val style = genre.pickRhythm(random)
+        val style = recipe.pickRhythm(random)
 
-        var song = base.copy(bpm = genre.pickBpm(random))
+        var song = base.copy(bpm = recipe.pickBpm(random))
 
         // 同じパターンが何ブロックかに出てくる。最初に出てくるブロックの
         // コードに合わせて作れば、以降のブロックでもコードの並びは同じになる。
@@ -77,7 +77,7 @@ object SongBuilder {
                     chords = blockChords,
                     key = key,
                     random = random,
-                    density = genre.melodyDensity,
+                    density = recipe.melodyDensity,
                     previous = previousLead,
                 )
                 pattern = pattern.withLeads(leads)

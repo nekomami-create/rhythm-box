@@ -43,6 +43,25 @@ enum class DrumKit(val label: String) {
 }
 
 /**
+ * 高速アルペジオで音を 1 つ進める間隔。
+ *
+ * 1/60 秒ごとに 1 音（[FAST]）は実機どおりだが、3 音の和音だと
+ * ひとまわりが 20Hz になる。この辺りは耳がざらつきとして拾うところで、
+ * 長く聴くと刺さる。既定は 1 つ落とした [NORMAL]。
+ */
+@Serializable
+enum class ArpeggioSpeed(val label: String, val ticks: Int) {
+    /** 1/60 秒ごと。実機と同じ速さで、いちばんきらめくが耳に刺さりやすい。 */
+    FAST("速い", 1),
+
+    /** 2 刻みごと。きらめきは残しつつ、ざらつきが減る。 */
+    NORMAL("標準", 2),
+
+    /** 3 刻みごと。1 音ずつ聞き分けられる、弦をつま弾くような響き。 */
+    SLOW("ゆっくり", 3),
+}
+
+/**
  * コードとベースの音の作り方。
  *
  * リードは [ToneSynth.LeadVoice] で 1 音ずつ選べるが、コードとベースは
@@ -717,6 +736,8 @@ data class Song(
     val drumKit: DrumKit = DrumKit.NORMAL,
     /** コードとベースの音の作り方。 */
     val soundSet: SoundSet = SoundSet.NORMAL,
+    /** 高速アルペジオで音を進める速さ。 */
+    val arpeggioSpeed: ArpeggioSpeed = ArpeggioSpeed.NORMAL,
     /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
