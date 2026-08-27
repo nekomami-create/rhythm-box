@@ -474,29 +474,42 @@ private fun PickerChip(
     }
 }
 
-/** トラックごとの音量・ミュート（ドラム 8 音色 + コード / ベース / リード）。 */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * ミキサーが受け取る操作をひとまとめにしたもの。
+ *
+ * 設定が増えるたびに引数が 1 つずつ伸びて 11 個になっていた。
+ * 束ねておくと、行を描く部品へそのまま渡せる。
+ */
+data class MixerActions(
+    val onVolumeChange: (Int, Float) -> Unit,
+    val onHoldChange: (Int, Float) -> Unit,
+    val onToggleMute: (Int) -> Unit,
+    val onUnmuteAll: () -> Unit,
+    val onChordStyleChange: (ChordStyle) -> Unit,
+    val onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
+    val onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
+    val onLeadVibratoChange: (Float) -> Unit,
+    val onDrumKitChange: (DrumKit) -> Unit,
+    val onSoundSetChange: (SoundSet) -> Unit,
+)
+
+/**
+ * トラックごとの音量・ミュート（ドラム 8 音色 + コード / ベース / リード）。
+ *
+ * 音源とドラムキットは複数のトラックにまたがる設定なのに、「コードの行」
+ * 「キックの行」の中に紛れて置かれていて探せなかった。またがるものは上に
+ * まとめ、行の中はその行のものだけにしてある。
+ */
 @Composable
 fun MixerDialog(
     song: Song,
-    onVolumeChange: (Int, Float) -> Unit,
-    onHoldChange: (Int, Float) -> Unit,
-    onChordStyleChange: (ChordStyle) -> Unit,
-    onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
-    onLeadVibratoChange: (Float) -> Unit,
-    onDrumKitChange: (DrumKit) -> Unit,
-    onSoundSetChange: (SoundSet) -> Unit,
-    onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
-    onToggleMute: (Int) -> Unit,
-    onUnmuteAll: () -> Unit,
+    actions: MixerActions,
     onDismiss: () -> Unit,
 ) {
     val channels = buildList {
         Voice.entries.forEachIndexed { index, voice -> add(index to voice.shortLabel) }
         Instrument.entries.forEach { add(it.trackIndex to it.shortLabel) }
     }
-    // 音の伸びは、音程を合成している 3 トラックでしか効かない。
-    val pitched = Instrument.entries.map { it.trackIndex }.toSet()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("ミキサー") },
@@ -505,153 +518,10 @@ fun MixerDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                SoundSection(song, actions)
+                Spacer(Modifier.height(8.dp))
                 channels.forEach { (track, label) ->
-                    val setting = song.track(track)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.width(42.dp),
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Slider(
-                            value = setting.volume,
-                            onValueChange = { onVolumeChange(track, it) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { onToggleMute(track) }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = if (setting.muted) {
-                                    Icons.AutoMirrored.Filled.VolumeOff
-                                } else {
-                                    Icons.AutoMirrored.Filled.VolumeUp
-                                },
-                                contentDescription = if (setting.muted) "ミュート解除" else "ミュート",
-                                tint = if (setting.muted) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-                    if (track in pitched) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "伸び",
-                                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Slider(
-                                value = setting.hold,
-                                onValueChange = { onHoldChange(track, it) },
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = holdLabel(setting.hold),
-                                modifier = Modifier.width(36.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    // コードの行に、コードとベースまとめての音の作り方を置く。
-                    // リードは 1 音ずつ選べるが、土台の 2 つはまとめて切り替えるほうが合う。
-                    if (track == Instrument.CHORD.trackIndex) {
-                        OptionChips(
-                            label = "音源",
-                            options = SoundSet.entries,
-                            selected = song.soundSet,
-                            labelOf = { it.label },
-                            onSelect = onSoundSetChange,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                    // ドラムの先頭に、8 音色まとめての音の作り方を置く。
-                    // 音色ごとの設定ではないので、キックの行にだけ出す。
-                    if (track == 0) {
-                        OptionChips(
-                            label = "ドラム",
-                            options = DrumKit.entries,
-                            selected = song.drumKit,
-                            labelOf = { it.label },
-                            onSelect = onDrumKitChange,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                    // リード行だけ、揺れ（ビブラート）を掛けられる。
-                    // チップ音源は音量を変えられないぶん、揺らして表情を付けていた。
-                    if (track == Instrument.LEAD.trackIndex) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "揺れ",
-                                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Slider(
-                                value = song.leadVibrato,
-                                onValueChange = onLeadVibratoChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = vibratoLabel(song.leadVibrato),
-                                modifier = Modifier.width(36.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    // リード行だけ、音色を選べる。
-                    if (track == Instrument.LEAD.trackIndex) {
-                        // 音色は 16 種類あるので、1 行に並べず折り返す。
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(start = 8.dp),
-                        ) {
-                            Text(
-                                text = "音色",
-                                modifier = Modifier.padding(top = 6.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            ToneSynth.LeadVoice.entries.forEach { voice ->
-                                OptionChip(
-                                    label = voice.label,
-                                    selected = voice == song.leadVoice,
-                                    onClick = { onLeadVoiceChange(voice) },
-                                )
-                            }
-                        }
-                    }
-                    // コード行だけ、和音をまとめて鳴らすか 1 音ずつ散らすかを選べる。
-                    if (track == Instrument.CHORD.trackIndex) {
-                        OptionChips(
-                            label = "弾き方",
-                            options = ChordStyle.entries,
-                            selected = song.chordStyle,
-                            labelOf = { it.label },
-                            onSelect = onChordStyleChange,
-                            modifier = Modifier.padding(start = 8.dp),
-                            labelWidth = SETTING_LABEL_WIDTH,
-                        )
-                        // 高速アルペジオのときだけ、回す速さを選べる。
-                        // 速いほどきらめくが、そのぶん耳に刺さりやすい。
-                        if (song.chordStyle.chipArpeggio) {
-                            OptionChips(
-                                label = "速さ",
-                                options = ArpeggioSpeed.entries,
-                                selected = song.arpeggioSpeed,
-                                labelOf = { it.label },
-                                onSelect = onArpeggioSpeedChange,
-                                modifier = Modifier.padding(start = 8.dp),
-                                labelWidth = SETTING_LABEL_WIDTH,
-                            )
-                        }
-                    }
+                    TrackRow(track, label, song, actions)
                 }
                 Text(
                     text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。" +
@@ -659,11 +529,171 @@ fun MixerDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TextButton(onClick = onUnmuteAll) { Text("すべてのミュートを解除") }
+                TextButton(onClick = actions.onUnmuteAll) { Text("すべてのミュートを解除") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
     )
+}
+
+/**
+ * 複数のトラックにまたがる音の作り方。
+ * 音源はコードとベースの 2 つに、ドラムキットは 8 音色すべてに効く。
+ */
+@Composable
+private fun SoundSection(song: Song, actions: MixerActions) {
+    Text(
+        text = "音の作り方",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    OptionChips(
+        label = "音源",
+        options = SoundSet.entries,
+        selected = song.soundSet,
+        labelOf = { it.label },
+        onSelect = actions.onSoundSetChange,
+        labelWidth = SETTING_LABEL_WIDTH,
+    )
+    OptionChips(
+        label = "ドラム",
+        options = DrumKit.entries,
+        selected = song.drumKit,
+        labelOf = { it.label },
+        onSelect = actions.onDrumKitChange,
+        labelWidth = SETTING_LABEL_WIDTH,
+    )
+}
+
+/** 1 トラックぶんの行。音量とミュートは全トラック、それ以外はその行のものだけ。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrackRow(track: Int, label: String, song: Song, actions: MixerActions) {
+    val setting = song.track(track)
+    // 音の伸びは、音程を合成している 3 トラックでしか効かない。
+    val pitched = track in Instrument.entries.map { it.trackIndex }.toSet()
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            modifier = Modifier.width(SETTING_LABEL_WIDTH),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Slider(
+            value = setting.volume,
+            onValueChange = { actions.onVolumeChange(track, it) },
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(
+            onClick = { actions.onToggleMute(track) },
+            modifier = Modifier.size(36.dp),
+        ) {
+            Icon(
+                imageVector = if (setting.muted) {
+                    Icons.AutoMirrored.Filled.VolumeOff
+                } else {
+                    Icons.AutoMirrored.Filled.VolumeUp
+                },
+                contentDescription = if (setting.muted) "ミュート解除" else "ミュート",
+                tint = if (setting.muted) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+    if (pitched) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "伸び",
+                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = setting.hold,
+                onValueChange = { actions.onHoldChange(track, it) },
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = holdLabel(setting.hold),
+                modifier = Modifier.width(36.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    // コード行だけ、和音をまとめて鳴らすか 1 音ずつ散らすかを選べる。
+    if (track == Instrument.CHORD.trackIndex) {
+        OptionChips(
+            label = "弾き方",
+            options = ChordStyle.entries,
+            selected = song.chordStyle,
+            labelOf = { it.label },
+            onSelect = actions.onChordStyleChange,
+            modifier = Modifier.padding(start = 8.dp),
+            labelWidth = SETTING_LABEL_WIDTH,
+        )
+        // 高速アルペジオのときだけ、回す速さを選べる。
+        // 速いほどきらめくが、そのぶん耳に刺さりやすい。
+        if (song.chordStyle.chipArpeggio) {
+            OptionChips(
+                label = "速さ",
+                options = ArpeggioSpeed.entries,
+                selected = song.arpeggioSpeed,
+                labelOf = { it.label },
+                onSelect = actions.onArpeggioSpeedChange,
+                modifier = Modifier.padding(start = 8.dp),
+                labelWidth = SETTING_LABEL_WIDTH,
+            )
+        }
+    }
+    // リード行だけ、揺れ（ビブラート）を掛けられる。
+    // チップ音源は音量を変えられないぶん、揺らして表情を付けていた。
+    if (track == Instrument.LEAD.trackIndex) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "揺れ",
+                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = song.leadVibrato,
+                onValueChange = actions.onLeadVibratoChange,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = vibratoLabel(song.leadVibrato),
+                modifier = Modifier.width(36.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // 音色は 16 種類あるので、1 行に並べず折り返す。
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(start = 8.dp),
+        ) {
+            Text(
+                text = "音色",
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ToneSynth.LeadVoice.entries.forEach { voice ->
+                OptionChip(
+                    label = voice.label,
+                    selected = voice == song.leadVoice,
+                    onClick = { actions.onLeadVoiceChange(voice) },
+                )
+            }
+        }
+    }
 }
 
 /** つまみの位置を言葉にする。真ん中が既定の音。 */

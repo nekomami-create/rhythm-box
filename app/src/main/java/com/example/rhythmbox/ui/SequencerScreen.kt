@@ -170,16 +170,18 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     if (mixerOpen) {
         MixerDialog(
             song = state.song,
-            onVolumeChange = viewModel::setTrackVolume,
-            onHoldChange = viewModel::setTrackHold,
-            onChordStyleChange = viewModel::setChordStyle,
-            onLeadVoiceChange = viewModel::setLeadVoice,
-            onLeadVibratoChange = viewModel::setLeadVibrato,
-            onDrumKitChange = viewModel::setDrumKit,
-            onSoundSetChange = viewModel::setSoundSet,
-            onArpeggioSpeedChange = viewModel::setArpeggioSpeed,
-            onToggleMute = viewModel::toggleMute,
-            onUnmuteAll = viewModel::unmuteAll,
+            actions = MixerActions(
+                onVolumeChange = viewModel::setTrackVolume,
+                onHoldChange = viewModel::setTrackHold,
+                onToggleMute = viewModel::toggleMute,
+                onUnmuteAll = viewModel::unmuteAll,
+                onChordStyleChange = viewModel::setChordStyle,
+                onArpeggioSpeedChange = viewModel::setArpeggioSpeed,
+                onLeadVoiceChange = viewModel::setLeadVoice,
+                onLeadVibratoChange = viewModel::setLeadVibrato,
+                onDrumKitChange = viewModel::setDrumKit,
+                onSoundSetChange = viewModel::setSoundSet,
+            ),
             onDismiss = { mixerOpen = false },
         )
     }
