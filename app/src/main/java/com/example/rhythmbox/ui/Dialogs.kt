@@ -606,7 +606,6 @@ private fun SoundSection(song: Song, actions: MixerActions) {
 }
 
 /** 1 トラックぶんの行。音量とミュートは全トラック、それ以外はその行のものだけ。 */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TrackRow(track: Int, label: String, song: Song, actions: MixerActions) {
     val setting = song.track(track)
@@ -722,26 +721,17 @@ private fun TrackRow(track: Int, label: String, song: Song, actions: MixerAction
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // 音色は 16 種類あるので、1 行に並べず折り返す。
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        // 音色は 16 種類あるので、当然 1 行には入らない。
+        // 折り返しは OptionChips が面倒を見る。
+        OptionChips(
+            label = "音色",
+            options = ToneSynth.LeadVoice.entries,
+            selected = song.leadVoice,
+            labelOf = { it.label },
+            onSelect = actions.onLeadVoiceChange,
             modifier = Modifier.padding(start = 8.dp),
-        ) {
-            Text(
-                text = "音色",
-                modifier = Modifier.padding(top = 6.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            ToneSynth.LeadVoice.entries.forEach { voice ->
-                OptionChip(
-                    label = voice.label,
-                    selected = voice == song.leadVoice,
-                    onClick = { actions.onLeadVoiceChange(voice) },
-                )
-            }
-        }
+            labelWidth = SETTING_LABEL_WIDTH,
+        )
     }
 }
 

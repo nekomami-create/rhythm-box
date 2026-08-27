@@ -3,6 +3,8 @@ package com.example.rhythmbox.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,7 +68,14 @@ fun OptionChip(
 /**
  * 見出し付きの選択肢の列。「弾き方 [和音][上へ][下へ]」のような並び。
  * [labelWidth] を渡すと見出しの幅が揃うので、縦に並べたときに端が合う。
+ *
+ * つまみは入りきらなければ次の行へ送る。ただ横に並べるだけだと、
+ * 幅を超えたぶんが黙って右で切れて、選択肢があること自体が見えなくなる
+ * （「定位」の 5 つと「弾き方」の 5 つがどちらも約 288dp あって、
+ * ダイアログの中身の幅に入らなかった）。見出しは折り返さず左に残すので、
+ * 縦に並べたときのつまみの左端は揃ったままになる。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun <T> OptionChips(
     label: String?,
@@ -79,23 +88,31 @@ fun <T> OptionChips(
 ) {
     Row(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
+        // 折り返すと 2 行になるので、見出しは上のつまみに合わせる。
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (label != null) {
             Text(
                 text = label,
-                modifier = if (labelWidth != null) Modifier.width(labelWidth) else Modifier,
+                modifier = (if (labelWidth != null) Modifier.width(labelWidth) else Modifier)
+                    .padding(top = LABEL_TOP_PADDING),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        options.forEach { option ->
-            OptionChip(
-                label = labelOf(option),
-                selected = option == selected,
-                onClick = { onSelect(option) },
-            )
+        FlowRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            options.forEach { option ->
+                OptionChip(
+                    label = labelOf(option),
+                    selected = option == selected,
+                    onClick = { onSelect(option) },
+                )
+            }
         }
     }
 }
@@ -151,6 +168,9 @@ fun OptionRow(
 /** つまみの高さと左右の余白。ここだけ直せば全部の選択肢が揃う。 */
 private val CHIP_HEIGHT = 28.dp
 private val CHIP_PADDING = 10.dp
+
+/** 見出しを 1 行目のつまみの高さに合わせるぶん（つまみの高さと字の高さの差の半分）。 */
+private val LABEL_TOP_PADDING = 6.dp
 
 /**
  * ミキサーで選べる左右の位置。
