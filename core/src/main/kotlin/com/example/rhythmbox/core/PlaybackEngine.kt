@@ -79,7 +79,19 @@ class PlaybackEngine(
 
     // --- 音声スレッドだけが触る状態 ---
     private val slotVoice = IntArray(maxPolyphony) { -1 }
-    private val slotPos = IntArray(maxPolyphony)
+    private val slotPos = DoubleArray(maxPolyphony)
+
+    /** 発音ごとの読み出し速さ。1.0 から少しずらすと音の高さが変わる。 */
+    private val slotRate = DoubleArray(maxPolyphony) { 1.0 }
+
+    /**
+     * 音色ごとに何発目か。揺らぎの表を引く番号に使う。
+     *
+     * 乱数ではなく通し番号にしてある。乱数だと書き出すたびに結果が変わり、
+     * 同じ曲から同じファイルが出てこなくなる。頭から鳴らせば必ず同じになり、
+     * それでいて続けて叩いたぶんは違う音になる。
+     */
+    private val hitCount = IntArray(DRUM_COUNT)
 
     /** ドラム 1 発ごとの強さ（アクセント / 幽霊音）。 */
     private val slotGain = FloatArray(maxPolyphony) { 1f }
@@ -170,18 +182,31 @@ class PlaybackEngine(
             if (voice < 0) continue
             val sample = kit[voice]
             val gain = master * trackGain(cfg, voice) * slotGain[slot]
+            val rate = slotRate[slot]
             var pos = slotPos[slot]
             var k = 0
             if (gain > 0f) {
-                while (k < count && pos < sample.size) {
-                    out[offset + k] += sample[pos] * gain
+                // 読み出す位置が整数で止まらないので、間を直線で埋める。
+                // 埋めないと、速さをずらしたぶんがざらつきとして乗る。
+                //
+                // 止めるのは「最後のサンプルを過ぎたところ」。size で切ると、
+                // 速さが 1 未満のときに末尾を越えた位置まで補間してしまい、
+                // 波形の外に小さな尾が伸びる。size - 1 で切ると今度は最後の
+                // 1 サンプルが鳴らず、1 フレームの波形は丸ごと消える。
+                val last = sample.size - 1
+                while (k < count && pos <= last) {
+                    val index = pos.toInt()
+                    val fraction = (pos - index).toFloat()
+                    val here = sample[index]
+                    val next = if (index + 1 < sample.size) sample[index + 1] else 0f
+                    out[offset + k] += (here + (next - here) * fraction) * gain
                     k++
-                    pos++
+                    pos += rate
                 }
             }
             // ミュート中でも再生位置は進める（解除したときに続きから鳴らない）。
-            pos += (count - k)
-            if (pos >= sample.size) {
+            pos += (count - k) * rate
+            if (pos > sample.size - 1) {
                 slotVoice[slot] = -1
             } else {
                 slotPos[slot] = pos
@@ -360,7 +385,7 @@ class PlaybackEngine(
         val group = chokeGroups[voice]
         var slot = -1
         var oldest = -1
-        var oldestPos = -1
+        var oldestPos = -1.0
         for (s in 0 until maxPolyphony) {
             val v = slotVoice[s]
             if (v < 0) {
@@ -377,9 +402,17 @@ class PlaybackEngine(
         }
         val target = if (slot >= 0) slot else oldest
         if (target < 0) return
+        // 同じ波形を毎回そのまま鳴らすと、1 サンプルまで同一の音が並ぶ。
+        // 強弱を付けても波形自体は同じなので、機械的に聞こえる限界がここにあった。
+        //
+        // 揺らすのは高さだけにしてある。音量のばらつきはアクセントと幽霊音で
+        // すでに手で付けられるので、そこに乱数を重ねると打ち消し合う。
+        // 高さのほうは、ほかに表現する手立てが無い。
         slotVoice[target] = voice
-        slotPos[target] = 0
+        slotPos[target] = 0.0
+        slotRate[target] = PITCH_JITTER[hitCount[voice].mod(PITCH_JITTER.size)]
         slotGain[target] = velocity
+        hitCount[voice]++
     }
 
     private fun triggerChord(
@@ -439,8 +472,11 @@ class PlaybackEngine(
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
     private fun rewind() {
         java.util.Arrays.fill(slotVoice, -1)
-        java.util.Arrays.fill(slotPos, 0)
+        java.util.Arrays.fill(slotPos, 0.0)
+        java.util.Arrays.fill(slotRate, 1.0)
         java.util.Arrays.fill(slotGain, 1f)
+        // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
+        java.util.Arrays.fill(hitCount, 0)
         clickSample = null
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
@@ -455,8 +491,11 @@ class PlaybackEngine(
      */
     fun resetFrameClock() {
         java.util.Arrays.fill(slotVoice, -1)
-        java.util.Arrays.fill(slotPos, 0)
+        java.util.Arrays.fill(slotPos, 0.0)
+        java.util.Arrays.fill(slotRate, 1.0)
         java.util.Arrays.fill(slotGain, 1f)
+        // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
+        java.util.Arrays.fill(hitCount, 0)
         clickSample = null
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
@@ -718,6 +757,17 @@ class PlaybackEngine(
     }
 
     companion object {
+        /**
+         * 発音ごとの揺らぎ。読み出す速さ（＝音の高さ）をわずかにずらす。
+         *
+         * 表の長さを 7 にしてあるのは、4 拍や 8 分・16 分の刻みと約数を
+         * 持たないため。4 や 8 だと拍と噛み合って、揺らぎ自体が周期として
+         * 聞こえてしまう。
+         */
+        private val PITCH_JITTER = doubleArrayOf(
+            1.000, 1.012, 0.991, 1.005, 0.982, 1.018, 0.996,
+        )
+
         const val DEFAULT_SAMPLE_RATE = 44_100
 
         /** 次の音の直前で切って、同じ音が続くときも打ち直しがわかるようにする。 */
