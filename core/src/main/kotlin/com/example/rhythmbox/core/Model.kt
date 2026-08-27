@@ -800,6 +800,13 @@ data class Song(
     /** 高速アルペジオで音を進める速さ。 */
     val arpeggioSpeed: ArpeggioSpeed = ArpeggioSpeed.NORMAL,
     /**
+     * 残響（リバーブ）の量。0 で掛けない（既定＝今までの音）。
+     * 0 のときは処理そのものを飛ばすので、古い曲は 1 サンプルも変わらない。
+     */
+    val reverb: Float = 0f,
+    /** 残響の広さ。 */
+    val roomSize: RoomSize = RoomSize.MEDIUM,
+    /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
      */

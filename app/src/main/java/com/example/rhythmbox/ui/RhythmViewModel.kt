@@ -28,6 +28,7 @@ import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.OfflineRenderer
 import com.example.rhythmbox.core.PadRecorder
 import com.example.rhythmbox.core.Pattern
+import com.example.rhythmbox.core.RoomSize
 import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
 import com.example.rhythmbox.core.ROW_BASS
@@ -563,6 +564,8 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             drumKit = song.drumKit,
             soundSet = song.soundSet,
             arpeggioSpeed = song.arpeggioSpeed,
+            reverb = song.reverb,
+            roomSize = song.roomSize,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1172,6 +1175,16 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** ドラムの音の作り方。 */
     fun setDrumKit(kit: DrumKit) {
         repository.updateCurrentSong { it.copy(drumKit = kit) }
+    }
+
+    /** 残響の量。0 で掛けない。 */
+    fun setReverb(amount: Float) {
+        repository.updateCurrentSong { it.copy(reverb = amount.coerceIn(0f, 1f)) }
+    }
+
+    /** 残響の広さ。 */
+    fun setRoomSize(size: RoomSize) {
+        repository.updateCurrentSong { it.copy(roomSize = size) }
     }
 
     /** コードとベースの音の作り方。 */

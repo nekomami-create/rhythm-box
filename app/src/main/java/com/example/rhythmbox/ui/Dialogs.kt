@@ -62,6 +62,7 @@ import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.MusicKey
+import com.example.rhythmbox.core.RoomSize
 import com.example.rhythmbox.core.Scale
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SoundSet
@@ -493,6 +494,8 @@ data class MixerActions(
     val onLeadVibratoChange: (Float) -> Unit,
     val onDrumKitChange: (DrumKit) -> Unit,
     val onSoundSetChange: (SoundSet) -> Unit,
+    val onReverbChange: (Float) -> Unit,
+    val onRoomSizeChange: (RoomSize) -> Unit,
 )
 
 /**
@@ -529,7 +532,9 @@ fun MixerDialog(
                     text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。" +
                         "コードの「弾き方」を和音以外にすると、CHD 行が鳴るたびに 1 音ずつ散らして弾きます。" +
                         "「定位」は左右のどちらから鳴るかです。中央のままなら今までと同じ音で、" +
-                        "ハイハットやタムを少し振ると横に広がって聞こえます。",
+                        "ハイハットやタムを少し振ると横に広がって聞こえます。" +
+                        "「残響」は曲全体に掛かります。キックとベースには掛からないので、" +
+                        "上げても土台は締まったまま、上のほうだけが広がります。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -568,6 +573,36 @@ private fun SoundSection(song: Song, actions: MixerActions) {
         onSelect = actions.onDrumKitChange,
         labelWidth = SETTING_LABEL_WIDTH,
     )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "残響",
+            modifier = Modifier.width(SETTING_LABEL_WIDTH),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = song.reverb,
+            onValueChange = actions.onReverbChange,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = reverbLabel(song.reverb),
+            modifier = Modifier.width(36.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    // 掛けていないときに広さだけ出ていても選びようがない。
+    if (song.reverb > 0f) {
+        OptionChips(
+            label = "広さ",
+            options = RoomSize.entries,
+            selected = song.roomSize,
+            labelOf = { it.label },
+            onSelect = actions.onRoomSizeChange,
+            labelWidth = SETTING_LABEL_WIDTH,
+        )
+    }
 }
 
 /** 1 トラックぶんの行。音量とミュートは全トラック、それ以外はその行のものだけ。 */
@@ -716,6 +751,15 @@ private fun vibratoLabel(amount: Float): String = when {
     amount < 0.35f -> "浅め"
     amount < 0.7f -> "標準"
     else -> "深め"
+}
+
+/** 残響のつまみの位置を言葉にする。左端が「なし」。 */
+private fun reverbLabel(amount: Float): String = when {
+    amount <= 0f -> "なし"
+    amount < 0.3f -> "うっすら"
+    amount < 0.6f -> "標準"
+    amount < 0.85f -> "深め"
+    else -> "たっぷり"
 }
 
 private fun holdLabel(hold: Float): String = when {

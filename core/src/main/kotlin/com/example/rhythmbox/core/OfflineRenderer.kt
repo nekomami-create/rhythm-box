@@ -23,6 +23,13 @@ object OfflineRenderer {
     fun seconds(samples: FloatArray, sampleRate: Int): Double =
         frames(samples).toDouble() / sampleRate
 
+    /**
+     * その曲を鳴らし切るのに要る余韻の秒数。
+     * 残響を掛けていれば、その尾が消えるまで待つ（切ると末尾がぶつ切りになる）。
+     */
+    fun tailFor(song: Song, base: Double = DEFAULT_TAIL_SECONDS): Double =
+        if (song.reverb > 0f) maxOf(base, song.roomSize.tailSeconds) else base
+
     /** [plan] を鳴らし切るのに必要なフレーム数（余韻ぶんを含む）。 */
     fun frameCount(
         plan: PlaybackPlan,
@@ -52,7 +59,7 @@ object OfflineRenderer {
     ): FloatArray {
         if (plan.isEmpty) return FloatArray(0)
 
-        val total = frameCount(plan, song.bpm, sampleRate, tailSeconds)
+        val total = frameCount(plan, song.bpm, sampleRate, tailFor(song, tailSeconds))
         val output = FloatArray(total * CHANNELS)
         val engine = PlaybackEngine(sampleRate, voiceSamples, chipVoiceSamples)
         engine.config = EngineConfig(
@@ -70,6 +77,8 @@ object OfflineRenderer {
             drumKit = song.drumKit,
             soundSet = song.soundSet,
             arpeggioSpeed = song.arpeggioSpeed,
+            reverb = song.reverb,
+            roomSize = song.roomSize,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

@@ -55,6 +55,10 @@ data class EngineConfig(
     val soundSet: SoundSet = SoundSet.NORMAL,
     /** 高速アルペジオで音を進める速さ。 */
     val arpeggioSpeed: ArpeggioSpeed = ArpeggioSpeed.NORMAL,
+    /** 残響の量。0 で掛けない。 */
+    val reverb: Float = 0f,
+    /** 残響の広さ。 */
+    val roomSize: RoomSize = RoomSize.MEDIUM,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -123,6 +127,9 @@ class PlaybackEngine(
     /** ドラム 1 発ごとの強さ（アクセント / 幽霊音）。 */
     private val slotGain = FloatArray(maxPolyphony) { 1f }
 
+    /** 残響。ミックス全体に掛けるので 1 つだけ持つ。 */
+    private val reverb = Reverb(sampleRate)
+
     /** メトロノームのクリック。曲の音とは別に、最後に足すだけにする。 */
     private val clickDown = DrumSynth.click(sampleRate, downbeat = true)
     private val clickBeat = DrumSynth.click(sampleRate, downbeat = false)
@@ -189,7 +196,12 @@ class PlaybackEngine(
             java.util.Arrays.fill(out, i * CHANNELS, (i + chunk) * CHANNELS, 0f)
             renderDrums(out, i, chunk, cfg)
             renderTones(out, i, chunk, cfg)
+            // 残響は曲の音にだけ掛ける。メトロノームは目印なので、
+            // 尾を引かせると裏拍が滲んで数えられなくなる。だから後で足す。
+            reverb.process(out, i, chunk, cfg.reverb, cfg.roomSize)
             renderClick(out, i, chunk)
+            // 抑えるのは残響を足したあと。先に抑えると、
+            // 足した残響のぶんでまた膨らんで割れる。
             for (j in i until i + chunk) limitFrame(out, j * CHANNELS)
             framePosition += chunk
             i += chunk
@@ -526,6 +538,8 @@ class PlaybackEngine(
         // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
         java.util.Arrays.fill(hitCount, 0)
         clickSample = null
+        // 前に鳴らしたぶんの尾を持ち越さない（頭から鳴らせば必ず同じ音になる）。
+        reverb.clear()
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         nextStepFrame = framePosition.toDouble()
@@ -545,6 +559,8 @@ class PlaybackEngine(
         // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
         java.util.Arrays.fill(hitCount, 0)
         clickSample = null
+        // 前に鳴らしたぶんの尾を持ち越さない（頭から鳴らせば必ず同じ音になる）。
+        reverb.clear()
         for (voice in toneVoices) voice.silence()
         absoluteStep = 0L
         framePosition = 0L
