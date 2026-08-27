@@ -27,13 +27,6 @@ class SongBuilderTest {
         }
     }
 
-    /** 型どおりのコードか、その sus4 版か。 */
-    private fun sameOrSuspended(expected: Chord, actual: Chord): Boolean {
-        if (actual == expected) return true
-        val suspended = Harmony.suspendedOf(expected.quality) ?: return false
-        return actual == expected.copy(quality = suspended)
-    }
-
     @Test
     fun `every bar gets a chord from one of the genre's progressions`() {
         for (genre in Genre.entries) {
@@ -42,12 +35,12 @@ class SongBuilderTest {
                 val bars = PlaybackPlan.arrangement(song).bars.map { it.chord }
                 assertEquals(8, bars.size)
                 // どれかの型を 8 小節に敷いたものと一致する。
-                // ところどころ sus4 に置き換わることがあるので、そこは許す。
+                // ところどころ 7th や sus4 に色が付くので、そこは許す。
                 assertTrue(
                     "${genre.label} $bars",
                     genre.progressions.any { template ->
                         val filled = template.fill(key, 8)
-                        filled.size == bars.size && filled.indices.all { sameOrSuspended(filled[it], bars[it]) }
+                        filled.size == bars.size && filled.indices.all { sameOrDressed(filled[it], bars[it]) }
                     },
                 )
             }

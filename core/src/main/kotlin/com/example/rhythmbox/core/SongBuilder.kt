@@ -63,7 +63,15 @@ object SongBuilder {
         //
         // 旋律を作る前に済ませるのも大事で、あとから足すと旋律が元のコードの
         // 3 度を歌ってしまい、預けたはずの音とぶつかる。
-        val cycle = Harmony.sprinkleSus4(progression.chords(key), random)
+        // 7th の色付けが先。あとから掛けると、sus4 にして 3 度を預けた和音に
+        // また 3 度が戻ってくる（7th は 3 度の上に積む音なので）。
+        val coloured = Harmony.enrichSevenths(
+            progression.chords(key),
+            progression.keyFor(key),
+            recipe.seventhChance,
+            random,
+        )
+        val cycle = Harmony.sprinkleSus4(coloured, random)
         val chords = List(total) { cycle[it % cycle.size] }
         val style = recipe.pickRhythm(random)
 

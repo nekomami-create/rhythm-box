@@ -133,6 +133,129 @@ class HarmonyTest {
         assertTrue("1 つも置かれていない", suspended.isNotEmpty())
     }
 
+    // --- 7th の色付け ---------------------------------------------------------
+
+    /** 必ず色が付く濃さで 1 周ぶんを色付けする。 */
+    private fun enriched(chords: List<Chord>, key: MusicKey = cMajor) =
+        Harmony.enrichSevenths(chords, key, chance = 1.0, random = Random(1))
+
+    /** [degree] の和音が色付いた割合（濃さ 1.0 で 200 回）。 */
+    private fun colouredRate(degree: Int): Double {
+        val diatonic = cMajor.diatonicChords()
+        val coloured = (0 until 200).count { seed ->
+            Harmony.enrichSevenths(diatonic, cMajor, 1.0, Random(seed))[degree] != diatonic[degree]
+        }
+        return coloured / 200.0
+    }
+
+    @Test
+    fun `the dominant gets a flat seventh, never a major seventh`() {
+        // ここだけ度数で扱いが変わる。V を M7 にすると属和音の緊張が消え、
+        // 主和音へ落ちる力が無くなる。
+        assertEquals(ChordQuality.SEVENTH, Harmony.seventhFor(4, ChordQuality.MAJOR))
+        assertEquals(ChordQuality.MAJOR_SEVENTH, Harmony.seventhFor(0, ChordQuality.MAJOR))
+        assertEquals(ChordQuality.MAJOR_SEVENTH, Harmony.seventhFor(3, ChordQuality.MAJOR))
+        // V はいちばん足す価値があるので、濃さを上げ切ると必ず色が付く。
+        assertEquals(1.0, colouredRate(4), 0.0)
+        assertEquals("G7", enriched(cMajor.diatonicChords())[4].name)
+    }
+
+    @Test
+    fun `minor and diminished chords keep their character`() {
+        assertEquals(ChordQuality.MINOR_SEVENTH, Harmony.seventhFor(1, ChordQuality.MINOR))
+        // 減三和音は m7-5。ここを m7 にすると減 5 度が消えて別の和音になる。
+        assertEquals(ChordQuality.HALF_DIMINISHED, Harmony.seventhFor(6, ChordQuality.DIMINISHED))
+
+        val result = enriched(cMajor.diatonicChords())
+        assertEquals("Dm7", result[1].name)
+        assertEquals("Am7", result[5].name)
+        assertEquals("Bm7-5", result[6].name)
+    }
+
+    @Test
+    fun `the tonic keeps its plain triad more often than the others`() {
+        // I を毎回 M7 にすると終わった感じが薄れて、曲が着地しなくなる。
+        val tonic = colouredRate(0)
+        val subdominant = colouredRate(3)
+        assertTrue("I $tonic >= IV $subdominant", tonic < subdominant)
+        assertTrue("I が一度も色付かない", tonic > 0.0)
+        assertEquals(1.0, subdominant, 0.0)
+    }
+
+    @Test
+    fun `no colouring at all when the genre asks for none`() {
+        val diatonic = cMajor.diatonicChords()
+        assertEquals(diatonic, Harmony.enrichSevenths(diatonic, cMajor, chance = 0.0, random = Random(1)))
+    }
+
+    @Test
+    fun `chords the progression already coloured are left alone`() {
+        // 型が「ここはこの響きで」と決めたものを上書きしない。
+        val already = ProgressionTemplate.CITY.chords(cMajor)
+        assertEquals(already, enriched(already))
+    }
+
+    @Test
+    fun `a borrowed dominant is left alone`() {
+        // 循環進行の A7 は調の外なので、度数が見つからない＝触らない。
+        val turnaround = ProgressionTemplate.TURNAROUND.chords(cMajor)
+        val result = enriched(turnaround)
+        assertEquals("A7", result[1].name)
+        // 調の中の I だけが色付く。
+        assertEquals("CM7", result[0].name)
+    }
+
+    @Test
+    fun `a suspended chord is not given a third back`() {
+        val suspended = Chord(0, ChordQuality.SUS4)
+        assertEquals(suspended, enriched(listOf(suspended)).single())
+        assertNull(Harmony.seventhFor(0, ChordQuality.SUS4))
+    }
+
+    @Test
+    fun `the colouring follows the scale the template means`() {
+        // 短調の型に長調の音階をあてがうと、どの和音も度数が見つからず色が付かない。
+        val minorTemplate = ProgressionTemplate.MINOR_TWO_FIVE
+        val chords = minorTemplate.chords(aMinor)
+        val right = Harmony.enrichSevenths(chords, minorTemplate.keyFor(aMinor), 1.0, Random(1))
+        assertEquals("Am7", right[2].name) // i が色付いた
+    }
+
+    @Test
+    fun `genres that want plain triads get plain triads`() {
+        val base = Song.newSong("s", "test", 0L)
+        listOf(Genre.ROCK, Genre.GAME).forEach { genre ->
+            assertEquals(0.0, genre.recipe().seventhChance, 0.0)
+            repeat(30) { seed ->
+                val song = SongBuilder.build(base, genre.recipe(), cMajor, 8, Random(seed))
+                val template = genre.progressions.first { candidate ->
+                    val filled = candidate.fill(cMajor, 8)
+                    val bars = PlaybackPlan.arrangement(song).bars.map { it.chord }
+                    filled.indices.all { sameOrDressed(filled[it], bars[it]) }
+                }
+                // 型がもともと持っている響きだけで、後から足された 7th は無い。
+                val fromTemplate = template.fill(cMajor, 8).map { it.quality }.toSet()
+                PlaybackPlan.arrangement(song).bars.forEach { bar ->
+                    val quality = bar.chord.quality
+                    assertTrue(
+                        "${genre.label} seed=$seed に足された $quality",
+                        quality in fromTemplate || Harmony.suspendedOf(quality) != null ||
+                            quality == ChordQuality.SUS4 || quality == ChordQuality.SEVENTH_SUS4,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `the same seed gives the same colouring`() {
+        val diatonic = cMajor.diatonicChords()
+        assertEquals(
+            Harmony.enrichSevenths(diatonic, cMajor, 0.5, Random(9)),
+            Harmony.enrichSevenths(diatonic, cMajor, 0.5, Random(9)),
+        )
+    }
+
     @Test
     fun `the same seed gives the same chords`() {
         val chords = List(8) { Chord(it % 2 * 5, ChordQuality.MAJOR) }

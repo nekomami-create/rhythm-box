@@ -223,6 +223,13 @@ data class GenreRecipe(
     val chip: Boolean,
     /** チップで鳴らすときのリードの音色。 */
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.PULSE_25,
+    /**
+     * 三和音を 7th に色付けする濃さ。0 で足さない。
+     *
+     * ジャンルによって正解が違う。ロックやチップ音源は三和音の素っ気なさが
+     * 芯なので 0 のまま、シティポップは 7th が付いていないほうが物足りない。
+     */
+    val seventhChance: Double = 0.0,
 ) {
     fun pickBpm(random: Random = Random.Default): Int =
         bpmRange.first + random.nextInt(bpmRange.last - bpmRange.first + 1)
@@ -330,6 +337,8 @@ enum class Genre(
      * ゲーム音楽は場面ごとに速さも明暗もまるで違うので、1 つには畳めない。
      */
     val scenes: List<GameScene> = emptyList(),
+    /** 三和音を 7th に色付けする濃さ。0 で足さない。 */
+    val seventhChance: Double = 0.0,
 ) {
     ROCK(
         "ロック",
@@ -356,6 +365,7 @@ enum class Genre(
             ProgressionTemplate.TURNAROUND,
         ),
         MelodyDensity.NORMAL,
+        seventhChance = 0.25,
     ),
     BALLAD(
         "バラード",
@@ -369,6 +379,7 @@ enum class Genre(
             ProgressionTemplate.MINOR_TWO_FIVE,
         ),
         MelodyDensity.SPARSE,
+        seventhChance = 0.45,
     ),
     CITY_POP(
         "シティポップ",
@@ -381,6 +392,7 @@ enum class Genre(
             ProgressionTemplate.TURNAROUND,
         ),
         MelodyDensity.BUSY,
+        seventhChance = 0.7,
     ),
     DANCE(
         "ダンス",
@@ -389,6 +401,7 @@ enum class Genre(
         listOf(RhythmStyle.FOUR_ON_FLOOR),
         listOf(ProgressionTemplate.DANCE_LOOP, ProgressionTemplate.KOMURO),
         MelodyDensity.NORMAL,
+        seventhChance = 0.15,
     ),
     GAME(
         "ゲーム音楽",
@@ -408,6 +421,7 @@ enum class Genre(
         progressions = progressions,
         melodyDensity = melodyDensity,
         chip = chip,
+        seventhChance = seventhChance,
     )
 
     fun pickBpm(random: Random = Random.Default): Int =
