@@ -1371,6 +1371,42 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update { it.copy(exportMessage = message) }
     }
 
+    /** バックアップのファイル名。日付を入れて、いつの控えか分かるようにする。 */
+    fun suggestedLibraryName(): String =
+        "BreakBox-${java.time.LocalDate.now()}.breakbox-all.json"
+
+    /** [destination] に、保存してあるすべての曲を 1 ファイルとして書き出す。 */
+    fun exportLibraryFile(destination: Uri) {
+        val library = repository.library.value
+        val message = runCatching {
+            container.fileExporter.write(destination, SongCodec.encode(library).toByteArray())
+            library.songs.size
+        }.fold(
+            onSuccess = { "$it 曲をバックアップしました" },
+            onFailure = { "バックアップできませんでした: ${it.message ?: it::class.java.simpleName}" },
+        )
+        _uiState.update { it.copy(exportMessage = message) }
+    }
+
+    /**
+     * バックアップから戻す。同じ曲（id が同じもの）は上書きし、無いものは足す。
+     * 同じファイルを 2 回読んでも曲は増えない。
+     */
+    fun importLibraryFile(source: Uri) {
+        val message = runCatching {
+            val library = SongCodec.decode(container.fileExporter.readText(source))
+                ?: error("BreakBox のファイルではないようです")
+            require(library.songs.isNotEmpty()) { "曲が入っていません" }
+            stop()
+            clearUndo()
+            repository.restore(library)
+        }.fold(
+            onSuccess = { "$it 曲を戻しました" },
+            onFailure = { "戻せませんでした: ${it.message ?: it::class.java.simpleName}" },
+        )
+        _uiState.update { it.copy(exportMessage = message) }
+    }
+
     /** [destination] に M4A を書き出す。 */
     fun exportAudio(destination: Uri, scope: ExportScope, repeats: Int) {
         if (_uiState.value.exportProgress != null) return

@@ -2,6 +2,7 @@ package com.example.rhythmbox.data
 
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.Song
+import com.example.rhythmbox.core.SongLibrary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -25,6 +26,111 @@ class SongRepositoryTest {
     // ファイル入出力も仮想時間の下で走らせて、書き込み完了を advanceUntilIdle() で待てるようにする。
     private fun repository(scope: TestScope, file: File = File(folder.root, "songs.json")) =
         SongRepository(file, scope, StandardTestDispatcher(scope.testScheduler), now = { 1_000L })
+
+    /** [name] という名前の曲を 1 つ。 */
+    private fun song(id: String, name: String) = Song.newSong(id, name, 0L)
+
+    @Test
+    fun `a backup restored into an empty library brings every song back`() = runTest(StandardTestDispatcher()) {
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+
+        val backup = SongLibrary(listOf(song("a", "ひとつめ"), song("b", "ふたつめ")), currentId = "b")
+        assertEquals(2, repository.restore(backup))
+        advanceUntilIdle()
+
+        // 控えの曲は id ごとそのまま戻る（作り直さない）。
+        assertEquals(listOf("ひとつめ", "ふたつめ"), repository.library.value.songs.map { it.name }.takeLast(2))
+        assertTrue(repository.library.value.songs.any { it.id == "a" })
+        assertTrue(repository.library.value.songs.any { it.id == "b" })
+    }
+
+    @Test
+    fun `restoring the same backup twice does not multiply the songs`() = runTest(StandardTestDispatcher()) {
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+        val before = repository.library.value.songs.size
+
+        val backup = SongLibrary(listOf(song("a", "ひとつめ"), song("b", "ふたつめ")))
+        repository.restore(backup)
+        repository.restore(backup)
+        advanceUntilIdle()
+
+        assertEquals(before + 2, repository.library.value.songs.size)
+    }
+
+    @Test
+    fun `restoring overwrites the song it came from, not a copy of it`() = runTest(StandardTestDispatcher()) {
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+        repository.restore(SongLibrary(listOf(song("a", "むかしの名前"))))
+        advanceUntilIdle()
+
+        repository.restore(SongLibrary(listOf(song("a", "あたらしい名前"))))
+        advanceUntilIdle()
+
+        val matching = repository.library.value.songs.filter { it.id == "a" }
+        assertEquals(1, matching.size)
+        assertEquals("あたらしい名前", matching.single().name)
+    }
+
+    @Test
+    fun `songs that are not in the backup are kept`() = runTest(StandardTestDispatcher()) {
+        // 控えを取ったあとに作った曲が、戻したときに消えては困る。
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+        val mine = repository.library.value.current()!!.id
+
+        repository.restore(SongLibrary(listOf(song("a", "控えの曲"))))
+        advanceUntilIdle()
+
+        assertTrue("戻す前からあった曲が消えた", repository.library.value.songs.any { it.id == mine })
+    }
+
+    @Test
+    fun `the song you had open stays open after a restore`() = runTest(StandardTestDispatcher()) {
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+        val mine = repository.library.value.currentId
+
+        repository.restore(SongLibrary(listOf(song("a", "控えの曲")), currentId = "a"))
+        advanceUntilIdle()
+
+        assertEquals(mine, repository.library.value.currentId)
+    }
+
+    @Test
+    fun `an empty backup changes nothing`() = runTest(StandardTestDispatcher()) {
+        val repository = repository(this)
+        repository.load()
+        advanceUntilIdle()
+        val before = repository.library.value
+
+        assertEquals(0, repository.restore(SongLibrary()))
+        advanceUntilIdle()
+
+        assertEquals(before, repository.library.value)
+    }
+
+    @Test
+    fun `a restore survives a restart`() = runTest(StandardTestDispatcher()) {
+        val file = File(folder.root, "songs.json")
+        val repository = repository(this, file)
+        repository.load()
+        advanceUntilIdle()
+        repository.restore(SongLibrary(listOf(song("a", "控えの曲"))))
+        advanceUntilIdle()
+
+        val reopened = repository(this, file)
+        reopened.load()
+        advanceUntilIdle()
+        assertTrue(reopened.library.value.songs.any { it.id == "a" && it.name == "控えの曲" })
+    }
 
     @Test
     fun `first launch creates a starter song and saves it`() = runTest(StandardTestDispatcher()) {

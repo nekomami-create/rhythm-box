@@ -102,6 +102,35 @@ class SongRepository(
         return added.id
     }
 
+    /**
+     * バックアップからライブラリを戻す。
+     *
+     * [addSong] とは狙いが違う。あちらは「他人からもらった曲を足す」ので id を
+     * 作り直すが、こちらは「自分が取った控えを戻す」ので id をそのまま使う。
+     * 同じ id の曲は上書きし、無いものは足す。だから同じファイルを 2 回読んでも
+     * 曲は増えないし、端末を入れ替えたあとに戻せば元のとおりになる。
+     *
+     * 今開いている曲は、戻したあとにも残っていればそのまま開いたままにする。
+     * 戻り値は入ってきた曲の数。
+     */
+    fun restore(library: SongLibrary): Int {
+        if (library.songs.isEmpty()) return 0
+        val incoming = library.songs.associateBy { it.id }
+        val kept = _library.value.songs.filterNot { it.id in incoming }
+        val songs = kept + library.songs
+        val current = _library.value.currentId
+        _library.value = SongLibrary(
+            songs = songs,
+            currentId = when {
+                songs.any { it.id == current } -> current
+                songs.any { it.id == library.currentId } -> library.currentId
+                else -> songs.first().id
+            },
+        )
+        scheduleSave()
+        return library.songs.size
+    }
+
     fun deleteSong(id: String) {
         val next = _library.value.remove(id)
         _library.value = if (next.songs.isEmpty()) newLibrary() else next

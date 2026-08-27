@@ -78,6 +78,16 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     ) { uri ->
         if (uri != null) viewModel.importSongFile(uri)
     }
+    val createBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) viewModel.exportLibraryFile(uri)
+    }
+    val openBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) viewModel.importLibraryFile(uri)
+    }
 
     Scaffold(
         topBar = {
@@ -123,8 +133,9 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "曲メニュー")
                     }
-                    // 12 項目が区切りなしに並ぶと読めないので、4 つのまとまりに割る。
-                    // 書き出しが M4A と MIDI で離れて並んでいたのもここで直す。
+                    // 区切りなしに並ぶと読めないので、まとまりごとに見出しを挟む。
+                    // 書き出しが M4A と MIDI で離れて並んでいたのもここで直した。
+                    // 「持ち出す」は 1 曲ぶん、「控え」は端末まるごとの話なので分けてある。
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         MenuHeading("曲")
                         DropdownMenuItem(
@@ -183,6 +194,19 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                                 menuOpen = false
                                 // 端末によっては json を認識しないので、すべてのファイルから選べるようにする。
                                 openSongFile.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            },
+                        )
+
+                        MenuHeading("控え")
+                        DropdownMenuItem(
+                            text = { Text("全曲をバックアップ") },
+                            onClick = { menuOpen = false; createBackup.launch(viewModel.suggestedLibraryName()) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("バックアップから戻す") },
+                            onClick = {
+                                menuOpen = false
+                                openBackup.launch(arrayOf("application/json", "text/plain", "*/*"))
                             },
                         )
                     }
