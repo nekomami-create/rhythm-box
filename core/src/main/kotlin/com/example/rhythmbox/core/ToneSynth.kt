@@ -20,6 +20,50 @@ object ToneSynth {
     data class Partial(val harmonic: Int, val gain: Float)
 
     /**
+     * 波形の作り方。
+     *
+     * [Additive] は倍音を足し合わせる従来の方式。それ以外は波形を直接作る。
+     *
+     * 足し合わせでチップ音源のパルス波を出すことはできない。倍音ごとの位相を
+     * 持てないので、どのデューティ比を指定しても 50%（ただの矩形波）になってしまう。
+     * 実測でも、12.5% を狙って倍音を 16 本足しても波形が上にいる割合は 50% のまま。
+     * 直接作れば正確なうえ、正弦テーブルを 6 回引くより軽い。
+     */
+    sealed interface Waveform {
+        /** 1 音あたりの音量の補正。直接作る波形は倍音の山が高く、そのままだと大きい。 */
+        val levelTrim: Float
+
+        /** 倍音を足し合わせる（今までの音）。 */
+        data object Additive : Waveform {
+            override val levelTrim = 1.0f
+        }
+
+        /**
+         * パルス波。[duty] は 1 周期のうち上にいる割合。
+         * 0.5 で矩形波、細くするほど鼻にかかった音になる。
+         */
+        data class Pulse(val duty: Float) : Waveform {
+            override val levelTrim = 0.55f
+        }
+
+        /**
+         * ファミコンの三角波。4 bit・16 段の階段になっている。
+         * 段差の濁りがあの音の芯なので、なめらかに均さずそのまま出す。
+         */
+        data object ChipTriangle : Waveform {
+            override val levelTrim = 0.75f
+        }
+
+        /**
+         * LFSR（線形帰還シフトレジスタ）のノイズ。
+         * [shortPeriod] を立てると 93 段で 1 周し、音程のある金属質な音になる。
+         */
+        data class Noise(val shortPeriod: Boolean = false) : Waveform {
+            override val levelTrim = 0.45f
+        }
+    }
+
+    /**
      * 音色の設定。時間の単位は秒。
      * [sustain] は減衰後に保つ音量の割合、[gain] は 1 音あたりの音量。
      */
@@ -32,6 +76,8 @@ object ToneSynth {
         val gain: Float,
         /** 音の長さの上限（ステップ数）。コードは小節いっぱい伸ばす。 */
         val maxGateSteps: Int,
+        /** 波形の作り方。既定は今までの加算合成なので、既存の音は変わらない。 */
+        val wave: Waveform = Waveform.Additive,
     )
 
     private val CHORD = Timbre(
@@ -122,6 +168,8 @@ object ToneSynth {
         internal val decayScale: Double = 1.0,
         /** 減衰後に残る音量の割合。 */
         internal val sustainScale: Float = 1.0f,
+        /** 波形の作り方。チップ音色だけがここを使う。 */
+        internal val wave: Waveform = Waveform.Additive,
     ) {
         SQUARE(
             "スクエア",
@@ -181,7 +229,57 @@ object ToneSynth {
             decayScale = 0.7,
             sustainScale = 0.3f,
         ),
+
+        // ここから下はチップ音源（ファミコン / ゲームボーイ）の音。
+        // 実機のチャンネルは押している間ずっと同じ音量で鳴るので、
+        // 減衰をほとんどさせず、立ち上がりも即座にしてある。
+        PULSE_12(
+            // いちばん細いパルス。鼻にかかった、ゲームの主旋律の音。
+            "チップ 12.5%",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 3.0,
+            sustainScale = 1.5f,
+            wave = Waveform.Pulse(0.125f),
+        ),
+        PULSE_25(
+            // ファミコンでいちばんよく使われる幅。太さと細さの中間。
+            "チップ 25%",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 3.0,
+            sustainScale = 1.5f,
+            wave = Waveform.Pulse(0.25f),
+        ),
+        PULSE_50(
+            // 矩形波。丸くて素直な音で、ハモりや対旋律に向く。
+            "チップ 50%",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 3.0,
+            sustainScale = 1.5f,
+            wave = Waveform.Pulse(0.5f),
+        ),
+        CHIP_TRIANGLE(
+            // ファミコンの三角波。16 段の階段のざらつきがそのまま音色になる。
+            "チップ三角",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 3.0,
+            sustainScale = 1.5f,
+            wave = Waveform.ChipTriangle,
+        ),
+        CHIP_NOISE(
+            // 短周期のノイズ。音程が付くので、効果音めいた旋律が書ける。
+            "チップノイズ",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 2.0,
+            sustainScale = 1.2f,
+            wave = Waveform.Noise(shortPeriod = true),
+        ),
     }
+
 
     fun timbre(instrument: Instrument, lead: LeadVoice = LeadVoice.SQUARE): Timbre = when (instrument) {
         Instrument.CHORD -> CHORD
@@ -192,11 +290,83 @@ object ToneSynth {
             decay = LEAD.decay * lead.decayScale,
             // 伸ばし続ける音色は 1 を超えないように止める。
             sustain = (LEAD.sustain * lead.sustainScale).coerceIn(0f, 0.95f),
+            wave = lead.wave,
         )
     }
 
     /** MIDI ノート番号 -> 周波数 (Hz)。A4 = 69 = 440Hz。 */
     fun frequency(midi: Int): Double = 440.0 * 2.0.pow((midi - 69) / 12.0)
+
+    // --- 直接作る波形 -------------------------------------------------------
+    //
+    // どれも状態を持たない。位相（と LFSR の中身）を渡せば答えが決まるので、
+    // 再生を通さずにそのまま測れる。
+
+    /**
+     * パルス波 1 サンプル。[duty] は 1 周期のうち上にいる割合。
+     *
+     * 上がるところと下がるところの 2 か所に段差があるので、その前後 1 サンプルだけ
+     * [blep] で丸める（PolyBLEP）。丸めないと高い音で、実機には無い
+     * 金属質なうなり（折り返し）が乗る。[phaseStep] は 1 サンプルで進む位相。
+     */
+    fun pulse(phase: Double, duty: Float, phaseStep: Double): Float {
+        val t = phase - floor(phase)
+        var value = if (t < duty) 1f else -1f
+        value += blep(t, phaseStep)
+        value -= blep((t - duty + 1.0).mod(1.0), phaseStep)
+        return value
+    }
+
+    /** 段差を多項式で丸める。段差から離れたところでは 0 を返す。 */
+    fun blep(t: Double, phaseStep: Double): Float {
+        if (phaseStep <= 0.0) return 0f
+        return when {
+            t < phaseStep -> {
+                val x = t / phaseStep
+                (x + x - x * x - 1.0).toFloat()
+            }
+            t > 1.0 - phaseStep -> {
+                val x = (t - 1.0) / phaseStep
+                (x * x + x + x + 1.0).toFloat()
+            }
+            else -> 0f
+        }
+    }
+
+    /**
+     * ファミコンの三角波 1 サンプル。[TRIANGLE_LEVELS] 段の階段を上って下りる。
+     * なめらかに均すとあの濁りが消えてしまうので、段差はそのまま出す。
+     */
+    fun chipTriangle(phase: Double): Float {
+        val t = phase - floor(phase)
+        val slot = (t * TRIANGLE_SLOTS).toInt().coerceIn(0, TRIANGLE_SLOTS - 1)
+        val step = if (slot < TRIANGLE_LEVELS) TRIANGLE_LEVELS - 1 - slot else slot - TRIANGLE_LEVELS
+        return step / ((TRIANGLE_LEVELS - 1) / 2f) - 1f
+    }
+
+    /**
+     * LFSR（線形帰還シフトレジスタ）を 1 段進める。
+     * [shortPeriod] を立てると帰還を取る位置が変わり、93 段で 1 周して
+     * 音程のある金属音になる。立てなければ 32767 段で、ざらついた雑音。
+     */
+    fun nextLfsr(state: Int, shortPeriod: Boolean): Int {
+        val tap = if (shortPeriod) SHORT_TAP else LONG_TAP
+        val feedback = (state and 1) xor ((state shr tap) and 1)
+        return (state shr 1) or (feedback shl (LFSR_BITS - 1))
+    }
+
+    /** LFSR の今の出力。実機と同じく最下位ビットが 0 のときに上を向く。 */
+    fun lfsrOutput(state: Int): Float = if (state and 1 == 0) 1f else -1f
+
+    /** 三角波の段数と、1 周期ぶんの枠（上り 16 + 下り 16）。 */
+    const val TRIANGLE_LEVELS = 16
+    const val TRIANGLE_SLOTS = TRIANGLE_LEVELS * 2
+
+    /** LFSR の桁数と、帰還を取る位置。0 以外なら何を種にしてもよい。 */
+    const val LFSR_BITS = 15
+    const val LFSR_SEED = 1
+    private const val LONG_TAP = 1
+    private const val SHORT_TAP = 6
 
     // --- サイン波テーブル ---------------------------------------------------
 

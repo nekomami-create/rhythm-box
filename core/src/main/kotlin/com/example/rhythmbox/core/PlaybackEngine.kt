@@ -450,6 +450,13 @@ class PlaybackEngine(
         private val harmonics = IntArray(MAX_PARTIALS)
         private val harmonicGains = FloatArray(MAX_PARTIALS)
 
+        // 波形を直接作るときの状態。発音のたびに [start] で決まる。
+        private var waveKind = WAVE_ADDITIVE
+        private var duty = 0.5f
+        private var noiseShort = false
+        private var lfsr = ToneSynth.LFSR_SEED
+        private var noiseValue = 1f
+
         private enum class Stage { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE }
 
         fun start(
@@ -468,12 +475,33 @@ class PlaybackEngine(
             gate = gateFrames.coerceAtLeast(1L)
             stage = Stage.ATTACK
             level = 0f
-            gain = timbre.gain * velocity
+            // 直接作る波形は倍音の山が高く、そのままだと加算合成より大きく鳴る。
+            gain = timbre.gain * velocity * timbre.wave.levelTrim
             sustain = timbre.sustain
+            waveKind = when (val wave = timbre.wave) {
+                is ToneSynth.Waveform.Pulse -> {
+                    duty = wave.duty.coerceIn(0.01f, 0.99f)
+                    WAVE_PULSE
+                }
+                is ToneSynth.Waveform.Noise -> {
+                    noiseShort = wave.shortPeriod
+                    // 種は 0 以外なら何でもよい。0 だと以後ずっと 0 のまま動かない。
+                    lfsr = ToneSynth.LFSR_SEED
+                    noiseValue = 1f
+                    WAVE_NOISE
+                }
+                ToneSynth.Waveform.ChipTriangle -> WAVE_CHIP_TRIANGLE
+                ToneSynth.Waveform.Additive -> WAVE_ADDITIVE
+            }
             attackStep = (1.0 / (timbre.attack * sampleRate).coerceAtLeast(1.0)).toFloat()
             decayCoefficient = exp(-1.0 / (timbre.decay * sampleRate)).toFloat()
             releaseCoefficient = exp(-1.0 / (timbre.release * sampleRate)).toFloat()
 
+            if (waveKind != WAVE_ADDITIVE) {
+                // 直接作る波形は倍音表を使わない。折り返しはパルスだけ [blep] で抑える。
+                harmonicCount = 0
+                return
+            }
             // 折り返し（エイリアス）を避けるため、ナイキスト周波数を超える倍音は捨てる。
             val nyquist = sampleRate / 2.0
             var count = 0
@@ -517,15 +545,36 @@ class PlaybackEngine(
                     return
                 }
                 if (amplitude > 0f) {
-                    var sample = 0f
-                    for (h in 0 until harmonicCount) {
-                        sample += ToneSynth.sine(phase * harmonics[h]) * harmonicGains[h]
-                    }
-                    out[offset + k] += sample * level * amplitude
+                    out[offset + k] += waveSample() * level * amplitude
                 }
                 phase += phaseStep
-                if (phase >= 1.0) phase -= floor(phase)
+                if (phase >= 1.0) {
+                    phase -= floor(phase)
+                    // ノイズは 1 周期に 1 回だけ進める。音の高さがそのまま粗さになる。
+                    if (waveKind == WAVE_NOISE) advanceNoise()
+                }
             }
+        }
+
+        private fun waveSample(): Float = when (waveKind) {
+            WAVE_PULSE -> ToneSynth.pulse(phase, duty, phaseStep)
+            WAVE_CHIP_TRIANGLE -> ToneSynth.chipTriangle(phase)
+            WAVE_NOISE -> noiseValue
+            else -> additive()
+        }
+
+        private fun additive(): Float {
+            var sample = 0f
+            for (h in 0 until harmonicCount) {
+                sample += ToneSynth.sine(phase * harmonics[h]) * harmonicGains[h]
+            }
+            return sample
+        }
+
+        /** LFSR を 1 段進める。1 周期に 1 回だけ呼ぶので、音の高さが粗さになる。 */
+        private fun advanceNoise() {
+            lfsr = ToneSynth.nextLfsr(lfsr, noiseShort)
+            noiseValue = ToneSynth.lfsrOutput(lfsr)
         }
 
         private fun advanceEnvelope() {
@@ -562,6 +611,11 @@ class PlaybackEngine(
 
         private companion object {
             const val MAX_PARTIALS = 6
+
+            const val WAVE_ADDITIVE = 0
+            const val WAVE_PULSE = 1
+            const val WAVE_CHIP_TRIANGLE = 2
+            const val WAVE_NOISE = 3
         }
     }
 
