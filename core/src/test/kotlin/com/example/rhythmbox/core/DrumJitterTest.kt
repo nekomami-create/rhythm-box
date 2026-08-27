@@ -42,7 +42,7 @@ class DrumJitterTest {
         engine.start()
         val framesPerBar = sampleRate * secondsPerStep(bpm) * STEPS_PER_BAR
         val out = FloatArray((framesPerBar * bars).roundToInt())
-        engine.render(out)
+        engine.renderLeft(out)
         return out
     }
 
@@ -116,7 +116,7 @@ class DrumJitterTest {
             engine.start()
             val frames = (sampleRate * secondsPerStep(bpm) * STEPS_PER_BAR).roundToInt()
             val out = FloatArray(frames)
-            engine.render(out)
+            engine.renderLeft(out)
             return out
         }
         assertEquals(

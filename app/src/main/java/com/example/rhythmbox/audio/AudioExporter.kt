@@ -51,7 +51,7 @@ class AudioExporter(
                 ?: error("保存先を開けませんでした")
             stream.use { output -> temp.inputStream().use { it.copyTo(output) } }
             onProgress(1f)
-            Result(seconds = samples.size.toDouble() / sampleRate, bytes = temp.length())
+            Result(seconds = OfflineRenderer.seconds(samples, sampleRate), bytes = temp.length())
         } finally {
             temp.delete()
         }

@@ -172,9 +172,11 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             song = state.song,
             actions = MixerActions(
                 onVolumeChange = viewModel::setTrackVolume,
+                onPanChange = viewModel::setTrackPan,
                 onHoldChange = viewModel::setTrackHold,
                 onToggleMute = viewModel::toggleMute,
                 onUnmuteAll = viewModel::unmuteAll,
+                onCentreAll = viewModel::centreAll,
                 onChordStyleChange = viewModel::setChordStyle,
                 onArpeggioSpeedChange = viewModel::setArpeggioSpeed,
                 onLeadVoiceChange = viewModel::setLeadVoice,

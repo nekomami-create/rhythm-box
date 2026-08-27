@@ -32,7 +32,7 @@ class LeadDynamicsTest {
         )
         engine.start()
         val out = FloatArray((sampleRate * secondsPerStep(bpm) * 2).roundToInt())
-        engine.render(out)
+        engine.renderLeft(out)
         return out
     }
 

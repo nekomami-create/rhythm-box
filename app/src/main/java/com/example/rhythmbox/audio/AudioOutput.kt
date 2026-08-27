@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
+import com.example.rhythmbox.core.CHANNELS
 import com.example.rhythmbox.core.PlaybackEngine
 import com.example.rhythmbox.core.StepTimeline
 
@@ -64,14 +65,15 @@ class AudioOutput(
     fun resume() {
         if (running) return
         val sampleRate = engine.sampleRate
+        val bytesPerFrame = BYTES_PER_FLOAT * CHANNELS
         val minBytes = AudioTrack.getMinBufferSize(
             sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.CHANNEL_OUT_STEREO,
             AudioFormat.ENCODING_PCM_FLOAT,
-        ).coerceAtLeast(blockFrames * BYTES_PER_FLOAT)
+        ).coerceAtLeast(blockFrames * bytesPerFrame)
         // 溜める量が、そのまま叩いてから鳴るまでの遅れになる。
         // 2 回ぶんだけ持たせて、あとは端末に任せる。
-        val bufferBytes = maxOf(minBytes, blockFrames * BYTES_PER_FLOAT * 2)
+        val bufferBytes = maxOf(minBytes, blockFrames * bytesPerFrame * 2)
 
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -84,7 +86,7 @@ class AudioOutput(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build(),
             )
             .setBufferSizeInBytes(bufferBytes)
@@ -152,7 +154,8 @@ class AudioOutput(
 
     private fun renderLoop(audioTrack: AudioTrack) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val buffer = FloatArray(blockFrames)
+        // 左右が交互に並ぶので、1 回ぶんはフレーム数の CHANNELS 倍いる。
+        val buffer = FloatArray(blockFrames * CHANNELS)
         var wasPlaying = false
         while (running) {
             val playing = engine.render(buffer)

@@ -5,6 +5,31 @@ import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.pow
 
+/** 出力のチャンネル数。左右が交互に並ぶ（L R L R …）。 */
+const val CHANNELS = 2
+
+/**
+ * 定位から左チャンネルの音量を出す。
+ *
+ * 中央を 1.0 にしてある。ここを 0.707（等パワー）にすると、
+ * ステレオにしただけで曲全体が小さくなり、これまで計算で決めてきた
+ * トラックごとの音量を全部取り直すことになる。中央を 1.0 に置けば、
+ * 何も振っていない曲はモノラルだったころとそのまま同じ音になる
+ * （既定の曲 75 万フレームで実測して、違ったのは 6 フレーム、
+ * それも float の刻み 1 つぶん＝約 -144 dB だった）。
+ * 端に振り切ったぶんだけ音が小さくなるが、それは振った側の判断でいい。
+ */
+fun panLeft(pan: Float): Float {
+    val position = pan.coerceIn(-1f, 1f)
+    return if (position <= 0f) 1f else 1f - position
+}
+
+/** 定位から右チャンネルの音量を出す。[panLeft] の裏返し。 */
+fun panRight(pan: Float): Float {
+    val position = pan.coerceIn(-1f, 1f)
+    return if (position >= 0f) 1f else 1f + position
+}
+
 /** 音声スレッドが 1 ブロックごとに読む設定のスナップショット（不変）。 */
 data class EngineConfig(
     val plan: PlaybackPlan,
@@ -12,6 +37,8 @@ data class EngineConfig(
     val masterVolume: Float = 0.75f,
     val trackVolumes: List<Float> = List(TRACK_COUNT) { 0.7f },
     val mutes: List<Boolean> = List(TRACK_COUNT) { false },
+    /** トラックごとの左右の位置。-1 が左端、0 が中央、1 が右端。 */
+    val trackPans: List<Float> = List(TRACK_COUNT) { 0f },
     /** トラックごとの音の伸び（サステイン）。音程のある 3 トラックだけで効く。 */
     val holds: List<Float> = List(TRACK_COUNT) { ToneSynth.DEFAULT_HOLD },
     /** ハネ具合。0 でまっすぐ。 */
@@ -140,9 +167,10 @@ class PlaybackEngine(
 
     /**
      * [out] の先頭 [frames] フレームぶんを描画する。既存の内容は上書きされる。
+     * [out] は左右が交互に並ぶので、長さはフレーム数の [CHANNELS] 倍いる。
      * 戻り値は再生中かどうか（曲構成の終端で false になる）。
      */
-    fun render(out: FloatArray, frames: Int = out.size): Boolean {
+    fun render(out: FloatArray, frames: Int = out.size / CHANNELS): Boolean {
         // 停止直後は余韻を鳴らし切りたいので、リセットは再生開始時だけ行う。
         if (pendingRestart && isPlaying) {
             rewind()
@@ -158,11 +186,11 @@ class PlaybackEngine(
             } else {
                 frames - i
             }
-            java.util.Arrays.fill(out, i, i + chunk, 0f)
+            java.util.Arrays.fill(out, i * CHANNELS, (i + chunk) * CHANNELS, 0f)
             renderDrums(out, i, chunk, cfg)
             renderTones(out, i, chunk, cfg)
             renderClick(out, i, chunk)
-            for (j in i until i + chunk) out[j] = limit(out[j])
+            for (j in i until i + chunk) limitFrame(out, j * CHANNELS)
             framePosition += chunk
             i += chunk
         }
@@ -182,6 +210,9 @@ class PlaybackEngine(
             if (voice < 0) continue
             val sample = kit[voice]
             val gain = master * trackGain(cfg, voice) * slotGain[slot]
+            val pan = trackPan(cfg, voice)
+            val gainLeft = gain * panLeft(pan)
+            val gainRight = gain * panRight(pan)
             val rate = slotRate[slot]
             var pos = slotPos[slot]
             var k = 0
@@ -199,7 +230,10 @@ class PlaybackEngine(
                     val fraction = (pos - index).toFloat()
                     val here = sample[index]
                     val next = if (index + 1 < sample.size) sample[index + 1] else 0f
-                    out[offset + k] += (here + (next - here) * fraction) * gain
+                    val value = here + (next - here) * fraction
+                    val at = (offset + k) * CHANNELS
+                    out[at] += value * gainLeft
+                    out[at + 1] += value * gainRight
                     k++
                     pos += rate
                 }
@@ -223,7 +257,10 @@ class PlaybackEngine(
         var pos = clickPos
         var k = 0
         while (k < count && pos < sample.size) {
-            out[offset + k] += sample[pos]
+            // 目印なので中央から動かさない。
+            val at = (offset + k) * CHANNELS
+            out[at] += sample[pos]
+            out[at + 1] += sample[pos]
             k++
             pos++
         }
@@ -240,12 +277,17 @@ class PlaybackEngine(
         val master = cfg.masterVolume
         for (voice in toneVoices) {
             val instrument = voice.instrument ?: continue
-            voice.render(out, offset, count, master * trackGain(cfg, instrument.trackIndex))
+            val track = instrument.trackIndex
+            val gain = master * trackGain(cfg, track)
+            val pan = trackPan(cfg, track)
+            voice.render(out, offset, count, gain * panLeft(pan), gain * panRight(pan))
         }
     }
 
     private fun trackGain(cfg: EngineConfig, track: Int): Float =
         if (cfg.mutes.getOrElse(track) { false }) 0f else cfg.trackVolumes.getOrElse(track) { 0.7f }
+
+    private fun trackPan(cfg: EngineConfig, track: Int): Float = cfg.trackPans.getOrElse(track) { 0f }
 
     /** 次のステップを発音し、次回の発音フレームを決める。 */
     private fun fireStep(cfg: EngineConfig) {
@@ -657,9 +699,10 @@ class PlaybackEngine(
             level = 0f
         }
 
-        fun render(out: FloatArray, offset: Int, count: Int, trackGain: Float) {
+        fun render(out: FloatArray, offset: Int, count: Int, gainLeft: Float, gainRight: Float) {
             if (stage == Stage.IDLE) return
-            val amplitude = gain * trackGain
+            val amplitudeLeft = gain * gainLeft
+            val amplitudeRight = gain * gainRight
             for (k in 0 until count) {
                 if (modulated && --framesToTick <= 0) {
                     framesToTick = framesPerTick
@@ -671,8 +714,11 @@ class PlaybackEngine(
                     instrument = null
                     return
                 }
-                if (amplitude > 0f) {
-                    out[offset + k] += waveSample() * level * amplitude
+                if (amplitudeLeft > 0f || amplitudeRight > 0f) {
+                    val value = waveSample() * level
+                    val at = (offset + k) * CHANNELS
+                    out[at] += value * amplitudeLeft
+                    out[at + 1] += value * amplitudeRight
                 }
                 phase += phaseStep
                 if (phase >= 1.0) {
@@ -790,6 +836,25 @@ class PlaybackEngine(
 
         /** ここを超えたぶんだけ滑らかに圧縮する（それ以下の音量は素通し）。 */
         private const val KNEE = 0.8f
+
+        /**
+         * 1 フレームぶんを左右まとめて抑える。
+         *
+         * 左右を別々に通すと、片方だけが抑えられたときに音が反対側へ
+         * 寄ってしまう。大きいほうで抑える量を決めて両方に同じだけ掛ければ、
+         * 定位は動かない。中央（左右が同じ値）なら [limit] を通したのと
+         * 同じ値になる（割ってから掛け直すので、float の刻み 1 つぶんだけ
+         * ずれることがある）。
+         */
+        fun limitFrame(out: FloatArray, at: Int) {
+            val left = out[at]
+            val right = out[at + 1]
+            val peak = maxOf(abs(left), abs(right))
+            if (peak <= KNEE) return
+            val scale = limit(peak) / peak
+            out[at] = left * scale
+            out[at + 1] = right * scale
+        }
 
         /**
          * 打点が重なったときの音割れを防ぐソフトリミッタ。

@@ -43,7 +43,7 @@ class ChipModulationTest {
         )
         engine.start()
         val out = FloatArray(frames)
-        engine.render(out)
+        engine.renderLeft(out)
         return out
     }
 

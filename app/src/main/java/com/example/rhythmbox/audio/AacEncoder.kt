@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import com.example.rhythmbox.core.CHANNELS
 import java.io.File
 import java.nio.ByteOrder
 
@@ -18,7 +19,7 @@ object AacEncoder {
     const val DEFAULT_BIT_RATE = 128_000
 
     /**
-     * [pcm]（16bit モノラル）を [output] に書き出す。
+     * [pcm]（16bit、左右が交互に並んだステレオ）を [output] に書き出す。
      * [onProgress] には 0.0〜1.0 が渡る。
      */
     fun encodeToM4a(
@@ -30,7 +31,7 @@ object AacEncoder {
     ) {
         require(pcm.isNotEmpty()) { "書き出す音がありません" }
 
-        val format = MediaFormat.createAudioFormat(MIME, sampleRate, 1).apply {
+        val format = MediaFormat.createAudioFormat(MIME, sampleRate, CHANNELS).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
@@ -52,9 +53,12 @@ object AacEncoder {
                     if (inputIndex >= 0) {
                         val buffer = codec.getInputBuffer(inputIndex)!!
                         buffer.clear()
-                        val capacity = buffer.capacity() / Short.SIZE_BYTES
+                        // 左右をまたいで切ると以降の並びがそっくり入れ替わるので、
+                        // 渡す量は必ずフレーム（左右のペア）単位に切りそろえる。
+                        val capacity = buffer.capacity() / Short.SIZE_BYTES / CHANNELS * CHANNELS
                         val count = minOf(capacity, pcm.size - fed)
-                        val presentationUs = fed * 1_000_000L / sampleRate
+                        // 時刻はフレーム数で決まる。サンプル数で割ると 2 倍速の時刻になる。
+                        val presentationUs = fed / CHANNELS * 1_000_000L / sampleRate
                         if (count > 0) {
                             buffer.order(ByteOrder.nativeOrder())
                                 .asShortBuffer()

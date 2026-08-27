@@ -16,6 +16,13 @@ object OfflineRenderer {
     /** 1 回に描くフレーム数。 */
     private const val BLOCK = 4096
 
+    /** 書き出した PCM のフレーム数（左右のペアを 1 と数える）。 */
+    fun frames(samples: FloatArray): Int = samples.size / CHANNELS
+
+    /** 書き出した PCM の長さ（秒）。 */
+    fun seconds(samples: FloatArray, sampleRate: Int): Double =
+        frames(samples).toDouble() / sampleRate
+
     /** [plan] を鳴らし切るのに必要なフレーム数（余韻ぶんを含む）。 */
     fun frameCount(
         plan: PlaybackPlan,
@@ -29,7 +36,8 @@ object OfflineRenderer {
     }
 
     /**
-     * [plan] を頭から終わりまで描いて PCM（-1.0..1.0 のモノラル）を返す。
+     * [plan] を頭から終わりまで描いて PCM（-1.0..1.0）を返す。
+     * 左右が交互に並ぶので、長さはフレーム数の [CHANNELS] 倍になる。
      * [onProgress] には 0.0〜1.0 が渡る。
      */
     fun render(
@@ -45,7 +53,7 @@ object OfflineRenderer {
         if (plan.isEmpty) return FloatArray(0)
 
         val total = frameCount(plan, song.bpm, sampleRate, tailSeconds)
-        val output = FloatArray(total)
+        val output = FloatArray(total * CHANNELS)
         val engine = PlaybackEngine(sampleRate, voiceSamples, chipVoiceSamples)
         engine.config = EngineConfig(
             plan = plan,
@@ -53,6 +61,7 @@ object OfflineRenderer {
             masterVolume = song.masterVolume,
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
+            trackPans = song.tracks.map { it.pan },
             holds = song.tracks.map { it.hold },
             swing = song.swing,
             chordStyle = song.chordStyle,
@@ -65,12 +74,12 @@ object OfflineRenderer {
         )
         engine.start()
 
-        val block = FloatArray(BLOCK)
+        val block = FloatArray(BLOCK * CHANNELS)
         var written = 0
         while (written < total) {
             engine.render(block)
             val count = minOf(BLOCK, total - written)
-            System.arraycopy(block, 0, output, written, count)
+            System.arraycopy(block, 0, output, written * CHANNELS, count * CHANNELS)
             written += count
             onProgress?.invoke(written.toFloat() / total)
         }

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.ArrangementStep
+import com.example.rhythmbox.core.CHANNELS
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
@@ -543,6 +544,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             masterVolume = song.masterVolume,
             trackVolumes = song.tracks.map { it.volume },
             mutes = song.tracks.map { it.muted },
+            trackPans = song.tracks.map { it.pan },
             holds = song.tracks.map { it.hold },
             swing = song.swing,
             chordStyle = song.chordStyle,
@@ -1097,6 +1099,20 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** 左右の位置。-1 で左端、0 で中央、1 で右端。 */
+    fun setTrackPan(track: Int, pan: Float) {
+        repository.updateCurrentSong { song ->
+            song.withTrack(track, song.track(track).copy(pan = pan.coerceIn(-1f, 1f)))
+        }
+    }
+
+    /** 全部を中央に戻す。振りすぎて分からなくなったときの逃げ道。 */
+    fun centreAll() {
+        repository.updateCurrentSong { song ->
+            song.copy(tracks = song.tracks.map { it.copy(pan = 0f) })
+        }
+    }
+
     /** 音の伸び（サステイン）。コード / ベース / リードだけで効く。 */
     fun setTrackHold(track: Int, hold: Float) {
         repository.updateCurrentSong { song ->
@@ -1132,8 +1148,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val report = audio.report ?: return null
         val path = if (report.lowLatency) "低遅延の経路" else "通常の経路（低遅延は断られた）"
         val underruns = if (report.underruns == 0) "途切れなし" else "途切れ ${report.underruns} 回"
-        return "%,d Hz ・ %d フレームずつ書き込み ・ 溜め %d フレーム（%.1f ms）・ %s ・ %s".format(
+        return "%,d Hz ・ %d ch ・ %d フレームずつ書き込み ・ 溜め %d フレーム（%.1f ms）・ %s ・ %s".format(
             report.sampleRate,
+            CHANNELS,
             report.blockFrames,
             report.bufferFrames,
             report.bufferMillis,

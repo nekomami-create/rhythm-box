@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 
 /**
  * 選択肢を出すつまみと行。
@@ -150,3 +151,26 @@ fun OptionRow(
 /** つまみの高さと左右の余白。ここだけ直せば全部の選択肢が揃う。 */
 private val CHIP_HEIGHT = 28.dp
 private val CHIP_PADDING = 10.dp
+
+/**
+ * ミキサーで選べる左右の位置。
+ *
+ * 曲には -1.0〜1.0 の数として持たせてある（後から刻みを増やしても
+ * 保存の形は変わらない）が、画面では 5 段から選ぶ。細かいつまみを
+ * 11 トラックぶん縦に並べると場所を食ううえ、指では狙えない。
+ * ドラムを少し散らす、という使い方に必要なのはこれで足りる。
+ */
+enum class PanPosition(val label: String, val value: Float) {
+    LEFT("左", -1f),
+    HALF_LEFT("やや左", -0.5f),
+    CENTRE("中央", 0f),
+    HALF_RIGHT("やや右", 0.5f),
+    RIGHT("右", 1f),
+    ;
+
+    companion object {
+        /** いちばん近い段。刻みに乗っていない値が入っていても選べる。 */
+        fun nearest(pan: Float): PanPosition =
+            entries.minByOrNull { abs(it.value - pan) } ?: CENTRE
+    }
+}

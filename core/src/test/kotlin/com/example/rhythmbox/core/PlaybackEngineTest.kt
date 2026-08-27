@@ -70,7 +70,7 @@ class PlaybackEngineTest {
 
         val bar = (framesPerStep() * STEPS_PER_BAR).roundToInt()
         val buffer = FloatArray(bar)
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val hits = onsets(buffer)
         assertEquals(4, hits.size)
@@ -90,7 +90,7 @@ class PlaybackEngineTest {
 
         val bar = framesPerStep() * STEPS_PER_BAR
         val buffer = FloatArray((bar * 3).roundToInt())
-        assertTrue(engine.render(buffer))
+        assertTrue(engine.renderLeft(buffer))
 
         val hits = onsets(buffer)
         assertEquals(3, hits.size)
@@ -110,7 +110,7 @@ class PlaybackEngineTest {
 
         val bar = framesPerStep() * STEPS_PER_BAR
         val buffer = FloatArray((bar * 3).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val hits = onsets(buffer)
         assertEquals(3, hits.size)
@@ -130,7 +130,7 @@ class PlaybackEngineTest {
 
         val bar = framesPerStep() * STEPS_PER_BAR
         val buffer = FloatArray((bar * 2).roundToInt())
-        assertFalse(engine.render(buffer))
+        assertFalse(engine.renderLeft(buffer))
         assertFalse(engine.isPlaying)
         assertEquals(1, onsets(buffer).size)
     }
@@ -145,7 +145,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val hits = onsets(buffer)
         assertEquals(4, hits.size)
@@ -161,7 +161,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray(64)
-        engine.render(buffer)
+        engine.renderLeft(buffer)
         assertEquals(0.1f * 0.25f, buffer[0], 1e-6f)
     }
 
@@ -173,7 +173,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // フレームは「そのステップが鳴り始めた時刻」なので、ここでは小節とステップだけを見る。
         assertStep(0, 0, engine.timeline.positionAt(0))
@@ -200,7 +200,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * 8).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val chokeFrame = (framesPerStep() * 4).roundToInt()
         assertEquals(0.5f, buffer[chokeFrame - 10], 1e-6f)
@@ -214,11 +214,11 @@ class PlaybackEngineTest {
         val engine = engine()
         engine.config = config(song, PlaybackPlan.single(song, 0))
 
-        engine.render(FloatArray(1_000)) // 停止中でも進む
+        engine.renderLeft(FloatArray(1_000)) // 停止中でも進む
         assertEquals(1_000L, engine.framePosition)
 
         engine.start()
-        engine.render(FloatArray(500))
+        engine.renderLeft(FloatArray(500))
         assertEquals(1_500L, engine.framePosition)
         assertStep(0, 0, engine.timeline.positionAt(1_200))
         assertEquals(null, engine.timeline.positionAt(999))
@@ -230,12 +230,12 @@ class PlaybackEngineTest {
         val engine = engine()
         engine.config = config(song, PlaybackPlan.single(song, 0))
         engine.start()
-        engine.render(FloatArray((framesPerStep() * 4).roundToInt()))
+        engine.renderLeft(FloatArray((framesPerStep() * 4).roundToInt()))
         engine.stop()
         engine.start()
 
         val buffer = FloatArray(32)
-        engine.render(buffer)
+        engine.renderLeft(buffer)
         assertEquals(0.1f, buffer[0], 1e-6f)
     }
 
@@ -270,7 +270,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * 4).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val window = 0 until (framesPerStep() * 3).toInt()
         val atRoot = magnitudeAt(buffer, 110.0, window.first, window.last)
@@ -288,7 +288,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * 8).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val to = (framesPerStep() * 6).toInt()
         val c4 = magnitudeAt(buffer, ToneSynth.frequency(60), 0, to)
@@ -318,7 +318,7 @@ class PlaybackEngineTest {
 
         val bar = (framesPerStep() * STEPS_PER_BAR).toInt()
         val buffer = FloatArray(bar * 2)
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // 1 小節目は C（ベース C2 = 65.4Hz）、2 小節目は F（F2 = 87.3Hz）
         val firstC = magnitudeAt(buffer, 65.41, 0, bar / 2)
@@ -338,7 +338,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * 4).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val to = (framesPerStep() * 3).toInt()
         val c5 = magnitudeAt(buffer, ToneSynth.frequency(72), 0, to)
@@ -361,7 +361,7 @@ class PlaybackEngineTest {
             engine.config = config(song, PlaybackPlan.single(song, 0))
             engine.start()
             val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-            engine.render(buffer)
+            engine.renderLeft(buffer)
             return rms(buffer, (framesPerStep() * step).toInt(), (framesPerStep() * (step + 1)).toInt())
         }
 
@@ -387,7 +387,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR * 2).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // 2 小節目の頭（ステップ 16〜18）でも、1 小節目から続く C5 が鳴っている。
         val from = (framesPerStep() * STEPS_PER_BAR).toInt()
@@ -410,7 +410,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0)).copy(holds = song.tracks.map { it.hold })
         engine.start()
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
         return buffer
     }
 
@@ -437,7 +437,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0))
         engine.start()
         val untouched = FloatArray(plain.size)
-        engine.render(untouched)
+        engine.renderLeft(untouched)
 
         for (i in plain.indices) {
             assertEquals("frame=$i", untouched[i], plain[i], 1e-6f)
@@ -453,7 +453,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0))
         engine.start()
         val buffer = FloatArray((framesPerStep() * 2).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
         return buffer
     }
 
@@ -477,7 +477,7 @@ class PlaybackEngineTest {
             engine.config = config(song.withPattern(0, pattern), PlaybackPlan.single(song, 0))
             engine.start()
             val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-            engine.render(buffer)
+            engine.renderLeft(buffer)
             return buffer
         }
 
@@ -500,7 +500,7 @@ class PlaybackEngineTest {
             engine.config = config(song, PlaybackPlan.single(song, 0))
             engine.start()
             val buffer = FloatArray((framesPerStep() * 4).roundToInt())
-            engine.render(buffer)
+            engine.renderLeft(buffer)
             return buffer.maxOf { abs(it) }
         }
         assertTrue(peak(Pattern.Level.GHOST) < peak(Pattern.Level.NORMAL))
@@ -517,7 +517,7 @@ class PlaybackEngineTest {
             engine.config = config(song, PlaybackPlan.single(song, 0)).copy(swing = swing)
             engine.start()
             val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-            engine.render(buffer)
+            engine.renderLeft(buffer)
             return onsets(buffer)
         }
 
@@ -545,7 +545,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0)).copy(swing = 0f)
         engine.start()
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         onsets(buffer).forEachIndexed { index, frame ->
             assertEquals("hit=$index", (framesPerStep() * 2 * index), frame.toDouble(), 1.0)
@@ -564,7 +564,7 @@ class PlaybackEngineTest {
             .copy(chordStyle = ChordStyle.UP)
         engine.start()
         val buffer = FloatArray((framesPerStep() * 8).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // 1 回目は voicing の一番下の音だけが鳴っている。
         val to = (framesPerStep() * 1.5).toInt()
@@ -581,7 +581,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0)).copy(metronome = true)
         engine.start()
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // 打ち込みは空なのに、拍の頭 4 か所だけ音が出る。
         for (step in 0 until STEPS_PER_BAR) {
@@ -603,7 +603,7 @@ class PlaybackEngineTest {
         engine.config = config(song, PlaybackPlan.single(song, 0))
         engine.start()
         val buffer = FloatArray((framesPerStep() * STEPS_PER_BAR).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         // 既定は切。書き出しにクリックが混ざらないことの裏付けでもある。
         assertTrue(buffer.all { abs(it) < 1e-6f })
@@ -628,7 +628,7 @@ class PlaybackEngineTest {
         engine.start()
 
         val buffer = FloatArray((framesPerStep() * 8).roundToInt())
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val step = framesPerStep().toInt()
         val whilePlaying = rms(buffer, step / 2, step * 2)
@@ -649,7 +649,7 @@ class PlaybackEngineTest {
             engine.config = config(song, PlaybackPlan.single(song, 0))
                 .copy(mutes = List(TRACK_COUNT) { muteChord && it == Instrument.CHORD.trackIndex })
             engine.start()
-            return FloatArray((framesPerStep() * 4).roundToInt()).also { engine.render(it) }
+            return FloatArray((framesPerStep() * 4).roundToInt()).also { engine.renderLeft(it) }
         }
 
         val to = (framesPerStep() * 3).toInt()
@@ -677,14 +677,14 @@ class PlaybackEngineTest {
         engine.start()
 
         val head = FloatArray((framesPerStep() * 2).roundToInt())
-        engine.render(head)
+        engine.renderLeft(head)
         assertTrue(rms(head, 0, head.size) > 0.02)
 
         val sustained = rms(head, head.size / 2, head.size)
 
         engine.stop()
         val tail = FloatArray(sampleRate * 4) // 4 秒
-        engine.render(tail)
+        engine.renderLeft(tail)
         // 離鍵後は指数的に減衰する（コードの減衰時定数は 0.34 秒）
         val justAfterStop = rms(tail, 0, sampleRate / 20)
         val oneSecondLater = rms(tail, sampleRate, sampleRate + sampleRate / 20)
@@ -701,7 +701,7 @@ class PlaybackEngineTest {
         engine.previewChord(Chord(0, ChordQuality.MAJOR))
 
         val buffer = FloatArray(sampleRate / 4)
-        assertFalse(engine.render(buffer)) // 再生はしていない
+        assertFalse(engine.renderLeft(buffer)) // 再生はしていない
         assertTrue(rms(buffer, 0, buffer.size) > 0.01)
     }
 
@@ -721,7 +721,7 @@ class PlaybackEngineTest {
 
         val bar = (framesPerStep() * STEPS_PER_BAR).toInt()
         val buffer = FloatArray(bar * 2)
-        engine.render(buffer)
+        engine.renderLeft(buffer)
 
         val firstC5 = magnitudeAt(buffer, ToneSynth.frequency(72), 0, bar / 2)
         val firstG5 = magnitudeAt(buffer, ToneSynth.frequency(79), 0, bar / 2)

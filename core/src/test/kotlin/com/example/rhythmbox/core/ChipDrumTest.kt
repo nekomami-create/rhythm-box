@@ -159,7 +159,7 @@ class ChipDrumTest {
             )
             engine.start()
             val out = FloatArray(64)
-            engine.render(out)
+            engine.renderLeft(out)
             return out.maxOf { abs(it) }
         }
 

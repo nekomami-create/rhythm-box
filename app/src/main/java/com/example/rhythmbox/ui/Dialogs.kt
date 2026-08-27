@@ -482,9 +482,11 @@ private fun PickerChip(
  */
 data class MixerActions(
     val onVolumeChange: (Int, Float) -> Unit,
+    val onPanChange: (Int, Float) -> Unit,
     val onHoldChange: (Int, Float) -> Unit,
     val onToggleMute: (Int) -> Unit,
     val onUnmuteAll: () -> Unit,
+    val onCentreAll: () -> Unit,
     val onChordStyleChange: (ChordStyle) -> Unit,
     val onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
     val onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
@@ -525,11 +527,14 @@ fun MixerDialog(
                 }
                 Text(
                     text = "「伸び」はコード / ベース / リードの余韻の長さです。左で短く歯切れよく、右で長く伸びます。" +
-                        "コードの「弾き方」を和音以外にすると、CHD 行が鳴るたびに 1 音ずつ散らして弾きます。",
+                        "コードの「弾き方」を和音以外にすると、CHD 行が鳴るたびに 1 音ずつ散らして弾きます。" +
+                        "「定位」は左右のどちらから鳴るかです。中央のままなら今までと同じ音で、" +
+                        "ハイハットやタムを少し振ると横に広がって聞こえます。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TextButton(onClick = actions.onUnmuteAll) { Text("すべてのミュートを解除") }
+                TextButton(onClick = actions.onCentreAll) { Text("定位をすべて中央に戻す") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
@@ -605,6 +610,15 @@ private fun TrackRow(track: Int, label: String, song: Song, actions: MixerAction
             )
         }
     }
+    OptionChips(
+        label = "定位",
+        options = PanPosition.entries,
+        selected = PanPosition.nearest(setting.pan),
+        labelOf = { it.label },
+        onSelect = { actions.onPanChange(track, it.value) },
+        modifier = Modifier.padding(start = 8.dp),
+        labelWidth = SETTING_LABEL_WIDTH,
+    )
     if (pitched) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

@@ -21,7 +21,8 @@ class OfflineRendererTest {
 
         // 120 BPM の 1 小節 = 2 秒。既定の曲は 8 小節なので 16 秒 + 余韻 2 秒。
         assertEquals(8, plan.barCount)
-        assertEquals((18.0 * sampleRate).toInt(), audio.size)
+        assertEquals((18.0 * sampleRate).toInt(), OfflineRenderer.frames(audio))
+        assertEquals(18.0, OfflineRenderer.seconds(audio, sampleRate), 1e-6)
     }
 
     @Test
