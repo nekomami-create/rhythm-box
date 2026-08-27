@@ -313,7 +313,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /** グリッドの行（ドラム / コード / ベース）を単発で試聴する。 */
     fun previewRow(row: Int) {
-        audio.resume()
+        // resume() は同期メソッドなので、鳴らしている最中は触らない。
+        // 叩くたびに錠を取りに行くと、止める処理と重なったときに待たされる。
+        if (!audio.isRunning) audio.resume()
         when (row) {
             ROW_CHORD -> engine.previewChord(_uiState.value.patternChord)
             ROW_BASS -> engine.previewNote(Instrument.BASS, _uiState.value.patternChord.bassMidi())
@@ -1102,6 +1104,24 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** リードの揺れ（ビブラート）。 */
     fun setLeadVibrato(amount: Float) {
         repository.updateCurrentSong { it.copy(leadVibrato = amount.coerceIn(0f, 1f)) }
+    }
+
+    /**
+     * 端末が実際に返した音声の設定。遅れの原因は端末ごとに違うので、
+     * 推測ではなく出てきた値を見て詰められるようにヘルプに出す。
+     */
+    fun audioReport(): String? {
+        val report = audio.report ?: return null
+        val path = if (report.lowLatency) "低遅延の経路" else "通常の経路（低遅延は断られた）"
+        val underruns = if (report.underruns == 0) "途切れなし" else "途切れ ${report.underruns} 回"
+        return "%,d Hz ・ %d フレームずつ書き込み ・ 溜め %d フレーム（%.1f ms）・ %s ・ %s".format(
+            report.sampleRate,
+            report.blockFrames,
+            report.bufferFrames,
+            report.bufferMillis,
+            path,
+            underruns,
+        )
     }
 
     /** ドラムの音の作り方。 */

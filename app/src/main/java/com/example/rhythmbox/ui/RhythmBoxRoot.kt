@@ -215,7 +215,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                 Screen.PAD -> PadScreen(state, viewModel)
                 Screen.LEAD -> LeadScreen(state, viewModel)
                 Screen.SONG -> SongScreen(state, viewModel)
-                Screen.HELP -> HelpScreen()
+                Screen.HELP -> HelpScreen(audioReport = viewModel.audioReport())
             }
         }
     }

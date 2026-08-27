@@ -27,6 +27,33 @@ class AudioOutput(
     /** 曲構成の終端に到達して自然に停止したときに呼ばれる。 */
     var onPlaybackFinished: (() -> Unit)? = null
 
+    /**
+     * 端末が実際に何を返したか。
+     *
+     * 遅れの原因は端末ごとに違うのに、これまで見えないまま値を推測で
+     * 詰めていた。低遅延の経路をもらえたのか、バッファがどれだけ確保
+     * されたのかが分からないと、次にどこを直せばいいか決められない。
+     */
+    data class Report(
+        val sampleRate: Int,
+        val blockFrames: Int,
+        /** AudioTrack が確保した器の大きさ。 */
+        val capacityFrames: Int,
+        /** 実際に溜める量。ここが遅れの主因になる。 */
+        val bufferFrames: Int,
+        /** 低遅延の経路をもらえたか。断られると溜める量が増える。 */
+        val lowLatency: Boolean,
+        /** 描き間に合わずに音が途切れた回数。0 でなければ詰めすぎ。 */
+        val underruns: Int,
+    ) {
+        /** 溜めているぶんが何ミリ秒か。叩いてから鳴るまでの下限の目安。 */
+        val bufferMillis: Double get() = bufferFrames * 1_000.0 / sampleRate
+    }
+
+    @Volatile
+    var report: Report? = null
+        private set
+
     private var track: AudioTrack? = null
     private var thread: Thread? = null
 
@@ -69,7 +96,22 @@ class AudioOutput(
             audioTrack.release()
             return
         }
+        // 器は大きめに確保されることがある（getMinBufferSize が端末の
+        // 受け取り単位よりずっと大きい機種がある）。実際に溜める量は
+        // あとから縮められるので、ここで 2 回ぶんまで詰める。
+        // 断られたら戻り値が実際の値になるので、それをそのまま記録する。
+        val requested = blockFrames * 2
+        val accepted = runCatching { audioTrack.setBufferSizeInFrames(requested) }
+            .getOrDefault(audioTrack.bufferSizeInFrames)
         track = audioTrack
+        report = Report(
+            sampleRate = sampleRate,
+            blockFrames = blockFrames,
+            capacityFrames = audioTrack.bufferCapacityInFrames,
+            bufferFrames = if (accepted > 0) accepted else audioTrack.bufferSizeInFrames,
+            lowLatency = audioTrack.performanceMode == AudioTrack.PERFORMANCE_MODE_LOW_LATENCY,
+            underruns = 0,
+        )
         running = true
         // AudioTrack を作り直すと再生位置が 0 に戻るので、エンジン側の通し番号も合わせる。
         engine.resetFrameClock()
@@ -95,6 +137,9 @@ class AudioOutput(
         track = null
     }
 
+    /** 鳴らしている最中か。プレビューのたびに resume() を呼ばずに済ませるために見る。 */
+    val isRunning: Boolean get() = running
+
     /** スピーカーから実際に鳴っているフレーム。叩いた位置を測る基準にする。 */
     fun currentFrame(): Long? =
         track?.playbackHeadPosition?.toLong()?.and(0xFFFF_FFFFL)
@@ -115,6 +160,11 @@ class AudioOutput(
             if (written < 0) break // デバイス切断など
             if (wasPlaying && !playing) onPlaybackFinished?.invoke()
             wasPlaying = playing
+            // 途切れた回数は、詰めすぎたかどうかの唯一の手掛かり。
+            report?.let { current ->
+                val count = runCatching { audioTrack.underrunCount }.getOrDefault(current.underruns)
+                if (count != current.underruns) report = current.copy(underruns = count)
+            }
         }
     }
 
