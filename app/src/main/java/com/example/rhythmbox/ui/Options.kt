@@ -179,12 +179,15 @@ private val LABEL_TOP_PADDING = 6.dp
  * 保存の形は変わらない）が、画面では 5 段から選ぶ。細かいつまみを
  * 11 トラックぶん縦に並べると場所を食ううえ、指では狙えない。
  * ドラムを少し散らす、という使い方に必要なのはこれで足りる。
+ *
+ * 名前は 2 文字まで。「やや左 / やや右」だと 5 つで幅に入りきらず、
+ * 折り返して 1 トラックが 2 行になる。
  */
 enum class PanPosition(val label: String, val value: Float) {
     LEFT("左", -1f),
-    HALF_LEFT("やや左", -0.5f),
+    HALF_LEFT("左寄", -0.5f),
     CENTRE("中央", 0f),
-    HALF_RIGHT("やや右", 0.5f),
+    HALF_RIGHT("右寄", 0.5f),
     RIGHT("右", 1f),
     ;
 
