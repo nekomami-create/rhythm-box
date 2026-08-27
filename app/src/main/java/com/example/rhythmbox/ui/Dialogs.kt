@@ -540,7 +540,7 @@ fun MixerDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "伸び",
-                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -560,84 +560,26 @@ fun MixerDialog(
                     // コードの行に、コードとベースまとめての音の作り方を置く。
                     // リードは 1 音ずつ選べるが、土台の 2 つはまとめて切り替えるほうが合う。
                     if (track == Instrument.CHORD.trackIndex) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        OptionChips(
+                            label = "音源",
+                            options = SoundSet.entries,
+                            selected = song.soundSet,
+                            labelOf = { it.label },
+                            onSelect = onSoundSetChange,
                             modifier = Modifier.padding(start = 8.dp),
-                        ) {
-                            Text(
-                                text = "音源",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            SoundSet.entries.forEach { set ->
-                                val on = set == song.soundSet
-                                Surface(
-                                    color = if (on) {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    contentColor = if (on) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(28.dp).clickable { onSoundSetChange(set) },
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = set.label,
-                                            modifier = Modifier.padding(horizontal = 10.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
                     // ドラムの先頭に、8 音色まとめての音の作り方を置く。
                     // 音色ごとの設定ではないので、キックの行にだけ出す。
                     if (track == 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        OptionChips(
+                            label = "ドラム",
+                            options = DrumKit.entries,
+                            selected = song.drumKit,
+                            labelOf = { it.label },
+                            onSelect = onDrumKitChange,
                             modifier = Modifier.padding(start = 8.dp),
-                        ) {
-                            Text(
-                                text = "ドラム",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            DrumKit.entries.forEach { kit ->
-                                val on = kit == song.drumKit
-                                Surface(
-                                    color = if (on) {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    contentColor = if (on) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(28.dp).clickable { onDrumKitChange(kit) },
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = kit.label,
-                                            modifier = Modifier.padding(horizontal = 10.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
                     // リード行だけ、揺れ（ビブラート）を掛けられる。
                     // チップ音源は音量を変えられないぶん、揺らして表情を付けていた。
@@ -645,7 +587,7 @@ fun MixerDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "揺れ",
-                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                modifier = Modifier.width(SETTING_LABEL_WIDTH).padding(start = 8.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -664,7 +606,7 @@ fun MixerDialog(
                     }
                     // リード行だけ、音色を選べる。
                     if (track == Instrument.LEAD.trackIndex) {
-                        // 音色が 10 種類あるので、1 行に並べず折り返す。
+                        // 音色は 16 種類あるので、1 行に並べず折り返す。
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -677,118 +619,37 @@ fun MixerDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             ToneSynth.LeadVoice.entries.forEach { voice ->
-                                val on = voice == song.leadVoice
-                                Surface(
-                                    color = if (on) {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    contentColor = if (on) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(28.dp).clickable { onLeadVoiceChange(voice) },
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = voice.label,
-                                            modifier = Modifier.padding(horizontal = 8.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        )
-                                    }
-                                }
+                                OptionChip(
+                                    label = voice.label,
+                                    selected = voice == song.leadVoice,
+                                    onClick = { onLeadVoiceChange(voice) },
+                                )
                             }
                         }
                     }
                     // コード行だけ、和音をまとめて鳴らすか 1 音ずつ散らすかを選べる。
                     if (track == Instrument.CHORD.trackIndex) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                text = "弾き方",
-                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            ChordStyle.entries.forEach { style ->
-                                val on = style == song.chordStyle
-                                Surface(
-                                    color = if (on) {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    contentColor = if (on) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(28.dp).clickable { onChordStyleChange(style) },
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = style.label,
-                                            modifier = Modifier.padding(horizontal = 8.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        OptionChips(
+                            label = "弾き方",
+                            options = ChordStyle.entries,
+                            selected = song.chordStyle,
+                            labelOf = { it.label },
+                            onSelect = onChordStyleChange,
+                            modifier = Modifier.padding(start = 8.dp),
+                            labelWidth = SETTING_LABEL_WIDTH,
+                        )
                         // 高速アルペジオのときだけ、回す速さを選べる。
                         // 速いほどきらめくが、そのぶん耳に刺さりやすい。
                         if (song.chordStyle.chipArpeggio) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Text(
-                                    text = "速さ",
-                                    modifier = Modifier.width(42.dp).padding(start = 8.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                ArpeggioSpeed.entries.forEach { speed ->
-                                    val on = speed == song.arpeggioSpeed
-                                    Surface(
-                                        color = if (on) {
-                                            MaterialTheme.colorScheme.secondaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                        },
-                                        contentColor = if (on) {
-                                            MaterialTheme.colorScheme.onSecondaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier
-                                            .height(28.dp)
-                                            .clickable { onArpeggioSpeedChange(speed) },
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = speed.label,
-                                                modifier = Modifier.padding(horizontal = 8.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = if (on) {
-                                                    FontWeight.Bold
-                                                } else {
-                                                    FontWeight.Normal
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                            OptionChips(
+                                label = "速さ",
+                                options = ArpeggioSpeed.entries,
+                                selected = song.arpeggioSpeed,
+                                labelOf = { it.label },
+                                onSelect = onArpeggioSpeedChange,
+                                modifier = Modifier.padding(start = 8.dp),
+                                labelWidth = SETTING_LABEL_WIDTH,
+                            )
                         }
                     }
                 }
@@ -1095,32 +956,12 @@ fun GenreDialog(
                     Spacer(Modifier.height(2.dp))
                     Text("場面", style = MaterialTheme.typography.labelMedium)
                     scenes.forEach { entry ->
-                        val selected = entry == scene
-                        Surface(
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().clickable { scene = entry },
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = entry.label,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                )
-                                Text(
-                                    text = entry.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
+                        OptionRow(
+                            label = entry.label,
+                            selected = entry == scene,
+                            onClick = { scene = entry },
+                            detail = entry.description,
+                        )
                     }
                 }
                 if (showOptions) {
@@ -1289,40 +1130,14 @@ fun KeyDialog(
 
                 Text("音階", style = MaterialTheme.typography.labelMedium)
                 Scale.entries.forEach { option ->
-                    val selected = option == scale
-                    Surface(
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        },
-                        contentColor = if (selected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().clickable { scale = option },
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = option.label,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            )
-                            // どの音を使う音階なのかを、その主音での音名で見せる。
-                            Text(
-                                text = option.intervals
-                                    .joinToString(" ") { Chord.ROOT_NAMES[(tonic + it).mod(12)] },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    OptionRow(
+                        label = option.label,
+                        selected = option == scale,
+                        onClick = { scale = option },
+                        // どの音を使う音階なのかを、その主音での音名で見せる。
+                        detail = option.intervals
+                            .joinToString(" ") { Chord.ROOT_NAMES[(tonic + it).mod(12)] },
+                    )
                 }
             }
         },

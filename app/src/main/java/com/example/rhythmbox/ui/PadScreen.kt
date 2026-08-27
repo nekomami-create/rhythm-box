@@ -284,31 +284,10 @@ private fun PadTransport(state: RhythmUiState, viewModel: RhythmViewModel) {
     }
 }
 
-/** 入り切りの小さなつまみ。押す前に今どうなっているかが分かるよう、色と太字で出す。 */
+/** 入り切りの小さなつまみ。見た目は [OptionChip] と同じもの。 */
 @Composable
 private fun ToggleChip(label: String, on: Boolean, onClick: () -> Unit) {
-    Surface(
-        color = if (on) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        },
-        contentColor = if (on) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.clickable { onClick() },
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            maxLines = 1,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-        )
-    }
+    OptionChip(label = label, selected = on, onClick = onClick)
 }
 
 @Composable
