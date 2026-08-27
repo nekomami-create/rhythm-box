@@ -33,6 +33,17 @@ object PatternGenerator {
          * 確率だけで作ると刻みにランダムな穴が空いて雑に聞こえるため。
          */
         val grids: List<List<Int>> = emptyList(),
+        /**
+         * 小節の頭を外して、少し遅れて入る確率。
+         *
+         * コードが毎小節きっちり頭で鳴ると、何を打っても行進曲の硬さが残る。
+         * ときどき頭を空けて 16 分ぶん、あるいは 2 拍目から入ると、
+         * 同じ打ち込みのまま前へつんのめらない感じが出る。
+         *
+         * 土台が抜ける心配は要らない。ベースはどの型でも頭に固定してあるので、
+         * コードが遅れても 1 拍目そのものは鳴っている。
+         */
+        val lateStart: Double = 0.0,
     )
 
     fun generate(style: RhythmStyle, random: Random = Random.Default, name: String = "A"): Pattern {
@@ -45,6 +56,9 @@ object PatternGenerator {
             for (step in rule.anchors) bits = bits or (1 shl step)
             for (step in 0 until STEPS_PER_BAR) {
                 if (random.nextDouble() < rule.chances[step]) bits = bits or (1 shl step)
+            }
+            if (rule.lateStart > 0.0 && random.nextDouble() < rule.lateStart) {
+                bits = delayedStart(bits, random)
             }
             rows[rule.row] = bits and Pattern.STEP_MASK
         }
@@ -90,6 +104,31 @@ object PatternGenerator {
         return result
     }
 
+    /**
+     * 小節の頭を外して、代わりに少し後ろから入れる。
+     *
+     * 16 分 1 つぶん（2）か、2 拍目（4）まで待つ。前者は「もたつき」で、
+     * 後者は頭を丸ごと空ける。空けすぎると間延びするので、
+     * もたつくほうを多めにする。
+     *
+     * もともと頭に無いなら何もしない。動かした結果 1 つも音が無くなる、
+     * ということは起きない（必ず 2 か 4 に置き直すため）。
+     */
+    private fun delayedStart(bits: Int, random: Random): Int {
+        if (bits and 1 == 0) return bits
+        val target = if (random.nextDouble() < DRAG_CHANCE) DRAG_STEP else SECOND_BEAT_STEP
+        return (bits and 1.inv()) or (1 shl target)
+    }
+
+    /** 頭を外したとき、16 分ぶんのもたつきで済ませる確率（残りは 2 拍目まで待つ）。 */
+    private const val DRAG_CHANCE = 0.6
+
+    /** もたつく先。 */
+    private const val DRAG_STEP = 2
+
+    /** 頭を丸ごと空けたときの入り。 */
+    private const val SECOND_BEAT_STEP = 4
+
     /** 3 拍目も強くする確率。毎回だと 1 拍目との差が消える。 */
     private const val DOWNBEAT_ACCENT_CHANCE = 0.5
 
@@ -120,7 +159,7 @@ object PatternGenerator {
             RowRule(Voice.OPEN_HAT.ordinal, chances = chances(6 to 0.15, 14 to 0.35)),
             RowRule(Voice.CLAP.ordinal, chances = chances(4 to 0.20, 12 to 0.20)),
             RowRule(Voice.TOM.ordinal, chances = chances(13 to 0.12, 14 to 0.12, 15 to 0.15)),
-            RowRule(ROW_CHORD, listOf(0), chances(4 to 0.20, 8 to 0.50, 12 to 0.20)),
+            RowRule(ROW_CHORD, listOf(0), chances(4 to 0.20, 8 to 0.50, 12 to 0.20), lateStart = 0.18),
             RowRule(ROW_BASS, listOf(0), chances(3 to 0.30, 6 to 0.35, 8 to 0.70, 10 to 0.30, 14 to 0.30)),
         )
 
@@ -131,7 +170,7 @@ object PatternGenerator {
             RowRule(Voice.OPEN_HAT.ordinal, chances = offbeats(0.22)),
             RowRule(Voice.CLAP.ordinal, listOf(4, 12)),
             RowRule(Voice.COWBELL.ordinal, chances = chances(7 to 0.10, 15 to 0.10)),
-            RowRule(ROW_CHORD, listOf(0), chances(4 to 0.30, 8 to 0.50, 12 to 0.30)),
+            RowRule(ROW_CHORD, listOf(0), chances(4 to 0.30, 8 to 0.50, 12 to 0.30), lateStart = 0.12),
             RowRule(ROW_BASS, listOf(0, 8), offbeats(0.55)),
         )
 
@@ -142,7 +181,7 @@ object PatternGenerator {
             RowRule(Voice.OPEN_HAT.ordinal, chances = chances(7 to 0.20, 15 to 0.25)),
             RowRule(Voice.RIM.ordinal, chances = chances(2 to 0.15, 9 to 0.15)),
             RowRule(Voice.TOM.ordinal, chances = chances(11 to 0.12, 14 to 0.12)),
-            RowRule(ROW_CHORD, listOf(0), chances(8 to 0.40)),
+            RowRule(ROW_CHORD, listOf(0), chances(8 to 0.40), lateStart = 0.30),
             RowRule(ROW_BASS, listOf(0), chances(3 to 0.40, 6 to 0.40, 10 to 0.40, 13 to 0.30)),
         )
 
@@ -153,7 +192,7 @@ object PatternGenerator {
             RowRule(Voice.OPEN_HAT.ordinal, chances = chances(14 to 0.25)),
             RowRule(Voice.RIM.ordinal, chances = chances(2 to 0.15, 10 to 0.15)),
             RowRule(Voice.CLAP.ordinal, chances = chances(12 to 0.25)),
-            RowRule(ROW_CHORD, listOf(0), chances(8 to 0.30, 11 to 0.15)),
+            RowRule(ROW_CHORD, listOf(0), chances(8 to 0.30, 11 to 0.15), lateStart = 0.40),
             RowRule(ROW_BASS, listOf(0), chances(6 to 0.40, 10 to 0.40, 14 to 0.25)),
         )
 
@@ -170,6 +209,8 @@ object PatternGenerator {
             RowRule(Voice.OPEN_HAT.ordinal, chances = chances(14 to 0.30)),
             RowRule(Voice.RIM.ordinal, chances = chances(2 to 0.12, 10 to 0.12)),
             // 高速アルペジオは打ち直すたびに回り直すので、細かく置くほどきらめく。
+            // ここだけは頭を外さない。回りはじめる位置がずれると、
+            // チップ音源の「和音が 1 つの音色に聞こえる」効き目が薄れる。
             RowRule(ROW_CHORD, listOf(0, 4, 8, 12), chances(2 to 0.30, 10 to 0.30)),
             RowRule(ROW_BASS, listOf(0, 2, 4, 6, 8, 10, 12, 14)),
         )
@@ -182,7 +223,7 @@ object PatternGenerator {
             RowRule(Voice.CLOSED_HAT.ordinal, grids = listOf(EIGHTHS, EIGHTHS, QUARTERS), chances = odds(0.10)),
             RowRule(Voice.TOM.ordinal, chances = chances(7 to 0.20, 14 to 0.20, 15 to 0.20)),
             RowRule(Voice.SNARE.ordinal, chances = chances(12 to 0.15)),
-            RowRule(ROW_CHORD, listOf(0), chances(6 to 0.30, 10 to 0.30)),
+            RowRule(ROW_CHORD, listOf(0), chances(6 to 0.30, 10 to 0.30), lateStart = 0.22),
             RowRule(ROW_BASS, listOf(0), chances(3 to 0.50, 8 to 0.50, 11 to 0.40)),
         )
     }

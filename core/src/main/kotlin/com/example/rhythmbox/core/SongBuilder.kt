@@ -55,7 +55,16 @@ object SongBuilder {
         val total = normalizeBars(bars)
         val layout = patternLayout(total)
         val progression = recipe.pickProgression(random)
-        val chords = progression.fill(key, total)
+        // 味付けは「進行 1 周ぶん」に掛けてから敷き詰める。
+        //
+        // 小節ごとにばらばらに掛けると、同じパターンが後半で戻ってきたときに
+        // コードだけが変わってしまい、そのパターンのために作った旋律が合わなくなる。
+        // 旋律はパターンごとに 1 回しか作らないので、ここが崩れると直しようがない。
+        //
+        // 旋律を作る前に済ませるのも大事で、あとから足すと旋律が元のコードの
+        // 3 度を歌ってしまい、預けたはずの音とぶつかる。
+        val cycle = Harmony.sprinkleSus4(progression.chords(key), random)
+        val chords = List(total) { cycle[it % cycle.size] }
         val style = recipe.pickRhythm(random)
 
         var song = base.copy(bpm = recipe.pickBpm(random))

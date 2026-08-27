@@ -57,7 +57,9 @@ class PatternGeneratorTest {
     fun `chord and bass rows get something to play`() {
         for (style in RhythmStyle.entries) {
             val pattern = PatternGenerator.generate(style, Random(5))
-            assertTrue(style.label, pattern.isOn(ROW_CHORD, 0))
+            // コードは頭から外れることがある（ChordTimingTest 参照）ので、
+            // 見るのは「鳴らすものがあるか」。1 拍目はベースが押さえている。
+            assertTrue(style.label, pattern.rowAt(ROW_CHORD) != 0)
             assertTrue(style.label, pattern.isOn(ROW_BASS, 0))
         }
     }

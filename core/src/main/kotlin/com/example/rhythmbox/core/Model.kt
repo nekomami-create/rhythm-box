@@ -106,6 +106,12 @@ enum class ChordQuality(val suffix: String, val intervals: List<Int>) {
     NINTH("9", listOf(0, 4, 7, 10, 14)),
     MAJOR_NINTH("M9", listOf(0, 4, 7, 11, 14)),
     MINOR_NINTH("m9", listOf(0, 3, 7, 10, 14)),
+
+    /**
+     * 7sus4。ドミナントの 3 度を 4 度に預けた形。
+     * V7sus4 → V7 と解けるので、sus4 を「宙吊りのまま」にせずに済む。
+     */
+    SEVENTH_SUS4("7sus4", listOf(0, 5, 7, 10)),
 }
 
 /** 和音。[root] は C=0 の半音番号。 */

@@ -27,6 +27,13 @@ class SongBuilderTest {
         }
     }
 
+    /** 型どおりのコードか、その sus4 版か。 */
+    private fun sameOrSuspended(expected: Chord, actual: Chord): Boolean {
+        if (actual == expected) return true
+        val suspended = Harmony.suspendedOf(expected.quality) ?: return false
+        return actual == expected.copy(quality = suspended)
+    }
+
     @Test
     fun `every bar gets a chord from one of the genre's progressions`() {
         for (genre in Genre.entries) {
@@ -34,10 +41,14 @@ class SongBuilderTest {
                 val song = SongBuilder.build(base(), genre.recipe(), key, random = Random(seed))
                 val bars = PlaybackPlan.arrangement(song).bars.map { it.chord }
                 assertEquals(8, bars.size)
-                // どれかの型を 8 小節に敷いたものと一致する
+                // どれかの型を 8 小節に敷いたものと一致する。
+                // ところどころ sus4 に置き換わることがあるので、そこは許す。
                 assertTrue(
                     "${genre.label} $bars",
-                    genre.progressions.any { it.fill(key, 8) == bars },
+                    genre.progressions.any { template ->
+                        val filled = template.fill(key, 8)
+                        filled.size == bars.size && filled.indices.all { sameOrSuspended(filled[it], bars[it]) }
+                    },
                 )
             }
         }
@@ -51,7 +62,8 @@ class SongBuilderTest {
                 val pattern = song.pattern(index)
                 assertTrue("パターン ${pattern.name} が空", pattern.hitCount() > 0)
                 assertTrue(pattern.isOn(Voice.KICK.ordinal, 0))
-                assertTrue(pattern.isOn(ROW_CHORD, 0))
+                // コードは頭から外れることがある（ChordTimingTest 参照）。
+                assertTrue(pattern.rowAt(ROW_CHORD) != 0)
                 assertTrue(pattern.isOn(ROW_BASS, 0))
             }
         }

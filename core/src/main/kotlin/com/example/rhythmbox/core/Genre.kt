@@ -57,7 +57,15 @@ data class ProgressionTemplate(
         /** 50 年代進行 I - vi - IV - V。バラードに合う。 */
         val FIFTIES = ProgressionTemplate("I-vi-IV-V", listOf(0, 5, 3, 4))
 
-        /** 丸サ進行 IVM7 - III7 - vi7 - vi7。シティポップの手触り。 */
+        /**
+         * 丸サ進行 IVM7 - III7 - vi7 - vi7。シティポップの手触り。
+         * III7 は vi へ向かうセカンダリードミナント（V/vi）で、
+         * ここが調の外へ一瞬だけ出る。この型の色はほぼこれで決まる。
+         *
+         * 長調の型なので音階を持たせてある。持たせないと、短調の曲に
+         * 当てたときに DM7 - C7 - Fm7 のような別物になる（種類だけ
+         * 強制して、土台の音階は曲のまま解決してしまうため）。
+         */
         val CITY = ProgressionTemplate(
             "丸サ進行",
             listOf(3, 2, 5, 5),
@@ -67,6 +75,7 @@ data class ProgressionTemplate(
                 ChordQuality.MINOR_SEVENTH,
                 ChordQuality.MINOR_SEVENTH,
             ),
+            scale = Scale.MAJOR,
         )
 
         /** vi - IV - I - V。ダンス系でよく回す形。 */
@@ -126,7 +135,11 @@ data class ProgressionTemplate(
             scale = Scale.PHRYGIAN,
         )
 
-        /** ii7 - V7 - IM7。ジャズ寄りの落ち着いた響き。 */
+        /**
+         * ii7 - V7 - IM7。ジャズ寄りの落ち着いた響き。
+         * 丸サ進行と同じ理由で長調の型として持たせる。持たせないと
+         * 短調の曲で主和音が長三和音（AM7）になってしまう。
+         */
         val TWO_FIVE_ONE = ProgressionTemplate(
             "ii-V-I",
             listOf(1, 4, 0, 0),
@@ -136,6 +149,58 @@ data class ProgressionTemplate(
                 ChordQuality.MAJOR_SEVENTH,
                 ChordQuality.MAJOR_SEVENTH,
             ),
+            scale = Scale.MAJOR,
+        )
+
+        /**
+         * 短調のツーファイブワン iim7-5 - V7 - i。
+         *
+         * v は本来 短三和音だが、ここだけ長三和音（V7）にすると
+         * 導音が立って、主和音への戻りがはっきりする。和声的短音階の
+         * 使い方そのもの。短調のバラードやボス戦の芯になる。
+         */
+        val MINOR_TWO_FIVE = ProgressionTemplate(
+            "短調のii-V-i",
+            listOf(1, 4, 0, 0),
+            listOf(
+                ChordQuality.HALF_DIMINISHED,
+                ChordQuality.SEVENTH,
+                ChordQuality.MINOR,
+                ChordQuality.MINOR,
+            ),
+            scale = Scale.NATURAL_MINOR,
+        )
+
+        /**
+         * 循環進行 I - VI7 - ii7 - V7。
+         *
+         * VI7 は ii へ向かうセカンダリードミナント（V/ii）。本来の vi は
+         * 短三和音なので、長三和音にした瞬間だけ調の外へ出て、次の ii へ
+         * 強く落ちる。4 小節で頭に戻るので、いくらでも回せる。
+         */
+        val TURNAROUND = ProgressionTemplate(
+            "循環進行",
+            listOf(0, 5, 1, 4),
+            listOf(
+                null,
+                ChordQuality.SEVENTH,
+                ChordQuality.MINOR_SEVENTH,
+                ChordQuality.SEVENTH,
+            ),
+            scale = Scale.MAJOR,
+        )
+
+        /**
+         * I - IV - II7 - V。II7 は V へ向かうセカンダリードミナント（V/V）。
+         *
+         * ii が長三和音になって、そのまま V へ落ちる。ロックやブルースで
+         * 昔から使われている形で、7th を重ねなくても効く。
+         */
+        val DOUBLE_DOMINANT = ProgressionTemplate(
+            "I-IV-II7-V",
+            listOf(0, 3, 1, 4),
+            listOf(null, null, ChordQuality.SEVENTH, null),
+            scale = Scale.MAJOR,
         )
     }
 }
@@ -221,7 +286,12 @@ enum class GameScene(
         "ボス戦",
         "かなり速い。緊張した進行",
         168..186,
-        listOf(ProgressionTemplate.GAME_BOSS, ProgressionTemplate.GAME_CAVERN),
+        listOf(
+            ProgressionTemplate.GAME_BOSS,
+            ProgressionTemplate.GAME_CAVERN,
+            // 導音が立つので、戦闘曲の張り詰めた感じが出る。
+            ProgressionTemplate.MINOR_TWO_FIVE,
+        ),
         MelodyDensity.BUSY,
         ToneSynth.LeadVoice.PULSE_25,
     ),
@@ -266,7 +336,12 @@ enum class Genre(
         "8ビート・速め。I-V-vi-IV 系",
         132..152,
         listOf(RhythmStyle.EIGHT_BEAT),
-        listOf(ProgressionTemplate.POP_PUNK, ProgressionTemplate.KOMURO),
+        listOf(
+            ProgressionTemplate.POP_PUNK,
+            ProgressionTemplate.KOMURO,
+            // II7 から V へ落ちる形は、ロックでは 7th を重ねなくても効く。
+            ProgressionTemplate.DOUBLE_DOMINANT,
+        ),
         MelodyDensity.NORMAL,
     ),
     JPOP(
@@ -278,6 +353,7 @@ enum class Genre(
             ProgressionTemplate.ROYAL_ROAD,
             ProgressionTemplate.KOMURO,
             ProgressionTemplate.CANON,
+            ProgressionTemplate.TURNAROUND,
         ),
         MelodyDensity.NORMAL,
     ),
@@ -286,7 +362,12 @@ enum class Genre(
         "ゆっくり・隙間を空ける",
         62..80,
         listOf(RhythmStyle.EIGHT_BEAT),
-        listOf(ProgressionTemplate.FIFTIES, ProgressionTemplate.CANON),
+        listOf(
+            ProgressionTemplate.FIFTIES,
+            ProgressionTemplate.CANON,
+            // 短調のツーファイブ。ゆっくりだと導音の効き目がよく見える。
+            ProgressionTemplate.MINOR_TWO_FIVE,
+        ),
         MelodyDensity.SPARSE,
     ),
     CITY_POP(
@@ -294,7 +375,11 @@ enum class Genre(
         "16 分の細かい刻み・M7 や m7",
         96..116,
         listOf(RhythmStyle.BREAKBEAT, RhythmStyle.HIPHOP),
-        listOf(ProgressionTemplate.CITY, ProgressionTemplate.TWO_FIVE_ONE),
+        listOf(
+            ProgressionTemplate.CITY,
+            ProgressionTemplate.TWO_FIVE_ONE,
+            ProgressionTemplate.TURNAROUND,
+        ),
         MelodyDensity.BUSY,
     ),
     DANCE(
