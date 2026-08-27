@@ -56,6 +56,7 @@ import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggestion
+import com.example.rhythmbox.core.ChordVoicing
 import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.GameScene
 import com.example.rhythmbox.core.Genre
@@ -489,6 +490,7 @@ data class MixerActions(
     val onUnmuteAll: () -> Unit,
     val onCentreAll: () -> Unit,
     val onChordStyleChange: (ChordStyle) -> Unit,
+    val onChordVoicingChange: (ChordVoicing) -> Unit,
     val onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
     val onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
     val onLeadVibratoChange: (Float) -> Unit,
@@ -534,7 +536,9 @@ fun MixerDialog(
                         "「定位」は左右のどちらから鳴るかです。中央のままなら今までと同じ音で、" +
                         "ハイハットやタムを少し振ると横に広がって聞こえます。" +
                         "「残響」は曲全体に掛かります。キックとベースには掛からないので、" +
-                        "上げても土台は締まったまま、上のほうだけが広がります。",
+                        "上げても土台は締まったまま、上のほうだけが広がります。" +
+                        "CHD の「積み方」を「なめらか」にすると、前の和音から動きの小さい形を選ぶので、" +
+                        "コードが変わっても音が飛び跳ねなくなります。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -682,6 +686,17 @@ private fun TrackRow(track: Int, label: String, song: Song, actions: MixerAction
             selected = song.chordStyle,
             labelOf = { it.label },
             onSelect = actions.onChordStyleChange,
+            modifier = Modifier.padding(start = 8.dp),
+            labelWidth = SETTING_LABEL_WIDTH,
+        )
+        // 和音をどう積むか。前の和音から動きの小さい転回形を選ぶと、
+        // 同じ進行でも繋がりが滑らかになる。
+        OptionChips(
+            label = "積み方",
+            options = ChordVoicing.entries,
+            selected = song.chordVoicing,
+            labelOf = { it.label },
+            onSelect = actions.onChordVoicingChange,
             modifier = Modifier.padding(start = 8.dp),
             labelWidth = SETTING_LABEL_WIDTH,
         )

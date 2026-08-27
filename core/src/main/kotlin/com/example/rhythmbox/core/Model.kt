@@ -114,6 +114,31 @@ enum class ChordQuality(val suffix: String, val intervals: List<Int>) {
     SEVENTH_SUS4("7sus4", listOf(0, 5, 7, 10)),
 }
 
+/**
+ * 和音をどう組み立てるか。
+ *
+ * 既定は [PLAIN]（今までの音）。上げると、前の和音からの動きが小さくなる
+ * 転回形を選ぶようになり、さらに上げると低いルートが足されて厚くなる。
+ * 響きが変わるので、古い曲がひとりでに変わらないよう既定は据え置きにしてある。
+ */
+enum class ChordVoicing(val label: String) {
+    /** その和音だけを見て音を決める（今までの動き）。 */
+    PLAIN("そのまま"),
+
+    /** 前の和音から動きの小さい転回形を選ぶ（声部の進行）。 */
+    SMOOTH("なめらか"),
+
+    /** なめらかに繋いだうえで、低いルートを足す。 */
+    THICK("厚く"),
+    ;
+
+    /** 転回形を選び直すか。 */
+    val smooth: Boolean get() = this != PLAIN
+
+    /** 低いルートを足すか。 */
+    val lowRoot: Boolean get() = this == THICK
+}
+
 /** 和音。[root] は C=0 の半音番号。 */
 @Serializable
 data class Chord(
@@ -812,6 +837,8 @@ data class Song(
     val reverb: Float = 0f,
     /** 残響の広さ。 */
     val roomSize: RoomSize = RoomSize.MEDIUM,
+    /** 和音の組み立て方。既定は今までの音。 */
+    val chordVoicing: ChordVoicing = ChordVoicing.PLAIN,
     /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。

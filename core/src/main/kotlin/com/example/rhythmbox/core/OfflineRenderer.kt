@@ -79,6 +79,7 @@ object OfflineRenderer {
             arpeggioSpeed = song.arpeggioSpeed,
             reverb = song.reverb,
             roomSize = song.roomSize,
+            chordVoicing = song.chordVoicing,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

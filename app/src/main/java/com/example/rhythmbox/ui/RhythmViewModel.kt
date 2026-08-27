@@ -12,6 +12,7 @@ import com.example.rhythmbox.core.CHANNELS
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
+import com.example.rhythmbox.core.ChordVoicing
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
@@ -566,6 +567,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             arpeggioSpeed = song.arpeggioSpeed,
             reverb = song.reverb,
             roomSize = song.roomSize,
+            chordVoicing = song.chordVoicing,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1175,6 +1177,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** ドラムの音の作り方。 */
     fun setDrumKit(kit: DrumKit) {
         repository.updateCurrentSong { it.copy(drumKit = kit) }
+    }
+
+    /** 和音の積み方（そのまま / なめらか / 厚く）。 */
+    fun setChordVoicing(voicing: ChordVoicing) {
+        repository.updateCurrentSong { it.copy(chordVoicing = voicing) }
     }
 
     /** 残響の量。0 で掛けない。 */

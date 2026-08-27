@@ -5,7 +5,20 @@ package com.example.rhythmbox.core
  * [patternBar] は、そのパターンの何小節目を鳴らすか（＝繰り返し何回目か）。
  * 打ち込みも旋律も、この番号でパターンの中を引く。
  */
-data class Bar(val patternIndex: Int, val chord: Chord, val patternBar: Int = 0)
+data class Bar(
+    val patternIndex: Int,
+    val chord: Chord,
+    val patternBar: Int = 0,
+    /**
+     * 前後と繋がるように選び直した和音の音（[Voicing.lead] の結果）。
+     * 空なら [Chord.voicing] をそのまま使う。
+     *
+     * ここで持たせるのは、決めるのに前後の小節が要るから。プランは全小節の
+     * コードを知っているので 1 回で解けるが、音声スレッドは 1 小節ずつしか
+     * 見ていないので解きようがない。
+     */
+    val voicing: List<Int> = emptyList(),
+)
 
 /**
  * 「どの小節でどのパターンをどのコードで鳴らすか」だけを表す再生プラン。
@@ -34,6 +47,14 @@ class PlaybackPlan(
 
     fun chordAt(bar: Int): Chord = barAt(bar).chord
 
+    /**
+     * その小節で鳴らす和音の音。繋がりを解いた結果が無ければ、和音そのものから作る。
+     *
+     * 解いた結果は常に持たせてあるが、実際に使うかどうかは鳴らす側が決める
+     * （曲の設定は途中で変えられるので、プランを作り直さずに切り替えられる）。
+     */
+    fun voicingAt(bar: Int): List<Int> = barAt(bar).voicing.ifEmpty { barAt(bar).chord.voicing() }
+
     /** その小節で鳴らす、パターンの中の小節番号。 */
     fun patternBarAt(bar: Int): Int = barAt(bar).patternBar
 
@@ -42,6 +63,20 @@ class PlaybackPlan(
         PlaybackPlan(patterns, List(times.coerceAtLeast(1)) { bars }.flatten())
 
     companion object {
+        /**
+         * 並んだ小節に、前後と繋がる和音の音を入れる。
+         *
+         * 曲の設定に関係なく必ず解いておく。そうしておけば、設定を切り替えた
+         * ときにプランを作り直さずに済む（切り替えは鳴らす側で効く）。
+         * 解くのは 1 小節あたり 30 通りほどの候補を比べるだけで、
+         * ユーザーの操作 1 回につき 1 度しか走らない。
+         */
+        private fun voiceLed(bars: List<Bar>): List<Bar> {
+            if (bars.isEmpty()) return bars
+            val voicings = Voicing.lead(bars.map { it.chord })
+            return bars.mapIndexed { index, bar -> bar.copy(voicing = voicings[index]) }
+        }
+
         /**
          * 1 パターンだけをループする。
          * 2 小節以上のパターンは、そのぶんだけ小節を並べて順に鳴らす。
@@ -56,7 +91,7 @@ class PlaybackPlan(
             val bars = List(pattern.barCount) { bar ->
                 Bar(index, block?.chordAt(bar, fallback) ?: fallback, bar)
             }
-            return PlaybackPlan(song.patterns, bars)
+            return PlaybackPlan(song.patterns, voiceLed(bars))
         }
 
         /**
@@ -70,7 +105,7 @@ class PlaybackPlan(
                     val chord = song.patternChord(index)
                     List(song.pattern(index).barCount) { bar -> Bar(index, chord, bar) }
                 }
-            return PlaybackPlan(song.patterns, bars)
+            return PlaybackPlan(song.patterns, voiceLed(bars))
         }
 
         /** 曲構成（繰り返し数ぶん展開したもの）。構成が空なら空のプランになる。 */
@@ -85,7 +120,7 @@ class PlaybackPlan(
                     }
                 }
             }
-            return PlaybackPlan(song.patterns, bars)
+            return PlaybackPlan(song.patterns, voiceLed(bars))
         }
 
         const val MAX_REPEAT = 64

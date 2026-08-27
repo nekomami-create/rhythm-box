@@ -163,6 +163,63 @@ class MidiExporterTest {
     }
 
     @Test
+    fun `smooth voicings are written into the file, not the plain ones`() {
+        // 書き出した音は、アプリで聴いている音と同じでなければ意味がない。
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        val song = Song("s", "test")
+            .withPattern(0, Pattern.of("A", *rows))
+            .copy(
+                arrangement = listOf(
+                    ArrangementStep(0, 4, listOf(Chord(0), Chord(7), Chord(9, ChordQuality.MINOR), Chord(5))),
+                ),
+                chordVoicing = ChordVoicing.SMOOTH,
+            )
+        val plan = PlaybackPlan.arrangement(song)
+        val notes = notesOf(MidiExporter.export(song, plan)).filter { it.channel == 0 }
+
+        (0 until plan.barCount).forEach { bar ->
+            val expected = plan.voicingAt(bar).sorted()
+            val start = bar * STEPS_PER_BAR * MidiExporter.TICKS_PER_STEP
+            val actual = notes.filter { it.start == start }.map { it.midi }.sorted()
+            assertEquals("$bar 小節目", expected, actual)
+        }
+        // 素の積み方とは違っている（＝繋がりを解いた結果が書かれている）。
+        val plain = (0 until plan.barCount).map { plan.chordAt(it).voicing().sorted() }
+        val written = (0 until plan.barCount).map { plan.voicingAt(it).sorted() }
+        assertTrue("解いた結果が素の積み方と同じ", plain != written)
+    }
+
+    @Test
+    fun `the thick setting writes the low root too`() {
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        val song = Song("s", "test")
+            .withPattern(0, Pattern.of("A", *rows))
+            .withPatternChord(0, Chord(0, ChordQuality.MAJOR))
+            .copy(chordVoicing = ChordVoicing.THICK)
+        val plan = PlaybackPlan.single(song, 0)
+        val notes = notesOf(MidiExporter.export(song, plan)).filter { it.channel == 0 }
+        assertEquals(plan.voicingAt(0).size + 1, notes.size)
+        assertEquals(Voicing.lowRoot(Chord(0)), notes.minOf { it.midi })
+    }
+
+    @Test
+    fun `the chip arpeggio is left alone by the thick setting`() {
+        // 1 声部で和音を装う技なので、音を 1 つ足すと効き目が崩れる。
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x..............."
+        val song = Song("s", "test")
+            .withPattern(0, Pattern.of("A", *rows))
+            .withPatternChord(0, Chord(0, ChordQuality.MAJOR))
+            .copy(chordVoicing = ChordVoicing.THICK, chordStyle = ChordStyle.CHIP_ARPEGGIO)
+        val notes = notesOf(MidiExporter.export(song, PlaybackPlan.single(song, 0)))
+            .filter { it.channel == 0 }
+        assertEquals(1, notes.size)
+        assertTrue("低いルートが足されている", notes.single().midi >= Voicing.LOW_ROOT_BASE + 12)
+    }
+
+    @Test
     fun `the tempo is written into the file`() {
         val bytes = MidiExporter.export(songOf("x...............", bpm = 140), PlaybackPlan.single(songOf("x..............."), 0))
         // FF 51 03 のあとの 3 バイトが 1 拍あたりのマイクロ秒。

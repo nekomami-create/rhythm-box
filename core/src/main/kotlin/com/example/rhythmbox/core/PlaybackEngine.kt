@@ -59,6 +59,8 @@ data class EngineConfig(
     val reverb: Float = 0f,
     /** 残響の広さ。 */
     val roomSize: RoomSize = RoomSize.MEDIUM,
+    /** 和音の組み立て方。 */
+    val chordVoicing: ChordVoicing = ChordVoicing.PLAIN,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -158,12 +160,24 @@ class PlaybackEngine(
         if (voice in 0 until DRUM_COUNT) triggerDrum(voice)
     }
 
-    /** コードを単発で鳴らす（コードを選んだときの試聴用）。 */
+    /**
+     * コードを単発で鳴らす（コードを選んだときの試聴用）。
+     *
+     * 転回形は選び直さない。前の和音が無いので繋げようがなく、
+     * 単発で聴くなら基本の積み方のほうが響きが分かりやすい。
+     * 低いルートだけは曲の設定に合わせる（厚みは単発でも聞き分けられる）。
+     */
     fun previewChord(chord: Chord) {
+        val cfg = config
+        val notes = if (cfg.chordVoicing.lowRoot && !cfg.chordStyle.chipArpeggio) {
+            listOf(Voicing.lowRoot(chord)) + chord.voicing()
+        } else {
+            chord.voicing()
+        }
         triggerChord(
-            chord.voicing(),
+            notes,
             (sampleRate * PREVIEW_SECONDS).toLong(),
-            timbreOf(config, Instrument.CHORD),
+            timbreOf(cfg, Instrument.CHORD),
         )
     }
 
@@ -301,6 +315,21 @@ class PlaybackEngine(
 
     private fun trackPan(cfg: EngineConfig, track: Int): Float = cfg.trackPans.getOrElse(track) { 0f }
 
+    /**
+     * その小節で鳴らす和音の音。
+     *
+     * 繋がりを解いた結果はプランが常に持っているので、ここでは使うかどうかを
+     * 決めるだけ。設定を途中で変えてもプランを作り直さずに切り替わる。
+     *
+     * 低いルートは高速アルペジオのときは足さない。あれは 1 声部で和音を
+     * 装う技で、音を 1 つ足すと「1 つの音色に聞こえる」効き目が崩れる。
+     */
+    private fun voicingFor(cfg: EngineConfig, plan: PlaybackPlan, bar: Int, chord: Chord): List<Int> {
+        val notes = if (cfg.chordVoicing.smooth) plan.voicingAt(bar) else chord.voicing()
+        if (!cfg.chordVoicing.lowRoot || cfg.chordStyle.chipArpeggio) return notes
+        return listOf(Voicing.lowRoot(chord)) + notes
+    }
+
     /** 次のステップを発音し、次回の発音フレームを決める。 */
     private fun fireStep(cfg: EngineConfig) {
         val plan = cfg.plan
@@ -333,7 +362,7 @@ class PlaybackEngine(
         }
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
-            val voicing = chord.voicing()
+            val voicing = voicingFor(cfg, plan, bar, chord)
             // 高速アルペジオは 1 声部で鳴らし、構成音までの距離を渡して回してもらう。
             val arpeggio = if (cfg.chordStyle.chipArpeggio && voicing.isNotEmpty()) {
                 IntArray(voicing.size) { voicing[it] - voicing[0] }

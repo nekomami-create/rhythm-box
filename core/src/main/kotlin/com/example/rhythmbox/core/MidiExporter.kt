@@ -87,7 +87,15 @@ object MidiExporter {
                     val length = spanTicks(starts, at, pattern.nextHit(ROW_CHORD, step) - step, bar, plan.barCount)
                     val velocity = velocityOf(pattern.levelAt(ROW_CHORD, step))
                     val index = chordHitIndex(pattern, step)
-                    for (midi in song.chordStyle.notesAt(chord.voicing(), index)) {
+                    // 書き出す音は、アプリで鳴っているものと同じにする。
+                    // 繋がりを解いた結果はプランが持っているので、そこから取る。
+                    val voicing = if (song.chordVoicing.smooth) plan.voicingAt(bar) else chord.voicing()
+                    val notes = if (song.chordVoicing.lowRoot && !song.chordStyle.chipArpeggio) {
+                        listOf(Voicing.lowRoot(chord)) + voicing
+                    } else {
+                        voicing
+                    }
+                    for (midi in song.chordStyle.notesAt(notes, index)) {
                         parts.getValue(Instrument.CHORD) += Note(start, length, midi, velocity)
                     }
                 }
