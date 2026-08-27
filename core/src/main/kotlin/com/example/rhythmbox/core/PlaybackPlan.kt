@@ -55,6 +55,16 @@ class PlaybackPlan(
      */
     fun voicingAt(bar: Int): List<Int> = barAt(bar).voicing.ifEmpty { barAt(bar).chord.voicing() }
 
+    /**
+     * 次の小節の和音。最後の小節では先頭へ戻る。
+     *
+     * 曲はループするので、最後の次は先頭。書き出し（1 回だけ鳴らす）でも
+     * 同じ扱いにしておくと、終わりの小節が頭のコードへ入る形になり、
+     * 繰り返して聴いたときに繋がる。
+     */
+    fun nextChordAt(bar: Int): Chord =
+        if (bars.isEmpty()) Chord() else chordAt((bar + 1).mod(bars.size))
+
     /** その小節で鳴らす、パターンの中の小節番号。 */
     fun patternBarAt(bar: Int): Int = barAt(bar).patternBar
 

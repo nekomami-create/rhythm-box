@@ -179,6 +179,7 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 onCentreAll = viewModel::centreAll,
                 onChordStyleChange = viewModel::setChordStyle,
                 onChordVoicingChange = viewModel::setChordVoicing,
+                onBassStyleChange = viewModel::setBassStyle,
                 onArpeggioSpeedChange = viewModel::setArpeggioSpeed,
                 onLeadVoiceChange = viewModel::setLeadVoice,
                 onLeadVibratoChange = viewModel::setLeadVibrato,

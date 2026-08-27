@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.ArpeggioSpeed
+import com.example.rhythmbox.core.BassStyle
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordStyle
@@ -491,6 +492,7 @@ data class MixerActions(
     val onCentreAll: () -> Unit,
     val onChordStyleChange: (ChordStyle) -> Unit,
     val onChordVoicingChange: (ChordVoicing) -> Unit,
+    val onBassStyleChange: (BassStyle) -> Unit,
     val onArpeggioSpeedChange: (ArpeggioSpeed) -> Unit,
     val onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
     val onLeadVibratoChange: (Float) -> Unit,
@@ -538,7 +540,9 @@ fun MixerDialog(
                         "「残響」は曲全体に掛かります。キックとベースには掛からないので、" +
                         "上げても土台は締まったまま、上のほうだけが広がります。" +
                         "CHD の「積み方」を「なめらか」にすると、前の和音から動きの小さい形を選ぶので、" +
-                        "コードが変わっても音が飛び跳ねなくなります。",
+                        "コードが変わっても音が飛び跳ねなくなります。" +
+                        "BAS の「動き」は、ルートだけを弾くか、5 度も混ぜるか、" +
+                        "次のコードへ入る音まで弾くかです。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -713,6 +717,19 @@ private fun TrackRow(track: Int, label: String, song: Song, actions: MixerAction
                 labelWidth = SETTING_LABEL_WIDTH,
             )
         }
+    }
+    // ベース行だけ、動き方を選べる。行に書けるのは打点だけなので、
+    // どの高さを弾くかは和音と「何回目の打点か」から決まる。
+    if (track == Instrument.BASS.trackIndex) {
+        OptionChips(
+            label = "動き",
+            options = BassStyle.entries,
+            selected = song.bassStyle,
+            labelOf = { it.label },
+            onSelect = actions.onBassStyleChange,
+            modifier = Modifier.padding(start = 8.dp),
+            labelWidth = SETTING_LABEL_WIDTH,
+        )
     }
     // リード行だけ、揺れ（ビブラート）を掛けられる。
     // チップ音源は音量を変えられないぶん、揺らして表情を付けていた。

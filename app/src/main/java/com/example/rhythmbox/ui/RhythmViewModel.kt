@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
 import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.ArrangementStep
+import com.example.rhythmbox.core.BassStyle
 import com.example.rhythmbox.core.CHANNELS
 import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordPads
@@ -568,6 +569,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             reverb = song.reverb,
             roomSize = song.roomSize,
             chordVoicing = song.chordVoicing,
+            bassStyle = song.bassStyle,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1182,6 +1184,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** 和音の積み方（そのまま / なめらか / 厚く）。 */
     fun setChordVoicing(voicing: ChordVoicing) {
         repository.updateCurrentSong { it.copy(chordVoicing = voicing) }
+    }
+
+    /** ベースの動き方（ルート / 5度も / 動く）。 */
+    fun setBassStyle(style: BassStyle) {
+        repository.updateCurrentSong { it.copy(bassStyle = style) }
     }
 
     /** 残響の量。0 で掛けない。 */

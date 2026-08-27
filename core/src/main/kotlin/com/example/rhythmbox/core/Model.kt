@@ -115,6 +115,24 @@ enum class ChordQuality(val suffix: String, val intervals: List<Int>) {
 }
 
 /**
+ * ベースの動き方。
+ *
+ * 既定は [ROOT]（今までの音）。今までは 1 小節じゅうルートを弾き続けていた。
+ * 和音のほうは 7th も転回形も付くようになったのに、ベースだけが 1 音のまま
+ * だったので、そこを動かせるようにする。
+ */
+enum class BassStyle(val label: String) {
+    /** ずっとルート（今までの動き）。 */
+    ROOT("ルート"),
+
+    /** ルートと 5 度を交互に。 */
+    FIFTH("5度も"),
+
+    /** 5 度も弾いたうえで、小節の最後は次のコードへ半音で入る。 */
+    WALK("動く"),
+}
+
+/**
  * 和音をどう組み立てるか。
  *
  * 既定は [PLAIN]（今までの音）。上げると、前の和音からの動きが小さくなる
@@ -458,6 +476,15 @@ data class Pattern(
         if (masks.all { it and STEP_MASK == 0 }) emptyList() else masks
 
     /** [step] の次にこの行が鳴るステップ。小節内に無ければ [STEPS_PER_BAR]（＝小節末）。 */
+    /**
+     * [step] より前に、その行が何回鳴ったか（＝この打点が何回目か）。
+     *
+     * 状態を持たずに数えるので、ループしても書き出しても同じ位置で同じ答えになる。
+     * アルペジオが次にどの音を鳴らすか、ベースがルートか 5 度か、はこれで決まる。
+     */
+    fun hitIndex(row: Int, step: Int): Int =
+        (rowAt(row) and ((1 shl step.coerceIn(0, STEPS_PER_BAR)) - 1)).countOneBits()
+
     fun nextHit(row: Int, step: Int): Int {
         val bits = rowAt(row)
         for (next in (step + 1) until STEPS_PER_BAR) {
@@ -839,6 +866,8 @@ data class Song(
     val roomSize: RoomSize = RoomSize.MEDIUM,
     /** 和音の組み立て方。既定は今までの音。 */
     val chordVoicing: ChordVoicing = ChordVoicing.PLAIN,
+    /** ベースの動き方。既定は今までの音。 */
+    val bassStyle: BassStyle = BassStyle.ROOT,
     /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。

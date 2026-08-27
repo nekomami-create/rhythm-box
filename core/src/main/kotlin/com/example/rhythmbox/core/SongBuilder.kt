@@ -75,7 +75,7 @@ object SongBuilder {
         val chords = List(total) { cycle[it % cycle.size] }
         val style = recipe.pickRhythm(random)
 
-        var song = base.copy(bpm = recipe.pickBpm(random))
+        var song = base.copy(bpm = recipe.pickBpm(random), bassStyle = recipe.bassStyle)
 
         // 同じパターンが何ブロックかに出てくる。最初に出てくるブロックの
         // コードに合わせて作れば、以降のブロックでもコードの並びは同じになる。

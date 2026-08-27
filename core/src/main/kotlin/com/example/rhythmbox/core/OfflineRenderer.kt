@@ -80,6 +80,7 @@ object OfflineRenderer {
             reverb = song.reverb,
             roomSize = song.roomSize,
             chordVoicing = song.chordVoicing,
+            bassStyle = song.bassStyle,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

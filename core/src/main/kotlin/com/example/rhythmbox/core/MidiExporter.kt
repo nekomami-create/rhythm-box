@@ -86,7 +86,7 @@ object MidiExporter {
                 if (pattern.isOn(ROW_CHORD, step)) {
                     val length = spanTicks(starts, at, pattern.nextHit(ROW_CHORD, step) - step, bar, plan.barCount)
                     val velocity = velocityOf(pattern.levelAt(ROW_CHORD, step))
-                    val index = chordHitIndex(pattern, step)
+                    val index = pattern.hitIndex(ROW_CHORD, step)
                     // 書き出す音は、アプリで鳴っているものと同じにする。
                     // 繋がりを解いた結果はプランが持っているので、そこから取る。
                     val voicing = if (song.chordVoicing.smooth) plan.voicingAt(bar) else chord.voicing()
@@ -101,11 +101,18 @@ object MidiExporter {
                 }
 
                 if (pattern.isOn(ROW_BASS, step)) {
-                    val steps = minOf(pattern.nextHit(ROW_BASS, step) - step, BASS_MAX_STEPS)
+                    val nextHit = pattern.nextHit(ROW_BASS, step)
+                    val steps = minOf(nextHit - step, BASS_MAX_STEPS)
                     parts.getValue(Instrument.BASS) += Note(
                         start = start,
                         length = spanTicks(starts, at, steps, bar, plan.barCount),
-                        midi = chord.bassMidi(),
+                        midi = Bassline.noteAt(
+                            chord = chord,
+                            next = plan.nextChordAt(bar),
+                            hitIndex = pattern.hitIndex(ROW_BASS, step),
+                            last = nextHit >= STEPS_PER_BAR,
+                            style = song.bassStyle,
+                        ),
                         velocity = velocityOf(pattern.levelAt(ROW_BASS, step)),
                     )
                 }
@@ -159,16 +166,6 @@ object MidiExporter {
         val end = (at + steps.coerceAtLeast(1)).coerceAtMost(barCount * STEPS_PER_BAR)
         val endTick = if (end < starts.size) starts[end] else starts.last() + TICKS_PER_STEP
         return (endTick - starts[at]).coerceAtLeast(1)
-    }
-
-    /** そのステップが、その小節の何回目のコードか。 */
-    private fun chordHitIndex(pattern: Pattern, step: Int): Int {
-        val bits = pattern.rowAt(ROW_CHORD)
-        var count = 0
-        for (earlier in 0 until step) {
-            if ((bits shr earlier) and 1 == 1) count++
-        }
-        return count
     }
 
     /**

@@ -230,6 +230,8 @@ data class GenreRecipe(
      * 芯なので 0 のまま、シティポップは 7th が付いていないほうが物足りない。
      */
     val seventhChance: Double = 0.0,
+    /** ベースの動き方。 */
+    val bassStyle: BassStyle = BassStyle.ROOT,
 ) {
     fun pickBpm(random: Random = Random.Default): Int =
         bpmRange.first + random.nextInt(bpmRange.last - bpmRange.first + 1)
@@ -311,6 +313,9 @@ enum class GameScene(
         melodyDensity = melodyDensity,
         chip = true,
         leadVoice = leadVoice,
+        // チップのベースは 8 分連打。ルートと 5 度の交互が、そのまま
+        // ファミコンのベースの動きになる。
+        bassStyle = BassStyle.FIFTH,
     )
 }
 
@@ -339,6 +344,8 @@ enum class Genre(
     val scenes: List<GameScene> = emptyList(),
     /** 三和音を 7th に色付けする濃さ。0 で足さない。 */
     val seventhChance: Double = 0.0,
+    /** ベースの動き方。 */
+    val bassStyle: BassStyle = BassStyle.ROOT,
 ) {
     ROCK(
         "ロック",
@@ -352,6 +359,7 @@ enum class Genre(
             ProgressionTemplate.DOUBLE_DOMINANT,
         ),
         MelodyDensity.NORMAL,
+        bassStyle = BassStyle.FIFTH,
     ),
     JPOP(
         "J-POP",
@@ -366,6 +374,7 @@ enum class Genre(
         ),
         MelodyDensity.NORMAL,
         seventhChance = 0.25,
+        bassStyle = BassStyle.FIFTH,
     ),
     BALLAD(
         "バラード",
@@ -380,6 +389,7 @@ enum class Genre(
         ),
         MelodyDensity.SPARSE,
         seventhChance = 0.45,
+        bassStyle = BassStyle.WALK,
     ),
     CITY_POP(
         "シティポップ",
@@ -393,6 +403,7 @@ enum class Genre(
         ),
         MelodyDensity.BUSY,
         seventhChance = 0.7,
+        bassStyle = BassStyle.WALK,
     ),
     DANCE(
         "ダンス",
@@ -402,6 +413,7 @@ enum class Genre(
         listOf(ProgressionTemplate.DANCE_LOOP, ProgressionTemplate.KOMURO),
         MelodyDensity.NORMAL,
         seventhChance = 0.15,
+        bassStyle = BassStyle.FIFTH,
     ),
     GAME(
         "ゲーム音楽",
@@ -412,6 +424,7 @@ enum class Genre(
         MelodyDensity.BUSY,
         chip = true,
         scenes = GameScene.entries,
+        bassStyle = BassStyle.FIFTH,
     );
 
     /** 場面を選ばなかったときの中身。 */
@@ -422,6 +435,7 @@ enum class Genre(
         melodyDensity = melodyDensity,
         chip = chip,
         seventhChance = seventhChance,
+        bassStyle = bassStyle,
     )
 
     fun pickBpm(random: Random = Random.Default): Int =

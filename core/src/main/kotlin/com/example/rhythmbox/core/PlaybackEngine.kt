@@ -61,6 +61,8 @@ data class EngineConfig(
     val roomSize: RoomSize = RoomSize.MEDIUM,
     /** 和音の組み立て方。 */
     val chordVoicing: ChordVoicing = ChordVoicing.PLAIN,
+    /** ベースの動き方。 */
+    val bassStyle: BassStyle = BassStyle.ROOT,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -380,10 +382,17 @@ class PlaybackEngine(
         }
         if (pattern.isOn(ROW_BASS, step)) {
             val timbre = timbreOf(cfg, Instrument.BASS)
+            val nextHit = pattern.nextHit(ROW_BASS, step)
             triggerNote(
                 Instrument.BASS,
-                chord.bassMidi(),
-                gateFrames(pattern.nextHit(ROW_BASS, step) - step, timbre, cfg.bpm),
+                Bassline.noteAt(
+                    chord = chord,
+                    next = plan.nextChordAt(bar),
+                    hitIndex = pattern.hitIndex(ROW_BASS, step),
+                    last = nextHit >= STEPS_PER_BAR,
+                    style = cfg.bassStyle,
+                ),
+                gateFrames(nextHit - step, timbre, cfg.bpm),
                 timbre,
                 pattern.levelAt(ROW_BASS, step).gain,
             )
@@ -421,12 +430,7 @@ class PlaybackEngine(
      */
     private fun chordHitIndex(plan: PlaybackPlan, bar: Int, step: Int): Int {
         if (config.chordStyle == ChordStyle.BLOCK || config.chordStyle.chipArpeggio) return 0
-        val bits = plan.patternAt(bar).rowAt(ROW_CHORD)
-        var count = 0
-        for (earlier in 0 until step) {
-            if ((bits shr earlier) and 1 == 1) count++
-        }
-        return count
+        return plan.patternAt(bar).hitIndex(ROW_CHORD, step)
     }
 
     /**
