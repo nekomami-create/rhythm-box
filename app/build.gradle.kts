@@ -12,10 +12,16 @@ android {
         applicationId = "com.example.rhythmbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "1.30"
+        versionCode = 41
+        versionName = "1.41"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // どの APK を入れたのかが分かるように、CI のビルド番号を埋め込む。
+        // versionName は手で上げるので忘れると古いまま出る（実際に一度そうなった）。
+        // こちらは CI が毎回入れるので、少なくとも「いつのビルドか」は必ず合う。
+        val build = (project.findProperty("buildNumber") as String?)?.takeIf { it.isNotBlank() }
+        buildConfigField("String", "BUILD_LABEL", "\"${build ?: "手元ビルド"}\"")
     }
 
     signingConfigs {

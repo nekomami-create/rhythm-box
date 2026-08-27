@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.rhythmbox.core.SongBuilder
 
@@ -122,7 +123,10 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "曲メニュー")
                     }
+                    // 12 項目が区切りなしに並ぶと読めないので、4 つのまとまりに割る。
+                    // 書き出しが M4A と MIDI で離れて並んでいたのもここで直す。
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        MenuHeading("曲")
                         DropdownMenuItem(
                             text = { Text("曲の名前を変更") },
                             onClick = { menuOpen = false; dialog = SongDialog.Rename },
@@ -139,6 +143,8 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             text = { Text("保存した曲を開く") },
                             onClick = { menuOpen = false; dialog = SongDialog.Library },
                         )
+
+                        MenuHeading("作る")
                         DropdownMenuItem(
                             text = { Text("オート作曲") },
                             onClick = { menuOpen = false; songBuilderOpen = true },
@@ -147,10 +153,8 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                             text = { Text("ジャンルから作る") },
                             onClick = { menuOpen = false; genreOpen = true },
                         )
-                        DropdownMenuItem(
-                            text = { Text("音声を書き出す (M4A)") },
-                            onClick = { menuOpen = false; exportingMidi = false; exportSetupOpen = true },
-                        )
+
+                        MenuHeading("調")
                         DropdownMenuItem(
                             text = { Text("キーと音階を選ぶ") },
                             onClick = { menuOpen = false; keyOpen = true },
@@ -158,6 +162,12 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                         DropdownMenuItem(
                             text = { Text("キーを変える") },
                             onClick = { menuOpen = false; transposeOpen = true },
+                        )
+
+                        MenuHeading("持ち出す")
+                        DropdownMenuItem(
+                            text = { Text("音声を書き出す (M4A)") },
+                            onClick = { menuOpen = false; exportingMidi = false; exportSetupOpen = true },
                         )
                         DropdownMenuItem(
                             text = { Text("MIDI を書き出す") },
@@ -285,4 +295,18 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
     state.exportMessage?.let {
         ExportResultDialog(message = it, onDismiss = viewModel::dismissExportMessage)
     }
+}
+
+/**
+ * ⋮ メニューのまとまりの見出し。
+ * 上に余白を空けて色を変えるだけで、群の切れ目は十分に見える。
+ */
+@Composable
+private fun MenuHeading(label: String) {
+    Text(
+        text = label,
+        modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }

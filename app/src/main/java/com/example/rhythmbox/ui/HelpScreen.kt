@@ -357,6 +357,14 @@ fun HelpScreen() {
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item {
+            Text(
+                text = "BreakBox ${BuildConfig.VERSION_NAME}（build ${BuildConfig.BUILD_LABEL}）",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         items(helpSections) { section ->
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -382,14 +390,6 @@ fun HelpScreen() {
                     }
                 }
             }
-        }
-        item {
-            Text(
-                text = "BreakBox ${BuildConfig.VERSION_NAME}",
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

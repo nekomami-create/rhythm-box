@@ -37,8 +37,10 @@ jobs:
 
       # 配布するのは release ビルド（debuggable が付かない）。
       # 署名はリポジトリに置いた固定鍵で、debug ビルドと同じ署名になる。
+      # ビルド番号を APK に埋め込む。ヘルプの先頭に出るので、
+      # どの APK を入れたのかを端末側で確かめられる。
       - name: Assemble release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -PbuildNumber=${{ github.run_number }}
 
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk BreakBox.apk
