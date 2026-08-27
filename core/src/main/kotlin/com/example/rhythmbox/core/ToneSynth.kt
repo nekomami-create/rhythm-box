@@ -346,9 +346,37 @@ object ToneSynth {
     }
 
 
-    fun timbre(instrument: Instrument, lead: LeadVoice = LeadVoice.SQUARE): Timbre = when (instrument) {
-        Instrument.CHORD -> CHORD
-        Instrument.BASS -> BASS
+    /**
+     * チップ音源のコード。細めのパルスにしてあるのは、高速アルペジオで
+     * 回したときに 1 音ずつの粒が聞き分けられるようにするため。
+     */
+    private val CHIP_CHORD = CHORD.copy(
+        wave = Waveform.Pulse(0.25f),
+        attack = 0.002,
+        decay = 0.60,
+        // 実機のチャンネルは押している間ずっと同じ音量なので、ほぼ減衰させない。
+        sustain = 0.90f,
+        release = 0.05,
+        gain = 0.30f,
+    )
+
+    /** チップ音源のベース。ファミコンで低音を受け持っていたのが三角波チャンネル。 */
+    private val CHIP_BASS = BASS.copy(
+        wave = Waveform.ChipTriangle,
+        attack = 0.002,
+        decay = 0.50,
+        sustain = 0.90f,
+        release = 0.04,
+        gain = 0.62f,
+    )
+
+    fun timbre(
+        instrument: Instrument,
+        lead: LeadVoice = LeadVoice.SQUARE,
+        set: SoundSet = SoundSet.NORMAL,
+    ): Timbre = when (instrument) {
+        Instrument.CHORD -> if (set == SoundSet.CHIP) CHIP_CHORD else CHORD
+        Instrument.BASS -> if (set == SoundSet.CHIP) CHIP_BASS else BASS
         Instrument.LEAD -> LEAD.copy(
             partials = lead.partials,
             attack = LEAD.attack * lead.attackScale,

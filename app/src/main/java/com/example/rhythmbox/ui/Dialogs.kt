@@ -62,6 +62,7 @@ import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.MusicKey
 import com.example.rhythmbox.core.Scale
 import com.example.rhythmbox.core.Song
+import com.example.rhythmbox.core.SoundSet
 import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Voice
 
@@ -482,6 +483,7 @@ fun MixerDialog(
     onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
     onLeadVibratoChange: (Float) -> Unit,
     onDrumKitChange: (DrumKit) -> Unit,
+    onSoundSetChange: (SoundSet) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -550,6 +552,47 @@ fun MixerDialog(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+                    // コードの行に、コードとベースまとめての音の作り方を置く。
+                    // リードは 1 音ずつ選べるが、土台の 2 つはまとめて切り替えるほうが合う。
+                    if (track == Instrument.CHORD.trackIndex) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(start = 8.dp),
+                        ) {
+                            Text(
+                                text = "音源",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            SoundSet.entries.forEach { set ->
+                                val on = set == song.soundSet
+                                Surface(
+                                    color = if (on) {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    contentColor = if (on) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp).clickable { onSoundSetChange(set) },
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = set.label,
+                                            modifier = Modifier.padding(horizontal = 10.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     // ドラムの先頭に、8 音色まとめての音の作り方を置く。
@@ -1007,6 +1050,10 @@ fun GenreDialog(
                     }
                     GenreOptionRow("旋律（このパターン）", options.melody) {
                         options = options.copy(melody = it)
+                    }
+                    // チップ音源のジャンルでだけ効く。音色・ドラム・弾き方をまとめて切り替える。
+                    GenreOptionRow("音色（チップ音源のジャンルのみ）", options.sound) {
+                        options = options.copy(sound = it)
                     }
                 }
                 Text(

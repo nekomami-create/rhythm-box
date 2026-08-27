@@ -59,6 +59,7 @@ object OfflineRenderer {
             leadVoice = song.leadVoice,
             leadVibrato = song.leadVibrato,
             drumKit = song.drumKit,
+            soundSet = song.soundSet,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

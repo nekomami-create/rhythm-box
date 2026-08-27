@@ -9,6 +9,7 @@ enum class RhythmStyle(val label: String) {
     BREAKBEAT("ブレイクビーツ"),
     HIPHOP("ヒップホップ"),
     LATIN("ラテン"),
+    CHIP_DRIVE("チップ"),
 }
 
 /**
@@ -154,6 +155,23 @@ object PatternGenerator {
             RowRule(Voice.CLAP.ordinal, chances = chances(12 to 0.25)),
             RowRule(ROW_CHORD, listOf(0), chances(8 to 0.30, 11 to 0.15)),
             RowRule(ROW_BASS, listOf(0), chances(6 to 0.40, 10 to 0.40, 14 to 0.25)),
+        )
+
+        // チップ音源のドラムは 1 発が短いので、詰めて置かないと土台が抜けて聞こえる。
+        // 推進力はベースの 8 分連打から来ていて、これがゲーム音楽の芯になる。
+        RhythmStyle.CHIP_DRIVE -> listOf(
+            RowRule(
+                Voice.KICK.ordinal,
+                listOf(0, 4, 8, 12),
+                chances(2 to 0.25, 6 to 0.30, 10 to 0.25, 14 to 0.30),
+            ),
+            RowRule(Voice.SNARE.ordinal, listOf(4, 12), chances(7 to 0.20, 15 to 0.25)),
+            RowRule(Voice.CLOSED_HAT.ordinal, grids = BUSY_GRIDS, chances = odds(0.20)),
+            RowRule(Voice.OPEN_HAT.ordinal, chances = chances(14 to 0.30)),
+            RowRule(Voice.RIM.ordinal, chances = chances(2 to 0.12, 10 to 0.12)),
+            // 高速アルペジオは打ち直すたびに回り直すので、細かく置くほどきらめく。
+            RowRule(ROW_CHORD, listOf(0, 4, 8, 12), chances(2 to 0.30, 10 to 0.30)),
+            RowRule(ROW_BASS, listOf(0, 2, 4, 6, 8, 10, 12, 14)),
         )
 
         RhythmStyle.LATIN -> listOf(

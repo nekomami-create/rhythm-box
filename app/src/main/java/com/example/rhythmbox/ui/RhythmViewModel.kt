@@ -33,6 +33,7 @@ import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongBuilder
 import com.example.rhythmbox.core.SongCodec
+import com.example.rhythmbox.core.SoundSet
 import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Transposer
 import com.example.rhythmbox.core.formatDuration
@@ -60,6 +61,8 @@ data class GenreOptions(
     val chords: Boolean = true,
     val rhythm: Boolean = true,
     val melody: Boolean = false,
+    /** 音色。チップ音源のジャンルでだけ意味がある。 */
+    val sound: Boolean = true,
 )
 
 /** 音声ファイルに書き出す範囲。 */
@@ -538,6 +541,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             leadVoice = song.leadVoice,
             leadVibrato = song.leadVibrato,
             drumKit = song.drumKit,
+            soundSet = song.soundSet,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -883,12 +887,14 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** パターンの全小節に、同じノリを 1 つ置く。 */
-    private fun filledWithOneGroove(pattern: Pattern, style: RhythmStyle?): Pattern {
+    /** パターンの全小節に、同じノリを 1 つ引いて置く。 */
+    private fun filledWithOneGroove(pattern: Pattern, style: RhythmStyle?): Pattern =
         // スタイルはパターンごとに引き直す（おまかせなら全部違う型になる）。
-        val generated = drawRhythm(style, pattern.name)
-        return (0 until pattern.barCount).fold(pattern) { acc, bar -> acc.withRhythmAt(bar, generated) }
-    }
+        filledWithOneGroove(pattern, drawRhythm(style, pattern.name))
+
+    /** パターンの全小節に [groove] を置く。1 小節目にだけ書くと後半が古いまま残る。 */
+    private fun filledWithOneGroove(pattern: Pattern, groove: Pattern): Pattern =
+        (0 until pattern.barCount).fold(pattern) { acc, bar -> acc.withRhythmAt(bar, groove) }
 
     private fun drawRhythm(style: RhythmStyle?, name: String): Pattern =
         if (style == null) {
@@ -1017,15 +1023,30 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun applyGenre(genre: Genre, options: GenreOptions) {
         val state = _uiState.value
         val index = state.selectedPattern
-        val key = detectedKey()
+        // 進行の型が音階を決めているなら、そちらに合わせて解決する。
+        // 主音は曲のまま残すので、同じ音を中心にしたまま雰囲気だけが変わる。
         val progression = genre.pickProgression(Random)
+        val key = progression.keyFor(detectedKey())
         snapshotForUndo()
         repository.updateCurrentSong { song ->
             var next = song
             if (options.tempo) {
                 next = next.copy(bpm = genre.pickBpm(Random))
             }
+            if (options.sound && genre.chip) {
+                // 音色とドラムと弾き方をまとめて切り替える。
+                // どれか 1 つだけでは「ゲーム音楽っぽさ」にならない。
+                next = next.copy(
+                    soundSet = SoundSet.CHIP,
+                    drumKit = DrumKit.CHIP,
+                    leadVoice = ToneSynth.LeadVoice.PULSE_25,
+                    chordStyle = ChordStyle.CHIP_ARPEGGIO,
+                )
+            }
             if (options.chords) {
+                // 使った音階を曲の調として残す。残さないとコードから推定し直され、
+                // 次に旋律を作るときに違う音階で書かれてしまう。
+                next = next.copy(key = key)
                 // 曲構成がまだ無いときは、進行の長さぶんの構成を作ってから埋める。
                 val arrangement = next.arrangement.ifEmpty {
                     listOf(ArrangementStep(index, progression.degrees.size.coerceAtMost(8)))
@@ -1047,7 +1068,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                     random = Random,
                     name = next.pattern(index).name,
                 )
-                next = next.withPattern(index, next.pattern(index).withRhythmOf(generated))
+                next = next.withPattern(index, filledWithOneGroove(next.pattern(index), generated))
             }
             if (options.melody) {
                 val lead = MelodyGenerator.generate(
@@ -1056,7 +1077,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                     random = Random,
                     density = genre.melodyDensity,
                 )
-                next = next.withPattern(index, next.pattern(index).copy(lead = lead))
+                next = next.withPattern(index, next.pattern(index).withLeads(listOf(lead)))
             }
             next
         }
@@ -1109,6 +1130,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** ドラムの音の作り方。 */
     fun setDrumKit(kit: DrumKit) {
         repository.updateCurrentSong { it.copy(drumKit = kit) }
+    }
+
+    /** コードとベースの音の作り方。 */
+    fun setSoundSet(set: SoundSet) {
+        repository.updateCurrentSong { it.copy(soundSet = set) }
     }
 
     /**

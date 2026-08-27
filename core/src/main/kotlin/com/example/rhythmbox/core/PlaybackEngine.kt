@@ -24,6 +24,8 @@ data class EngineConfig(
     val leadVibrato: Float = 0f,
     /** ドラムの音の作り方。 */
     val drumKit: DrumKit = DrumKit.NORMAL,
+    /** コードとベースの音の作り方。 */
+    val soundSet: SoundSet = SoundSet.NORMAL,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -338,7 +340,7 @@ class PlaybackEngine(
     /** 「音の伸び」つまみを反映した、そのトラックの音色。 */
     private fun timbreOf(cfg: EngineConfig, instrument: Instrument): ToneSynth.Timbre =
         with(ToneSynth) {
-            val base = timbre(instrument, cfg.leadVoice).withHold(
+            val base = timbre(instrument, cfg.leadVoice, cfg.soundSet).withHold(
                 cfg.holds.getOrElse(instrument.trackIndex) { ToneSynth.DEFAULT_HOLD },
             )
             // 揺れはリードだけ。コードとベースまで揺れると土台が不安定に聞こえる。

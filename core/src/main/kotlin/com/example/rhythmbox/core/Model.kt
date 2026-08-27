@@ -42,6 +42,21 @@ enum class DrumKit(val label: String) {
     CHIP("チップ"),
 }
 
+/**
+ * コードとベースの音の作り方。
+ *
+ * リードは [ToneSynth.LeadVoice] で 1 音ずつ選べるが、コードとベースは
+ * 「土台をどちらの世界で鳴らすか」という選び方のほうが合うので、まとめて切り替える。
+ */
+@Serializable
+enum class SoundSet(val label: String) {
+    /** 加算合成（今までの音）。 */
+    NORMAL("標準"),
+
+    /** チップ音源。コードはパルス波、ベースは三角波。 */
+    CHIP("チップ"),
+}
+
 /** 音程を持つ楽器。ミキサー上ではドラム 8 音色の後ろに並ぶ。 */
 enum class Instrument(val label: String, val shortLabel: String) {
     CHORD("コード", "CHD"),
@@ -700,6 +715,8 @@ data class Song(
     val leadVibrato: Float = 0f,
     /** ドラムの音の作り方。 */
     val drumKit: DrumKit = DrumKit.NORMAL,
+    /** コードとベースの音の作り方。 */
+    val soundSet: SoundSet = SoundSet.NORMAL,
     /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
