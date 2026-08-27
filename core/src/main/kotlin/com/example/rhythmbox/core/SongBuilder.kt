@@ -87,7 +87,12 @@ object SongBuilder {
         firstBlockOf.entries.sortedBy { it.key }.forEach { (patternIndex, blockIndex) ->
             val blockChords = chords.subList(blockIndex * BLOCK, blockIndex * BLOCK + BLOCK)
             val generated = PatternGenerator.generate(style, random, song.pattern(patternIndex).name)
-            var pattern = song.pattern(patternIndex).withRhythmOf(generated)
+            // ブロックと同じ長さのパターンにして、最後の 1 小節だけ崩す。
+            // 4 小節が寸分たがわず同じだと「ループ」に聞こえて「曲」にならない。
+            var pattern = song.pattern(patternIndex)
+                .withRhythmOf(generated)
+                .withBarCount(BLOCK)
+                .withRhythmAt(BLOCK - 1, PatternGenerator.fill(generated, random))
             if (withMelody) {
                 // ブロックのコード 1 つにつき 1 小節ぶんの旋律を作る。
                 val leads = MelodyGenerator.generateBars(

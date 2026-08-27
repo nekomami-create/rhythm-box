@@ -708,7 +708,8 @@ data class Pattern(
         // 旋律は withLeads を通す。音の無いところに残った強弱もそこで落ちる。
     ).withLeads(leadBars)
 
-    private fun withRow(row: Int, value: Int): Pattern {
+    /** その行を丸ごと置き換える。消したステップの強弱も一緒に落ちる。 */
+    internal fun withRow(row: Int, value: Int): Pattern {
         val bits = value and STEP_MASK
         // 消したステップの強弱も落とす。置き直したときに前の強さが残っていると驚く。
         return copy(

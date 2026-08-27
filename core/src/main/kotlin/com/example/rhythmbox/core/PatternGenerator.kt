@@ -66,6 +66,69 @@ object PatternGenerator {
     }
 
     /**
+     * [base] の最後の 1 拍を崩したもの（フィル）。
+     *
+     * 4 小節が寸分たがわず同じだと、いくら中身が良くても「ループ」に聞こえて
+     * 「曲」にならない。区切りの手前でいったん刻みを止めて叩き込むと、
+     * そこで一区切り付いて、次の 4 小節が始まったように聞こえる。
+     *
+     * 崩すのは最後の 1 拍だけ。長く崩すと土台が抜けて間延びするし、
+     * 4 ステップなら必ず小節に収まるので、どの型に当てても破綻しない。
+     *
+     * 触るのはドラムの行だけ。コードとベースはそのまま鳴らす。フィルの
+     * あいだ和音まで止まると、曲が切れたように聞こえてしまう。
+     */
+    fun fill(base: Pattern, random: Random): Pattern {
+        val window = STEPS_PER_BAR - FILL_STEPS
+        val mask = ((1 shl FILL_STEPS) - 1) shl window
+        val run = FILL_RUNS.random(random)
+
+        // 叩き込む音をまず組み立てる。
+        val hits = IntArray(DRUM_COUNT)
+        var last = -1
+        run.forEachIndexed { offset, voice ->
+            if (voice == null) return@forEachIndexed
+            val step = window + offset
+            hits[voice.ordinal] = hits[voice.ordinal] or (1 shl step)
+            last = step
+        }
+
+        var result = base
+        for (voice in 0 until DRUM_COUNT) {
+            // 窓の中の刻みを止めてから叩き込む。止めないと叩き込みが埋もれる。
+            result = result.withRow(voice, (base.rowAt(voice) and mask.inv()) or hits[voice])
+        }
+        // 最後の 1 発だけ強くして、次の小節の頭へ送り出す。
+        val tail = run.lastOrNull { it != null }
+        if (last >= 0 && tail != null) {
+            val row = tail.ordinal
+            result = result.withLevels(
+                row,
+                result.maskAt(result.accents, row) or (1 shl last),
+                result.maskAt(result.ghosts, row) and (1 shl last).inv(),
+            )
+        }
+        return result
+    }
+
+    /** 崩すのは最後の 1 拍（16 分 4 つ）。 */
+    private const val FILL_STEPS = 4
+
+    /**
+     * 叩き込みの型。null は休み。
+     * タムは 1 音色しか無いが、発音ごとに高さが揺れるので連打しても平板にならない。
+     */
+    private val FILL_RUNS: List<List<Voice?>> = listOf(
+        listOf(Voice.SNARE, Voice.SNARE, Voice.SNARE, Voice.SNARE),
+        listOf(Voice.SNARE, Voice.SNARE, Voice.TOM, Voice.TOM),
+        listOf(Voice.TOM, Voice.TOM, Voice.SNARE, Voice.SNARE),
+        listOf(Voice.SNARE, null, Voice.SNARE, Voice.SNARE),
+        listOf(Voice.TOM, null, Voice.TOM, Voice.SNARE),
+        listOf(null, Voice.SNARE, Voice.TOM, Voice.SNARE),
+        listOf(null, null, Voice.SNARE, Voice.SNARE),
+    )
+
+    /**
      * 強弱を置く。すべて同じ音量だと打ち込みが機械的に聞こえる。
      *
      * 大事なのは「強い音を置く」ことではなく「差を作る」こと。
