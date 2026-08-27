@@ -43,6 +43,18 @@ fun ScopeChips(
     )
 }
 
+/**
+ * ピアノロールを長押ししたときに何をするか。
+ *
+ * 長押しは「音を伸ばす」に先に使っていたので、強弱を足すには
+ * どちらの道具を使うかを選んでもらうしかない。隠し操作にせず、
+ * 今どちらが効くのかを画面に出しておく。
+ */
+enum class LeadHoldMode(val label: String) {
+    STRETCH("伸ばす"),
+    LEVEL("強弱"),
+}
+
 /** パッドで何を鳴らすか。 */
 enum class PadMode(val label: String) {
     DRUM("ドラム"),

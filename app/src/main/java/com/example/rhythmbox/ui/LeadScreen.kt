@@ -95,6 +95,15 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onSelect = viewModel::setLeadScope,
         )
 
+        // 長押しに 2 つの役目を持たせたので、今どちらが効くのかを出しておく。
+        OptionChips(
+            label = "長押し",
+            options = LeadHoldMode.entries,
+            selected = state.leadHoldMode,
+            labelOf = { it.label },
+            onSelect = viewModel::setLeadHoldMode,
+        )
+
         // パターンの中の何小節目を書いているか。打ち込みの画面と同じ帯を出している。
         PatternBarSelector(
             count = pattern.barCount,
@@ -125,7 +134,10 @@ fun LeadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                     playingStep = playingStep,
                     scrollState = horizontalScroll,
                     onToggle = { step -> viewModel.toggleLead(step, midi) },
-                    onHold = viewModel::holdLead,
+                    onHold = when (state.leadHoldMode) {
+                        LeadHoldMode.STRETCH -> viewModel::holdLead
+                        LeadHoldMode.LEVEL -> viewModel::cycleLeadLevel
+                    },
                     onPreview = { viewModel.previewLead(midi) },
                 )
             }
@@ -345,8 +357,11 @@ private fun PianoRollRow(
                 val held = !head && pattern.soundingLead(leadBar, step) == midi
                 val on = head || held
                 val playing = step == playingStep
+                val level = if (head) pattern.leadLevelAt(leadBar, step) else Pattern.Level.NORMAL
                 val color = when {
                     on && playing -> scheme.tertiary
+                    // 弱い音は薄く。伸ばしている途中（背が低い）とは高さで見分く。
+                    head && level == Pattern.Level.GHOST -> scheme.secondary.copy(alpha = 0.55f)
                     head -> scheme.secondary
                     held -> scheme.secondary.copy(alpha = 0.45f)
                     playing -> scheme.outline
@@ -367,7 +382,18 @@ private fun PianoRollRow(
                             onClick = { onToggle(step) },
                             onLongClick = { onHold(step) },
                         ),
-                )
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    // 強い音は下に線を引く。打ち込みのグリッドと同じ見せ方。
+                    if (level == Pattern.Level.ACCENT) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(scheme.onSecondary, RoundedCornerShape(2.dp)),
+                        )
+                    }
+                }
             }
         }
     }

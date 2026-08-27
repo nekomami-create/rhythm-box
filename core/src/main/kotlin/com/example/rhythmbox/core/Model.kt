@@ -233,6 +233,12 @@ data class Pattern(
      * 1 小節目は上の [rows] / [accents] / [ghosts] がそのまま持っている。
      */
     val extraBars: List<BarGrid> = emptyList(),
+    /**
+     * 旋律の強弱。小節ごとに 1 つ、ビットがステップ（[leads] と同じ並び）。
+     * 使っていない曲では空のままにして、保存の中身が増えないようにする。
+     */
+    val leadAccents: List<Int> = emptyList(),
+    val leadGhosts: List<Int> = emptyList(),
 ) {
     /** 実際に使う旋律の一覧。旧形式しか無いときはそれを 1 小節ぶんとして扱う。 */
     val leadBars: List<List<Int>>
@@ -433,6 +439,43 @@ data class Pattern(
     fun leadAt(bar: Int, step: Int): Int =
         leadBars[bar.mod(leadBarCount)].getOrElse(step) { REST }
 
+    internal fun leadMaskAt(masks: List<Int>, bar: Int): Int =
+        masks.getOrElse(bar) { 0 } and STEP_MASK
+
+    /** [step] にある旋律の音の強さ。音が無ければ [Level.NORMAL]。 */
+    fun leadLevelAt(bar: Int, step: Int): Level {
+        if (!isNote(leadAt(bar, step))) return Level.NORMAL
+        val index = bar.mod(leadBarCount)
+        return when {
+            (leadMaskAt(leadAccents, index) shr step) and 1 == 1 -> Level.ACCENT
+            (leadMaskAt(leadGhosts, index) shr step) and 1 == 1 -> Level.GHOST
+            else -> Level.NORMAL
+        }
+    }
+
+    /**
+     * 旋律の音の強さを 普通 → 強 → 弱 → 普通 と巡回させる。
+     * 音の無いステップは変えない。
+     */
+    fun cycleLeadLevel(bar: Int, step: Int): Pattern {
+        if (!isNote(leadAt(bar, step))) return this
+        val index = bar.mod(leadBarCount)
+        val bit = 1 shl step
+        val level = next(leadLevelAt(bar, step))
+        val accent = leadMaskAt(leadAccents, index)
+            .let { if (level == Level.ACCENT) it or bit else it and bit.inv() }
+        val ghost = leadMaskAt(leadGhosts, index)
+            .let { if (level == Level.GHOST) it or bit else it and bit.inv() }
+        return copy(
+            leadAccents = compact(
+                List(leadBarCount) { if (it == index) accent else leadMaskAt(leadAccents, it) },
+            ),
+            leadGhosts = compact(
+                List(leadBarCount) { if (it == index) ghost else leadMaskAt(leadGhosts, it) },
+            ),
+        )
+    }
+
     fun withLead(bar: Int, step: Int, midi: Int): Pattern {
         val bars = leadBars
         val index = bar.mod(bars.size)
@@ -551,12 +594,24 @@ data class Pattern(
      */
     fun withLeadBarCount(count: Int): Pattern = withBarCount(count)
 
-    fun withLeads(bars: List<List<Int>>): Pattern = copy(
-        lead = emptyList(),
-        leads = bars.ifEmpty { listOf(emptyLead()) }
+    fun withLeads(bars: List<List<Int>>): Pattern {
+        val fixed = bars.ifEmpty { listOf(emptyLead()) }
             .take(MAX_LEAD_BARS)
-            .map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
-    )
+            .map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } }
+        // 音の無いステップに強弱だけ残っても意味がないので落とす。
+        // 音を消す・小節数を変える操作はすべてここを通るので、1 か所で済む。
+        val played = fixed.map { notes ->
+            notes.indices.fold(0) { bits, step ->
+                if (isNote(notes[step])) bits or (1 shl step) else bits
+            }
+        }
+        return copy(
+            lead = emptyList(),
+            leads = fixed,
+            leadAccents = compact(List(fixed.size) { leadMaskAt(leadAccents, it) and played[it] }),
+            leadGhosts = compact(List(fixed.size) { leadMaskAt(leadGhosts, it) and played[it] }),
+        )
+    }
 
     /** [bar] 回目の小節の音だけ消す。 */
     fun clearLead(bar: Int): Pattern =
@@ -573,6 +628,8 @@ data class Pattern(
         extraBars = emptyList(),
         lead = emptyList(),
         leads = listOf(emptyLead()),
+        leadAccents = emptyList(),
+        leadGhosts = emptyList(),
     )
 
     fun isEmpty(): Boolean =
@@ -590,9 +647,8 @@ data class Pattern(
         accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
         ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
         extraBars = extraBars.take(MAX_BARS - 1).map { it.normalized() },
-        lead = emptyList(),
-        leads = leadBars.map { notes -> List(STEPS_PER_BAR) { notes.getOrElse(it) { REST } } },
-    )
+        // 旋律は withLeads を通す。音の無いところに残った強弱もそこで落ちる。
+    ).withLeads(leadBars)
 
     private fun withRow(row: Int, value: Int): Pattern {
         val bits = value and STEP_MASK

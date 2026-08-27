@@ -130,6 +130,8 @@ data class RhythmUiState(
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
     val leadScope: GenerateScope = GenerateScope.PATTERN,
+    /** ピアノロールの長押しが「伸ばす」か「強弱」か。曲には残らない道具の設定。 */
+    val leadHoldMode: LeadHoldMode = LeadHoldMode.STRETCH,
     /** 書き出し中の進捗（0.0〜1.0）。書き出していなければ null。 */
     val exportProgress: Float? = null,
     /** 書き出しが終わったときに出す文言。 */
@@ -659,6 +661,22 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** いま選んでいる繰り返しの音だけ消す。 */
+    /** ピアノロールの長押しで何をするか。 */
+    fun setLeadHoldMode(mode: LeadHoldMode) {
+        _uiState.update { it.copy(leadHoldMode = mode) }
+    }
+
+    /** 旋律の音の強さを 普通 → 強 → 弱 と巡回させる（長押し）。 */
+    fun cycleLeadLevel(step: Int) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val bar = state.selectedBar
+        if (!Pattern.isNote(state.song.pattern(index).leadAt(bar, step))) return
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).cycleLeadLevel(bar, step))
+        }
+    }
+
     fun clearLeadBar() {
         val state = _uiState.value
         val index = state.selectedPattern

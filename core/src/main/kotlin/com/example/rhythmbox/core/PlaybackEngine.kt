@@ -308,7 +308,13 @@ class PlaybackEngine(
         val leadMidi = pattern.leadAt(leadBar, step)
         if (Pattern.isNote(leadMidi)) {
             val timbre = timbreOf(cfg, Instrument.LEAD)
-            triggerNote(Instrument.LEAD, leadMidi, leadGate(cfg, bar, step, timbre), timbre)
+            triggerNote(
+                Instrument.LEAD,
+                leadMidi,
+                leadGate(cfg, bar, step, timbre),
+                timbre,
+                pattern.leadLevelAt(leadBar, step).gain,
+            )
         }
 
         timeline.record(frame = nextStepFrame.toLong(), bar = bar, step = step)
