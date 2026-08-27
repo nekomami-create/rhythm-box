@@ -682,6 +682,11 @@ data class Song(
     /** リードの音色。 */
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
     /**
+     * リードの揺れ（ビブラート）。0 で揺らさない（既定＝今までの音）。
+     * 実機のチップ音源は音量を変えられないぶん、揺らして表情を付けていた。
+     */
+    val leadVibrato: Float = 0f,
+    /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。
      */
@@ -820,7 +825,18 @@ enum class ChordStyle(val label: String) {
 
     /** 上がって下りてを繰り返す。 */
     UP_DOWN("上下"),
+
+    /**
+     * 1/60 秒で構成音を回す（チップ音源の高速アルペジオ）。
+     *
+     * 実機は 1 声部で 1 音しか出せないので、和音は「速く回して重なって聞こえさせる」。
+     * ステップ単位の [UP] とは 2 桁違う速さで、和音というより 1 つの音色に聞こえる。
+     */
+    CHIP_ARPEGGIO("高速アルペジオ"),
     ;
+
+    /** 発音中に音程を回す弾き方か。回す仕事は再生側が持つ。 */
+    val chipArpeggio: Boolean get() = this == CHIP_ARPEGGIO
 
     /**
      * [index] 回目に鳴らす音を [voicing] から選ぶ。BLOCK なら全部。
@@ -830,6 +846,8 @@ enum class ChordStyle(val label: String) {
      */
     fun notesAt(voicing: List<Int>, index: Int): List<Int> {
         if (this == BLOCK || voicing.isEmpty()) return voicing
+        // 高速アルペジオはいちばん下の音だけを鳴らし、あとは発音中に音程を動かす。
+        if (this == CHIP_ARPEGGIO) return listOf(voicing.first())
         val size = voicing.size
         val position = when (this) {
             UP -> index.mod(size)

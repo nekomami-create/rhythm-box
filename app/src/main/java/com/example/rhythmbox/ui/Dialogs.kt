@@ -479,6 +479,7 @@ fun MixerDialog(
     onHoldChange: (Int, Float) -> Unit,
     onChordStyleChange: (ChordStyle) -> Unit,
     onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
+    onLeadVibratoChange: (Float) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -543,6 +544,29 @@ fun MixerDialog(
                             )
                             Text(
                                 text = holdLabel(setting.hold),
+                                modifier = Modifier.width(36.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    // リード行だけ、揺れ（ビブラート）を掛けられる。
+                    // チップ音源は音量を変えられないぶん、揺らして表情を付けていた。
+                    if (track == Instrument.LEAD.trackIndex) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "揺れ",
+                                modifier = Modifier.width(42.dp).padding(start = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Slider(
+                                value = song.leadVibrato,
+                                onValueChange = onLeadVibratoChange,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = vibratoLabel(song.leadVibrato),
                                 modifier = Modifier.width(36.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -646,6 +670,13 @@ fun MixerDialog(
 }
 
 /** つまみの位置を言葉にする。真ん中が既定の音。 */
+private fun vibratoLabel(amount: Float): String = when {
+    amount < 0.05f -> "なし"
+    amount < 0.35f -> "浅め"
+    amount < 0.7f -> "標準"
+    else -> "深め"
+}
+
 private fun holdLabel(hold: Float): String = when {
     hold < 0.2f -> "短"
     hold < 0.42f -> "やや短"

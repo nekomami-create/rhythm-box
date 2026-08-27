@@ -164,16 +164,24 @@ class ChipWaveTest {
     @Test
     fun `the voices that were already there still use the old method`() {
         // チップ音色を足したせいで、今までの音が変わっていないこと。
-        val chip = setOf(
-            ToneSynth.LeadVoice.PULSE_12,
-            ToneSynth.LeadVoice.PULSE_25,
-            ToneSynth.LeadVoice.PULSE_50,
-            ToneSynth.LeadVoice.CHIP_TRIANGLE,
-            ToneSynth.LeadVoice.CHIP_NOISE,
+        // チップ側を並べると音色を足すたびに直すことになるので、
+        // 守りたいほう（前からあった 10 音色）を名指しで押さえる。
+        val original = listOf(
+            ToneSynth.LeadVoice.SQUARE,
+            ToneSynth.LeadVoice.SAW,
+            ToneSynth.LeadVoice.SOFT,
+            ToneSynth.LeadVoice.BELL,
+            ToneSynth.LeadVoice.TRIANGLE,
+            ToneSynth.LeadVoice.PLUCK,
+            ToneSynth.LeadVoice.ORGAN,
+            ToneSynth.LeadVoice.BRASS,
+            ToneSynth.LeadVoice.FLUTE,
+            ToneSynth.LeadVoice.GLASS,
         )
-        for (voice in ToneSynth.LeadVoice.entries - chip) {
+        for (voice in original) {
             val timbre = ToneSynth.timbre(Instrument.LEAD, voice)
             assertEquals("${voice.label} は加算合成のまま", ToneSynth.Waveform.Additive, timbre.wave)
+            assertTrue("${voice.label} は何も動かさないまま", !timbre.modulation.active)
         }
         // コードとベースも、この段階ではまだ触っていない。
         assertEquals(ToneSynth.Waveform.Additive, ToneSynth.timbre(Instrument.CHORD).wave)
@@ -187,6 +195,7 @@ class ChipWaveTest {
             ToneSynth.LeadVoice.PULSE_25 to ToneSynth.Waveform.Pulse(0.25f),
             ToneSynth.LeadVoice.PULSE_50 to ToneSynth.Waveform.Pulse(0.5f),
             ToneSynth.LeadVoice.CHIP_TRIANGLE to ToneSynth.Waveform.ChipTriangle,
+            ToneSynth.LeadVoice.PULSE_SWEEP to ToneSynth.Waveform.Pulse(0.125f),
             ToneSynth.LeadVoice.CHIP_NOISE to ToneSynth.Waveform.Noise(shortPeriod = true),
         )
         for ((voice, wave) in waves) {

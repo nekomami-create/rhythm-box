@@ -535,6 +535,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             swing = song.swing,
             chordStyle = song.chordStyle,
             leadVoice = song.leadVoice,
+            leadVibrato = song.leadVibrato,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1096,6 +1097,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** リードの音色。 */
     fun setLeadVoice(voice: ToneSynth.LeadVoice) {
         repository.updateCurrentSong { it.copy(leadVoice = voice) }
+    }
+
+    /** リードの揺れ（ビブラート）。 */
+    fun setLeadVibrato(amount: Float) {
+        repository.updateCurrentSong { it.copy(leadVibrato = amount.coerceIn(0f, 1f)) }
     }
 
     /**

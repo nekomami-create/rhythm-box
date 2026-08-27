@@ -3,6 +3,7 @@ package com.example.rhythmbox.core
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
+import kotlin.math.pow
 
 /** 音声スレッドが 1 ブロックごとに読む設定のスナップショット（不変）。 */
 data class EngineConfig(
@@ -19,6 +20,8 @@ data class EngineConfig(
     val chordStyle: ChordStyle = ChordStyle.BLOCK,
     /** リードの音色。 */
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
+    /** リードの揺れ（ビブラート）。0 で揺らさない。 */
+    val leadVibrato: Float = 0f,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -235,11 +238,19 @@ class PlaybackEngine(
         }
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
+            val voicing = chord.voicing()
+            // 高速アルペジオは 1 声部で鳴らし、構成音までの距離を渡して回してもらう。
+            val arpeggio = if (cfg.chordStyle.chipArpeggio && voicing.isNotEmpty()) {
+                IntArray(voicing.size) { voicing[it] - voicing[0] }
+            } else {
+                null
+            }
             triggerChord(
-                cfg.chordStyle.notesAt(chord.voicing(), chordHitIndex(plan, bar, step)),
+                cfg.chordStyle.notesAt(voicing, chordHitIndex(plan, bar, step)),
                 gateFrames(pattern.nextHit(ROW_CHORD, step) - step, timbre, cfg.bpm),
                 timbre,
                 pattern.levelAt(ROW_CHORD, step).gain,
+                arpeggio,
             )
         }
         if (pattern.isOn(ROW_BASS, step)) {
@@ -278,7 +289,7 @@ class PlaybackEngine(
      * 状態を持たずに数えるので、ループしても分散の並びがずれない。
      */
     private fun chordHitIndex(plan: PlaybackPlan, bar: Int, step: Int): Int {
-        if (config.chordStyle == ChordStyle.BLOCK) return 0
+        if (config.chordStyle == ChordStyle.BLOCK || config.chordStyle.chipArpeggio) return 0
         val bits = plan.patternAt(bar).rowAt(ROW_CHORD)
         var count = 0
         for (earlier in 0 until step) {
@@ -315,9 +326,11 @@ class PlaybackEngine(
     /** 「音の伸び」つまみを反映した、そのトラックの音色。 */
     private fun timbreOf(cfg: EngineConfig, instrument: Instrument): ToneSynth.Timbre =
         with(ToneSynth) {
-            timbre(instrument, cfg.leadVoice).withHold(
+            val base = timbre(instrument, cfg.leadVoice).withHold(
                 cfg.holds.getOrElse(instrument.trackIndex) { ToneSynth.DEFAULT_HOLD },
             )
+            // 揺れはリードだけ。コードとベースまで揺れると土台が不安定に聞こえる。
+            if (instrument == Instrument.LEAD) base.withVibrato(cfg.leadVibrato) else base
         }
 
     /** 次の音までの長さから、実際に音を伸ばすフレーム数を決める。 */
@@ -352,9 +365,15 @@ class PlaybackEngine(
         slotGain[target] = velocity
     }
 
-    private fun triggerChord(midis: List<Int>, gate: Long, timbre: ToneSynth.Timbre, velocity: Float = 1f) {
+    private fun triggerChord(
+        midis: List<Int>,
+        gate: Long,
+        timbre: ToneSynth.Timbre,
+        velocity: Float = 1f,
+        arpeggio: IntArray? = null,
+    ) {
         releaseInstrument(Instrument.CHORD)
-        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre, velocity)
+        for (midi in midis) startTone(Instrument.CHORD, midi, gate, timbre, velocity, arpeggio)
     }
 
     private fun triggerNote(
@@ -381,6 +400,7 @@ class PlaybackEngine(
         gate: Long,
         timbre: ToneSynth.Timbre,
         velocity: Float,
+        arpeggio: IntArray? = null,
     ) {
         var target: ToneVoice? = null
         var quietest: ToneVoice? = null
@@ -391,7 +411,7 @@ class PlaybackEngine(
             }
             if (quietest == null || voice.level < quietest.level) quietest = voice
         }
-        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre, velocity)
+        (target ?: quietest)?.start(instrument, midi, gate, sampleRate, timbre, velocity, arpeggio)
     }
 
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
@@ -453,9 +473,20 @@ class PlaybackEngine(
         // 波形を直接作るときの状態。発音のたびに [start] で決まる。
         private var waveKind = WAVE_ADDITIVE
         private var duty = 0.5f
+        private var baseDuty = 0.5f
         private var noiseShort = false
         private var lfsr = ToneSynth.LFSR_SEED
         private var noiseValue = 1f
+
+        // 1/60 秒ごとに音を動かすための状態。動かすものが無ければ丸ごと飛ばす。
+        private var modulated = false
+        private var modulation = ToneSynth.Modulation()
+        private var baseStep = 0.0
+        private var tick = 0
+        private var framesPerTick = 1
+        private var framesToTick = 1
+        private var arpCount = 0
+        private val arpOffsets = IntArray(MAX_ARPEGGIO)
 
         private enum class Stage { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE }
 
@@ -467,11 +498,17 @@ class PlaybackEngine(
             timbre: ToneSynth.Timbre,
             /** アクセント / 幽霊音の強さ。[level]（包絡線の今の値）とは別物。 */
             velocity: Float,
+            /**
+             * 1/60 秒ごとに回す音程のずれ（半音）。高速アルペジオに使う。
+             * 渡すと 1 声部で和音に聞こえる。
+             */
+            arpeggio: IntArray? = null,
         ) {
             val frequency = ToneSynth.frequency(midi)
             this.instrument = instrument
             phase = 0.0
-            phaseStep = frequency / sampleRate
+            baseStep = frequency / sampleRate
+            phaseStep = baseStep
             gate = gateFrames.coerceAtLeast(1L)
             stage = Stage.ATTACK
             level = 0f
@@ -493,6 +530,20 @@ class PlaybackEngine(
                 ToneSynth.Waveform.ChipTriangle -> WAVE_CHIP_TRIANGLE
                 ToneSynth.Waveform.Additive -> WAVE_ADDITIVE
             }
+            baseDuty = duty
+
+            modulation = timbre.modulation
+            arpCount = 0
+            if (arpeggio != null) {
+                val count = minOf(arpeggio.size, MAX_ARPEGGIO)
+                for (i in 0 until count) arpOffsets[i] = arpeggio[i]
+                arpCount = count
+            }
+            modulated = arpCount > 1 || modulation.active
+            tick = 0
+            framesPerTick = (sampleRate / ToneSynth.TICKS_PER_SECOND).toInt().coerceAtLeast(1)
+            framesToTick = framesPerTick
+            if (modulated) applyModulation()
             attackStep = (1.0 / (timbre.attack * sampleRate).coerceAtLeast(1.0)).toFloat()
             decayCoefficient = exp(-1.0 / (timbre.decay * sampleRate)).toFloat()
             releaseCoefficient = exp(-1.0 / (timbre.release * sampleRate)).toFloat()
@@ -539,6 +590,11 @@ class PlaybackEngine(
             if (stage == Stage.IDLE) return
             val amplitude = gain * trackGain
             for (k in 0 until count) {
+                if (modulated && --framesToTick <= 0) {
+                    framesToTick = framesPerTick
+                    tick++
+                    applyModulation()
+                }
                 advanceEnvelope()
                 if (stage == Stage.IDLE) {
                     instrument = null
@@ -569,6 +625,19 @@ class PlaybackEngine(
                 sample += ToneSynth.sine(phase * harmonics[h]) * harmonicGains[h]
             }
             return sample
+        }
+
+        /**
+         * 1/60 秒ぶん進んだところで、音程とパルス幅を置き直す。
+         *
+         * 音を鳴らし直すのではなく発音中のものを動かすので、
+         * 高速アルペジオでも切れ目が入らず 1 つの音として繋がって聞こえる。
+         */
+        private fun applyModulation() {
+            var semitones = ToneSynth.semitoneOffset(modulation, tick)
+            if (arpCount > 0) semitones += arpOffsets[ToneSynth.arpeggioIndex(tick, arpCount)]
+            phaseStep = if (semitones == 0.0) baseStep else baseStep * 2.0.pow(semitones / 12.0)
+            if (waveKind == WAVE_PULSE) duty = ToneSynth.dutyAt(modulation, tick, baseDuty)
         }
 
         /** LFSR を 1 段進める。1 周期に 1 回だけ呼ぶので、音の高さが粗さになる。 */
@@ -616,6 +685,9 @@ class PlaybackEngine(
             const val WAVE_PULSE = 1
             const val WAVE_CHIP_TRIANGLE = 2
             const val WAVE_NOISE = 3
+
+            /** 高速アルペジオで回せる音の数。7 の和音でも足りる。 */
+            const val MAX_ARPEGGIO = 8
         }
     }
 

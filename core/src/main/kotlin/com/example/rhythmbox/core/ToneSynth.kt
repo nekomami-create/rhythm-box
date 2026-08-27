@@ -64,6 +64,30 @@ object ToneSynth {
     }
 
     /**
+     * 1/60 秒ごとに音を動かす設定。
+     *
+     * チップ音源の「動き」はほぼ全部ここから来ている。実機は 1 フレーム
+     * （1/60 秒）ごとに音程やパルス幅を書き換えていて、その速さが
+     * そのまま音色の一部になっている。テンポには連動しない。
+     */
+    data class Modulation(
+        /** 音の高さを揺らす速さ（Hz）。0 なら揺らさない。 */
+        val vibratoHz: Double = 0.0,
+        /** 揺らす幅（半音）。 */
+        val vibratoDepth: Double = 0.0,
+        /** 揺らし始めるまでの間（秒）。出だしから揺れると不自然に聞こえる。 */
+        val vibratoDelay: Double = 0.0,
+        /** パルス幅を順に切り替える表。空なら固定。 */
+        val dutyTable: List<Float> = emptyList(),
+        /** 表を 1 つ進める間隔（1/60 秒を 1 とする）。 */
+        val dutyTicks: Int = 8,
+    ) {
+        /** 何かしら動かすものがあるか。無ければ再生側は変調の計算ごと飛ばす。 */
+        val active: Boolean
+            get() = (vibratoHz > 0.0 && vibratoDepth > 0.0) || dutyTable.isNotEmpty()
+    }
+
+    /**
      * 音色の設定。時間の単位は秒。
      * [sustain] は減衰後に保つ音量の割合、[gain] は 1 音あたりの音量。
      */
@@ -78,6 +102,8 @@ object ToneSynth {
         val maxGateSteps: Int,
         /** 波形の作り方。既定は今までの加算合成なので、既存の音は変わらない。 */
         val wave: Waveform = Waveform.Additive,
+        /** 発音中に音を動かす設定。既定は何も動かさない。 */
+        val modulation: Modulation = Modulation(),
     )
 
     private val CHORD = Timbre(
@@ -153,6 +179,33 @@ object ToneSynth {
     const val DEFAULT_HOLD = 0.5f
 
     /**
+     * 「揺れ」つまみを反映した音色。[amount] は 0〜1 で、0 が揺らさない（既定）。
+     *
+     * 深さを半音より大きくすると、揺れではなく音痴に聞こえる。
+     */
+    fun Timbre.withVibrato(amount: Float): Timbre {
+        val level = amount.coerceIn(0f, 1f)
+        if (level <= 0f) return this
+        return copy(
+            modulation = modulation.copy(
+                vibratoDepth = MAX_VIBRATO_DEPTH * level,
+                vibratoHz = VIBRATO_HZ,
+                vibratoDelay = VIBRATO_DELAY,
+            ),
+        )
+    }
+
+    /** 揺れの上限（半音）。 */
+    private const val MAX_VIBRATO_DEPTH = 0.35
+
+    /** 揺れの速さ（Hz）と、掛かり始めるまでの間（秒）。 */
+    private const val VIBRATO_HZ = 5.5
+    private const val VIBRATO_DELAY = 0.12
+
+    /** 揺れが最大の幅になるまでの時間（秒）。いきなり最大だと不自然。 */
+    private const val VIBRATO_RAMP = 0.18
+
+    /**
      * リードの音色。
      *
      * 倍音の組み合わせで音の芯が決まり、包絡線の伸び縮みで弾き方の感じが決まる。
@@ -170,6 +223,8 @@ object ToneSynth {
         internal val sustainScale: Float = 1.0f,
         /** 波形の作り方。チップ音色だけがここを使う。 */
         internal val wave: Waveform = Waveform.Additive,
+        /** 発音中に音を動かす設定。 */
+        internal val modulation: Modulation = Modulation(),
     ) {
         SQUARE(
             "スクエア",
@@ -269,6 +324,16 @@ object ToneSynth {
             sustainScale = 1.5f,
             wave = Waveform.ChipTriangle,
         ),
+        PULSE_SWEEP(
+            // パルス幅を順に切り替えると音がうねる。1 声部でも厚く聞こえる。
+            "チップ うねり",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.3,
+            decayScale = 3.0,
+            sustainScale = 1.5f,
+            wave = Waveform.Pulse(0.125f),
+            modulation = Modulation(dutyTable = listOf(0.125f, 0.25f, 0.5f, 0.25f), dutyTicks = 6),
+        ),
         CHIP_NOISE(
             // 短周期のノイズ。音程が付くので、効果音めいた旋律が書ける。
             "チップノイズ",
@@ -291,6 +356,7 @@ object ToneSynth {
             // 伸ばし続ける音色は 1 を超えないように止める。
             sustain = (LEAD.sustain * lead.sustainScale).coerceIn(0f, 0.95f),
             wave = lead.wave,
+            modulation = lead.modulation,
         )
     }
 
@@ -357,6 +423,37 @@ object ToneSynth {
 
     /** LFSR の今の出力。実機と同じく最下位ビットが 0 のときに上を向く。 */
     fun lfsrOutput(state: Int): Float = if (state and 1 == 0) 1f else -1f
+
+    // --- 1/60 秒ごとの変調 --------------------------------------------------
+
+    /** [tick] 番目（1/60 秒刻み）での音程のずれ（半音）。 */
+    fun semitoneOffset(modulation: Modulation, tick: Int): Double {
+        if (modulation.vibratoHz <= 0.0 || modulation.vibratoDepth <= 0.0) return 0.0
+        val seconds = tick / TICKS_PER_SECOND - modulation.vibratoDelay
+        if (seconds <= 0.0) return 0.0
+        val ramp = (seconds / VIBRATO_RAMP).coerceAtMost(1.0)
+        return modulation.vibratoDepth * ramp * sin(2 * PI * modulation.vibratoHz * seconds)
+    }
+
+    /** [tick] 番目でのパルス幅。表を持っていなければ [fallback] のまま。 */
+    fun dutyAt(modulation: Modulation, tick: Int, fallback: Float): Float {
+        val table = modulation.dutyTable
+        if (table.isEmpty()) return fallback
+        return table[(tick / modulation.dutyTicks.coerceAtLeast(1)).mod(table.size)]
+    }
+
+    /**
+     * [tick] 番目に鳴らす、和音の何番目の音か。
+     * [count] 個を順に回すだけ。回り終わったら頭に戻る。
+     */
+    fun arpeggioIndex(tick: Int, count: Int): Int =
+        if (count <= 0) 0 else (tick / ARPEGGIO_TICKS).mod(count)
+
+    /** 変調の刻み。実機の 1 フレームに合わせてある。 */
+    const val TICKS_PER_SECOND = 60.0
+
+    /** 高速アルペジオが音を 1 つ進める間隔（1/60 秒ごと）。 */
+    const val ARPEGGIO_TICKS = 1
 
     /** 三角波の段数と、1 周期ぶんの枠（上り 16 + 下り 16）。 */
     const val TRIANGLE_LEVELS = 16

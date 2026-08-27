@@ -39,6 +39,7 @@ object SongCodec {
                 bpm = song.bpm.coerceIn(Song.MIN_BPM, Song.MAX_BPM),
                 masterVolume = song.masterVolume.coerceIn(0f, 1f),
                 swing = song.swing.coerceIn(0f, 1f),
+                leadVibrato = song.leadVibrato.coerceIn(0f, 1f),
                 key = song.key?.let { it.copy(tonic = it.tonic.mod(12)) },
                 patterns = List(Song.PATTERN_COUNT) { index ->
                     val pattern = song.patterns.getOrNull(index) ?: Pattern.empty(('A' + index).toString())
