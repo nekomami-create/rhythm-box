@@ -30,6 +30,18 @@ enum class Voice(val label: String, val shortLabel: String) {
     COWBELL("カウベル", "CB"),
 }
 
+/**
+ * ドラムの音の作り方。音色の並び（[Voice]）は変わらず、鳴る音だけが変わる。
+ */
+@Serializable
+enum class DrumKit(val label: String) {
+    /** アナログリズムマシン風（今までの音）。 */
+    NORMAL("標準"),
+
+    /** ノイズと三角波だけで組んだチップ音源のドラム。 */
+    CHIP("チップ"),
+}
+
 /** 音程を持つ楽器。ミキサー上ではドラム 8 音色の後ろに並ぶ。 */
 enum class Instrument(val label: String, val shortLabel: String) {
     CHORD("コード", "CHD"),
@@ -686,6 +698,8 @@ data class Song(
      * 実機のチップ音源は音量を変えられないぶん、揺らして表情を付けていた。
      */
     val leadVibrato: Float = 0f,
+    /** ドラムの音の作り方。 */
+    val drumKit: DrumKit = DrumKit.NORMAL,
     /**
      * 調（キー）と音階。null なら曲に出てくるコードから推定する（今までの動き）。
      * モードやペンタトニックはコードから当てられないので、使いたい人が指定する。

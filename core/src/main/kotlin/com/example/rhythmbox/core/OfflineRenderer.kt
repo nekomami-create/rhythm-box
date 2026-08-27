@@ -38,13 +38,15 @@ object OfflineRenderer {
         voiceSamples: List<FloatArray>,
         sampleRate: Int = PlaybackEngine.DEFAULT_SAMPLE_RATE,
         tailSeconds: Double = DEFAULT_TAIL_SECONDS,
+        /** チップ音源のドラム。渡さなければ標準のものを使い回す。 */
+        chipVoiceSamples: List<FloatArray> = voiceSamples,
         onProgress: ((Float) -> Unit)? = null,
     ): FloatArray {
         if (plan.isEmpty) return FloatArray(0)
 
         val total = frameCount(plan, song.bpm, sampleRate, tailSeconds)
         val output = FloatArray(total)
-        val engine = PlaybackEngine(sampleRate, voiceSamples)
+        val engine = PlaybackEngine(sampleRate, voiceSamples, chipVoiceSamples)
         engine.config = EngineConfig(
             plan = plan,
             bpm = song.bpm,
@@ -56,6 +58,7 @@ object OfflineRenderer {
             chordStyle = song.chordStyle,
             leadVoice = song.leadVoice,
             leadVibrato = song.leadVibrato,
+            drumKit = song.drumKit,
             loop = false, // 書き出しは 1 回ぶんだけ
         )
         engine.start()

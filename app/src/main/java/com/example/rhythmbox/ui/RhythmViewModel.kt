@@ -13,6 +13,7 @@ import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
+import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.EngineConfig
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
@@ -536,6 +537,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             chordStyle = song.chordStyle,
             leadVoice = song.leadVoice,
             leadVibrato = song.leadVibrato,
+            drumKit = song.drumKit,
             metronome = state.metronome,
             loop = state.mode == PlayMode.PATTERN || state.loopSong,
         )
@@ -1104,6 +1106,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         repository.updateCurrentSong { it.copy(leadVibrato = amount.coerceIn(0f, 1f)) }
     }
 
+    /** ドラムの音の作り方。 */
+    fun setDrumKit(kit: DrumKit) {
+        repository.updateCurrentSong { it.copy(drumKit = kit) }
+    }
+
     /**
      * 曲まるごとのキーを [semitones] 半音だけ動かす。
      * 「戻す」で元に戻せるよう、控えを取ってから書き換える。
@@ -1284,6 +1291,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                     song = song,
                     plan = plan,
                     voiceSamples = container.drumSamples,
+                    chipVoiceSamples = container.chipDrumSamples,
                     sampleRate = container.sampleRate,
                     destination = destination,
                 ) { progress ->

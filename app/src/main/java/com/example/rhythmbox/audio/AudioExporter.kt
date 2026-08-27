@@ -26,11 +26,18 @@ class AudioExporter(
         song: Song,
         plan: PlaybackPlan,
         voiceSamples: List<FloatArray>,
+        chipVoiceSamples: List<FloatArray>,
         sampleRate: Int,
         destination: Uri,
         onProgress: (Float) -> Unit,
     ): Result = withContext(dispatcher) {
-        val samples = OfflineRenderer.render(song, plan, voiceSamples, sampleRate) {
+        val samples = OfflineRenderer.render(
+            song = song,
+            plan = plan,
+            voiceSamples = voiceSamples,
+            sampleRate = sampleRate,
+            chipVoiceSamples = chipVoiceSamples,
+        ) {
             onProgress(it * RENDER_SHARE)
         }
         check(samples.isNotEmpty()) { "書き出す小節がありません" }

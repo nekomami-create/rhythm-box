@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import com.example.rhythmbox.audio.AudioExporter
 import com.example.rhythmbox.audio.AudioOutput
+import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.DrumSynth
 import com.example.rhythmbox.core.PlaybackEngine
 import com.example.rhythmbox.files.FileExporter
@@ -46,7 +47,15 @@ class AppContainer(private val application: Application) {
     /** ドラムの波形。再生と書き出しで同じものを使う。 */
     val drumSamples: List<FloatArray> by lazy { DrumSynth.renderAll(sampleRate) }
 
-    val engine: PlaybackEngine by lazy { PlaybackEngine(sampleRate, drumSamples) }
+    /**
+     * チップ音源のドラム。曲ごとに切り替わるので、両方とも作り置きしておく。
+     * ワンショットなので 1 キットあたり 1MB に届かない。
+     */
+    val chipDrumSamples: List<FloatArray> by lazy { DrumSynth.renderAll(sampleRate, DrumKit.CHIP) }
+
+    val engine: PlaybackEngine by lazy {
+        PlaybackEngine(sampleRate, drumSamples, chipDrumSamples)
+    }
 
     val audioOutput: AudioOutput by lazy { AudioOutput(engine, framesPerBurst) }
 

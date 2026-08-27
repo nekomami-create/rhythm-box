@@ -14,7 +14,8 @@ import kotlin.random.Random
  */
 object DrumSynth {
 
-    fun renderAll(sampleRate: Int): List<FloatArray> = Voice.entries.map { render(it, sampleRate) }
+    fun renderAll(sampleRate: Int, kit: DrumKit = DrumKit.NORMAL): List<FloatArray> =
+        Voice.entries.map { render(it, sampleRate, kit) }
 
     /**
      * メトロノームのクリック。[downbeat] なら小節の頭用に高くする。
@@ -34,7 +35,13 @@ object DrumSynth {
         }
     }
 
-    fun render(voice: Voice, sampleRate: Int): FloatArray = when (voice) {
+    fun render(voice: Voice, sampleRate: Int, kit: DrumKit = DrumKit.NORMAL): FloatArray =
+        when (kit) {
+            DrumKit.NORMAL -> renderNormal(voice, sampleRate)
+            DrumKit.CHIP -> renderChip(voice, sampleRate)
+        }
+
+    private fun renderNormal(voice: Voice, sampleRate: Int): FloatArray = when (voice) {
         Voice.KICK -> kick(sampleRate)
         Voice.SNARE -> snare(sampleRate)
         Voice.CLOSED_HAT -> hat(sampleRate, decay = 0.055, tone = 0.9f)
@@ -43,6 +50,136 @@ object DrumSynth {
         Voice.RIM -> rim(sampleRate)
         Voice.TOM -> tom(sampleRate)
         Voice.COWBELL -> cowbell(sampleRate)
+    }
+
+    /**
+     * チップ音源のドラム。
+     *
+     * 実機の打楽器は、ノイズチャンネルと、音程を急降下させた三角波の 2 つだけで
+     * 作られている。専用の音源が無いので「ノイズをどれだけ短く切るか」と
+     * 「どこまで速く落とすか」しか手が無く、それがあの音の理由になっている。
+     * ここでもその 2 つだけで組む。
+     */
+    private fun renderChip(voice: Voice, sampleRate: Int): FloatArray = when (voice) {
+        Voice.KICK -> chipKick(sampleRate)
+        Voice.SNARE -> chipSnare(sampleRate)
+        Voice.CLOSED_HAT -> chipHat(sampleRate, decay = 0.018)
+        Voice.OPEN_HAT -> chipHat(sampleRate, decay = 0.135)
+        Voice.CLAP -> chipClap(sampleRate)
+        Voice.RIM -> chipRim(sampleRate)
+        Voice.TOM -> chipTom(sampleRate)
+        Voice.COWBELL -> chipCowbell(sampleRate)
+    }
+
+    // --- チップ音源のドラム -----------------------------------------------
+
+    /**
+     * LFSR ノイズを [clockHz] の速さで刻む列。
+     *
+     * 短周期にすると [ToneSynth.LFSR_BITS] ではなく 93 段で 1 周するので、
+     * 刻む速さ ÷ 93 が音程として聞こえる。金属質な音はこれで作る。
+     */
+    private class ChipNoise(sampleRate: Int, clockHz: Double, private val shortPeriod: Boolean) {
+        private var state = ToneSynth.LFSR_SEED
+        private var phase = 0.0
+        private val step = clockHz / sampleRate
+
+        fun next(): Double {
+            phase += step
+            while (phase >= 1.0) {
+                phase -= 1.0
+                state = ToneSynth.nextLfsr(state, shortPeriod)
+            }
+            return ToneSynth.lfsrOutput(state).toDouble()
+        }
+    }
+
+    /** 三角波の音程を一気に落とすキック。落ちること自体が音になっている。 */
+    private fun chipKick(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.26))
+        var phase = 0.0
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            val frequency = 42.0 + 150.0 * exp(-t / 0.012)
+            phase += frequency / sampleRate
+            out[i] = softClip(ToneSynth.chipTriangle(phase) * exp(-t / 0.055) * 1.1)
+        }
+        return normalize(out, 0.95f)
+    }
+
+    /** ノイズを短く切ったスネア。矩形波の胴を薄く足して芯を作る。 */
+    private fun chipSnare(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.20))
+        val noise = ChipNoise(sampleRate, 12_000.0, shortPeriod = false)
+        val bodyStep = 220.0 / sampleRate
+        var phase = 0.0
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            val body = ToneSynth.pulse(phase, 0.5f, bodyStep) * exp(-t / 0.020)
+            phase += bodyStep
+            out[i] = softClip(noise.next() * 0.85 * exp(-t / 0.060) + body * 0.35)
+        }
+        return normalize(out, 0.9f)
+    }
+
+    /** ノイズをごく短く切ったハット。[decay] だけでクローズド／オープンを作り分ける。 */
+    private fun chipHat(sampleRate: Int, decay: Double): FloatArray {
+        val out = FloatArray(frames(sampleRate, decay * 4.0 + 0.01))
+        val noise = ChipNoise(sampleRate, 24_000.0, shortPeriod = false)
+        val cut = Biquad.highPass(HAT_HIGH_PASS_HZ, sampleRate)
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            out[i] = softClip(cut.process(noise.next()) * exp(-t / decay))
+        }
+        return normalize(out, 0.7f)
+    }
+
+    /** ノイズを 2 連発。実機のクラップも同じで、handclap 専用の音源は無い。 */
+    private fun chipClap(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.20))
+        val noise = ChipNoise(sampleRate, 9_000.0, shortPeriod = false)
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            var envelope = exp(-t / 0.010)
+            if (t >= 0.016) envelope += exp(-(t - 0.016) / 0.045)
+            out[i] = softClip(noise.next() * envelope * 0.9)
+        }
+        return normalize(out, 0.85f)
+    }
+
+    /** 短周期ノイズを一瞬だけ。音程が付くので木質の「コッ」に聞こえる。 */
+    private fun chipRim(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.06))
+        val noise = ChipNoise(sampleRate, 32_000.0, shortPeriod = true)
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            out[i] = softClip(noise.next() * exp(-t / 0.010))
+        }
+        return normalize(out, 0.8f)
+    }
+
+    /** キックと同じ作りで、落ち方を緩やかにしたタム。 */
+    private fun chipTom(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.34))
+        var phase = 0.0
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            val frequency = 98.0 + 130.0 * exp(-t / 0.055)
+            phase += frequency / sampleRate
+            out[i] = softClip(ToneSynth.chipTriangle(phase) * exp(-t / 0.090))
+        }
+        return normalize(out, 0.9f)
+    }
+
+    /** 短周期ノイズを速く刻んだカウベル。93 段の繰り返しがそのまま音程になる。 */
+    private fun chipCowbell(sampleRate: Int): FloatArray {
+        val out = FloatArray(frames(sampleRate, 0.30))
+        val noise = ChipNoise(sampleRate, 44_000.0, shortPeriod = true)
+        for (i in out.indices) {
+            val t = i.toDouble() / sampleRate
+            out[i] = softClip(noise.next() * exp(-t / 0.070) * 0.9)
+        }
+        return normalize(out, 0.8f)
     }
 
     // --- 各音色 ---------------------------------------------------------

@@ -22,6 +22,8 @@ data class EngineConfig(
     val leadVoice: ToneSynth.LeadVoice = ToneSynth.LeadVoice.SQUARE,
     /** リードの揺れ（ビブラート）。0 で揺らさない。 */
     val leadVibrato: Float = 0f,
+    /** ドラムの音の作り方。 */
+    val drumKit: DrumKit = DrumKit.NORMAL,
     /**
      * メトロノームを鳴らすか。
      * 叩くときの目印なので曲の一部ではない。書き出しでは常に切っておく。
@@ -43,6 +45,11 @@ data class EngineConfig(
 class PlaybackEngine(
     val sampleRate: Int,
     private val voiceSamples: List<FloatArray>,
+    /**
+     * チップ音源のドラム。渡さなければ標準のものを使い回すので、
+     * キットを 1 つしか持たない呼び出し側でもそのまま動く。
+     */
+    private val chipVoiceSamples: List<FloatArray> = voiceSamples,
     private val maxPolyphony: Int = 24,
     private val maxTonePolyphony: Int = 12,
 ) {
@@ -146,13 +153,18 @@ class PlaybackEngine(
         return isPlaying
     }
 
+    /** そのとき鳴らすドラムの波形一式。 */
+    private fun kitOf(cfg: EngineConfig): List<FloatArray> =
+        if (cfg.drumKit == DrumKit.CHIP) chipVoiceSamples else voiceSamples
+
     /** 鳴っているドラム（減衰中のものを含む）をミックスする。 */
     private fun renderDrums(out: FloatArray, offset: Int, count: Int, cfg: EngineConfig) {
         val master = cfg.masterVolume
+        val kit = kitOf(cfg)
         for (slot in 0 until maxPolyphony) {
             val voice = slotVoice[slot]
             if (voice < 0) continue
-            val sample = voiceSamples[voice]
+            val sample = kit[voice]
             val gain = master * trackGain(cfg, voice) * slotGain[slot]
             var pos = slotPos[slot]
             var k = 0

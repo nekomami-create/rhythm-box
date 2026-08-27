@@ -55,6 +55,7 @@ import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggestion
+import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.Genre
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
@@ -480,6 +481,7 @@ fun MixerDialog(
     onChordStyleChange: (ChordStyle) -> Unit,
     onLeadVoiceChange: (ToneSynth.LeadVoice) -> Unit,
     onLeadVibratoChange: (Float) -> Unit,
+    onDrumKitChange: (DrumKit) -> Unit,
     onToggleMute: (Int) -> Unit,
     onUnmuteAll: () -> Unit,
     onDismiss: () -> Unit,
@@ -548,6 +550,47 @@ fun MixerDialog(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+                    // ドラムの先頭に、8 音色まとめての音の作り方を置く。
+                    // 音色ごとの設定ではないので、キックの行にだけ出す。
+                    if (track == 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(start = 8.dp),
+                        ) {
+                            Text(
+                                text = "ドラム",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            DrumKit.entries.forEach { kit ->
+                                val on = kit == song.drumKit
+                                Surface(
+                                    color = if (on) {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    contentColor = if (on) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp).clickable { onDrumKitChange(kit) },
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = kit.label,
+                                            modifier = Modifier.padding(horizontal = 10.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     // リード行だけ、揺れ（ビブラート）を掛けられる。
