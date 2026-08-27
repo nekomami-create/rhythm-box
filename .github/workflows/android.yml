@@ -35,12 +35,39 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :core:test testDebugUnitTest --no-daemon
 
+      # 配布用の鍵を secret から取り出す。置いていなければ何もせず、
+      # ビルドはデバッグ鍵（公開鍵）に落ちる。どちらで署名したかは
+      # Gradle のログに出るので、切り替わったかを目で確かめられる。
+      - name: Restore the release keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "配布用の鍵が未設定です。デバッグ鍵で署名します。"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "path=$RUNNER_TEMP/release.keystore" >> "$GITHUB_OUTPUT"
+          fi
+
       # 配布するのは release ビルド（debuggable が付かない）。
-      # 署名はリポジトリに置いた固定鍵で、debug ビルドと同じ署名になる。
       # ビルド番号を APK に埋め込む。ヘルプの先頭に出るので、
       # どの APK を入れたのかを端末側で確かめられる。
+      # 鍵のパスワードは環境変数で渡す。-P で渡すとコマンドラインに載り、
+      # 同じ機械の別プロセスから見えてしまう。Gradle は ORG_GRADLE_PROJECT_ 付きの
+      # 環境変数を、そのままプロジェクトのプロパティとして読む。
       - name: Assemble release APK
+        env:
+          ORG_GRADLE_PROJECT_releaseStoreFile: ${{ steps.keystore.outputs.path }}
+          ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.RELEASE_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_releaseKeyPassword: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon -PbuildNumber=${{ github.run_number }}
+
+      - name: Forget the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
 
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk BreakBox.apk

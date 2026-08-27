@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.rhythmbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "1.50"
+        versionCode = 51
+        versionName = "1.51"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -24,15 +24,31 @@ android {
         buildConfigField("String", "BUILD_LABEL", "\"${build ?: "手元ビルド"}\"")
     }
 
+    // 配布用の鍵は CI の secret から渡す。渡ってこなければデバッグ鍵に落ちる
+    // （手元でリリースビルドを組むときのため）。どちらで署名したかは
+    // ビルドログに出すので、切り替わったかどうかを目で確かめられる。
+    // CI からは ORG_GRADLE_PROJECT_releaseStoreFile などの環境変数で渡ってくる
+    // （Gradle がプロパティとして読む）。手元では渡さなければいい。
+    val releaseStore = (project.findProperty("releaseStoreFile") as String?)?.takeIf { it.isNotBlank() }
+    val hasReleaseKey = releaseStore != null && file(releaseStore).exists()
+
     signingConfigs {
         // リポジトリに固定したデバッグ鍵。毎回同じ署名になるので、CI が出力した
         // APK 同士を上書きインストールでき、保存した曲データが維持される。
-        // ※デバッグ用の公開鍵であり、Google Play 配布用ではない。
+        // ※世界中に知られている標準のデバッグ鍵。配布用ではない。
         getByName("debug") {
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+        }
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(releaseStore!!)
+                storePassword = project.property("releaseStorePassword") as String
+                keyAlias = project.property("releaseKeyAlias") as String
+                keyPassword = project.property("releaseKeyPassword") as String
+            }
         }
     }
 
@@ -42,9 +58,18 @@ android {
         }
         release {
             // 配布はこのビルドを使う。デバッグビルドと違い debuggable が付かない。
-            // 署名はデバッグ用と同じ固定鍵。署名が変わると上書き更新ができなくなり、
-            // 保存した曲が消えてしまうため、鍵は変えない。
-            signingConfig = signingConfigs.getByName("debug")
+            //
+            // 署名が変わると上書き更新ができなくなり、入れ直し＝保存した曲が
+            // 消えることになる。だから鍵は軽々に変えない。変えるときは
+            // 「全曲をバックアップ」で控えを取ってからにする。
+            signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
+            println(
+                if (hasReleaseKey) {
+                    "BreakBox: 配布用の鍵で署名します"
+                } else {
+                    "BreakBox: ⚠ 配布用の鍵が渡っていません。デバッグ鍵（公開鍵）で署名します"
+                },
+            )
             // R8 での圧縮は実機での動作確認ができていないので、いまは切っている。
             // （有効にすると APK は小さくなるが、壊れても CI では検出できない）
             isMinifyEnabled = false
