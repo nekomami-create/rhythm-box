@@ -16,6 +16,7 @@ import com.example.rhythmbox.core.ChordCruiser
 import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordVoicing
+import com.example.rhythmbox.core.chordStepOf
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
 import com.example.rhythmbox.core.DRUM_COUNT
@@ -793,14 +794,74 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
     /** [bar] 回目の小節で鳴るコード。曲構成で使われていれば、そこのコードを見る。 */
     fun chordForBar(bar: Int): Chord =
-        leadChords(_uiState.value.song, _uiState.value.selectedPattern, bar + 1).last()
+        chordAtStep(_uiState.value.song, _uiState.value.selectedPattern, bar, 0)
 
-    /** パターン [index] を [bars] 小節ぶん鳴らすときの、小節ごとのコード。 */
-    private fun leadChords(song: Song, index: Int, bars: Int): List<Chord> {
+    /** 選んでいるパターンの [bar] 小節目、[slot] 番目の枠に置いてあるコード。 */
+    fun placedChordAt(bar: Int, slot: Int): Chord? =
+        _uiState.value.pattern.chordSlotAt(bar, slot)
+
+    /**
+     * [bar] 小節目の [slot] 番目の枠の、ひとつ手前で鳴っているコード。
+     * 「この流れなら次はこれ」を出すのに使う。
+     */
+    fun placedChordBefore(bar: Int, slot: Int): Chord? {
+        val state = _uiState.value
+        if (slot <= 0 && bar <= 0) return null
+        val step = chordStepOf(slot) - 1
+        return if (step >= 0) {
+            chordAtStep(state.song, state.selectedPattern, bar, step)
+        } else {
+            chordAtStep(state.song, state.selectedPattern, bar - 1, STEPS_PER_BAR - 1)
+        }
+    }
+
+    /** [bar] 小節目の [slot] 番目の枠にコードを置く。 */
+    fun placeChord(bar: Int, slot: Int, chord: Chord) {
+        val index = _uiState.value.selectedPattern
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withChordAt(bar, chordStepOf(slot), chord))
+        }
+        if (!_uiState.value.isPlaying) previewChord(chord)
+    }
+
+    /** [bar] 小節目の [slot] 番目の枠に置いたコードを外す。 */
+    fun clearChordAt(bar: Int, slot: Int) {
+        val index = _uiState.value.selectedPattern
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withoutChordAt(bar, chordStepOf(slot)))
+        }
+    }
+
+    /**
+     * 置いたコードをすべて外して、コードを曲構成に任せる形に戻す。
+     * 1 つでも置いてあるとパターン側が勝つので、戻る道を用意しておく。
+     */
+    fun clearPlacedChords() {
+        val index = _uiState.value.selectedPattern
+        snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            song.withPattern(index, song.pattern(index).withoutChords())
+        }
+    }
+
+    /**
+     * パターン [index] の [bar] 小節目 [step] で、実際に鳴っている和音。
+     *
+     * 決まる順番は [PlaybackPlan.single] と同じにしてある。打ち込みに置いて
+     * あればそれ、無ければそのパターンを使っている曲構成のブロック、
+     * それも無ければパターンのコード。ここがずれると、画面に出ている
+     * コード名と鳴っている音が食い違う。
+     */
+    fun chordAtStep(song: Song, index: Int, bar: Int, step: Int): Chord {
+        song.pattern(index).chordAt(bar, step)?.let { return it }
         val fallback = song.patternChord(index)
         val block = song.arrangement.firstOrNull { it.patternIndex == index }
-        return List(bars) { block?.chordAt(it, fallback) ?: fallback }
+        return block?.chordAt(bar, fallback) ?: fallback
     }
+
+    /** パターン [index] を [bars] 小節ぶん鳴らすときの、小節ごとのコード。 */
+    private fun leadChords(song: Song, index: Int, bars: Int): List<Chord> =
+        List(bars) { chordAtStep(song, index, it, 0) }
 
     fun clearPattern() {
         val index = _uiState.value.selectedPattern
@@ -839,16 +900,8 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         selectPattern(target)
     }
 
-    /** パターンを単体で鳴らすときのコード。 */
-    fun setPatternChord(chord: Chord) {
-        val index = _uiState.value.selectedPattern
-        repository.updateCurrentSong { song -> song.withPatternChord(index, chord) }
-        if (!_uiState.value.isPlaying) previewChord(chord)
-    }
-
     // --- 自動生成・レコメンド -----------------------------------------------
 
-    /** 曲全体のコードから調を推定する。おすすめの基準になる。 */
     /** 曲の調。指定してあればそれを使い、無ければコードから推定する。 */
     fun detectedKey(): MusicKey =
         _uiState.value.song.key ?: ChordSuggester.detectKey(SongEditor.chords(_uiState.value.song))
@@ -878,15 +931,6 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         return bars.getOrNull(absolute - 1)?.chord to bars.getOrNull(absolute + 1)?.chord
     }
 
-    /**
-     * パターン [index] のコードを選ぶときの手がかり。
-     * パターンは A → B → C の順に使われることが多いので、1 つ前のパターンのコードを「前のコード」とみなす。
-     */
-    fun neighbourChordsForPattern(index: Int): Pair<Chord?, Chord?> {
-        val song = _uiState.value.song
-        val previous = if (index > 0) song.patternChord(index - 1) else null
-        return previous to null
-    }
 
     fun setRhythmScope(scope: GenerateScope) {
         _uiState.update { it.copy(rhythmScope = scope) }

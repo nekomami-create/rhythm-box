@@ -58,6 +58,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.rhythmbox.core.CHORD_SLOTS
+import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.Instrument
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.ROW_BASS
@@ -66,6 +68,7 @@ import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.STEPS_PER_BAR
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.Voice
+import com.example.rhythmbox.core.chordSlotOf
 
 /** グリッドの 1 行ぶんの情報。ドラムの後ろにコードとベースが並ぶ。 */
 data class StepRowInfo(
@@ -103,8 +106,9 @@ val stepRows: List<StepRowInfo> = buildList {
 @Composable
 fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     var mixerOpen by remember { mutableStateOf(false) }
+    /** コードを置こうとしている枠（-1 なら開いていない）。 */
+    var chordSlot by remember { mutableStateOf(-1) }
     var copyTargetOpen by remember { mutableStateOf(false) }
-    var chordPickerOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -127,12 +131,10 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             patterns = state.song.patterns,
             selected = state.selectedPattern,
             playing = state.playingPattern,
-            chordName = state.patternChord.name,
             canUndo = state.canUndo,
             onSelect = viewModel::selectPattern,
             onClear = viewModel::clearPattern,
             onCopy = { copyTargetOpen = true },
-            onChordClick = { chordPickerOpen = true },
             onGenerate = viewModel::generateRhythm,
             barCount = state.pattern.barCount,
             undoDepth = state.undoDepth,
@@ -164,6 +166,35 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             onCycleLevel = viewModel::cycleStepLevel,
             onPreview = viewModel::previewRow,
             onToggleMute = viewModel::toggleMute,
+            placedChord = { slot -> viewModel.placedChordAt(state.selectedBar, slot) },
+            soundingChord = { slot ->
+                viewModel.chordAtStep(state.song, state.selectedPattern, state.selectedBar, slot * 2)
+            },
+            onPlaceChord = { chordSlot = it },
+            onClearChord = { viewModel.clearChordAt(state.selectedBar, it) },
+            onClearPlacedChords = viewModel::clearPlacedChords,
+            hasPlacedChords = state.pattern.hasChords,
+        )
+    }
+
+    // 帯のマスを押したとき。置いてあればそれ、無ければ今鳴っているコードから始める。
+    val slot = chordSlot
+    if (slot >= 0) {
+        val current = viewModel.placedChordAt(state.selectedBar, slot)
+            ?: viewModel.chordAtStep(state.song, state.selectedPattern, state.selectedBar, slot * 2)
+        ChordPickerDialog(
+            title = "${state.selectedBar + 1} 小節目 ・ ${slot / 2 + 1} 拍目${if (slot % 2 == 1) "の裏" else ""}",
+            current = current,
+            suggestions = viewModel.chordSuggestions(
+                viewModel.placedChordBefore(state.selectedBar, slot),
+            ),
+            keyName = viewModel.detectedKey().name,
+            onPreview = viewModel::previewChord,
+            onPick = {
+                viewModel.placeChord(state.selectedBar, slot, it)
+                chordSlot = -1
+            },
+            onDismiss = { chordSlot = -1 },
         )
     }
 
@@ -201,25 +232,6 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 copyTargetOpen = false
             },
             onDismiss = { copyTargetOpen = false },
-        )
-    }
-    if (chordPickerOpen) {
-        val neighbours = viewModel.neighbourChordsForPattern(state.selectedPattern)
-        ChordPickerDialog(
-            title = "パターン ${state.pattern.name} のコード",
-            current = state.patternChord,
-            suggestions = viewModel.chordSuggestions(neighbours.first, neighbours.second),
-            keyName = viewModel.detectedKey().name,
-            neighbours = neighbours,
-            onShuffle = {
-                viewModel.shuffleChord(neighbours.first, neighbours.second, state.patternChord)
-            },
-            onPreview = viewModel::previewChord,
-            onPick = {
-                viewModel.setPatternChord(it)
-                chordPickerOpen = false
-            },
-            onDismiss = { chordPickerOpen = false },
         )
     }
 }
@@ -355,12 +367,10 @@ private fun PatternSelector(
     patterns: List<Pattern>,
     selected: Int,
     playing: Int,
-    chordName: String,
     canUndo: Boolean,
     onSelect: (Int) -> Unit,
     onClear: () -> Unit,
     onCopy: () -> Unit,
-    onChordClick: () -> Unit,
     onGenerate: (RhythmStyle?) -> Unit,
     /** 選んでいるパターンの長さ。範囲チップに「この小節」を出すかどうかに使う。 */
     barCount: Int,
@@ -413,26 +423,6 @@ private fun PatternSelector(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // このパターンを単体で鳴らすときのコード。曲構成に足すときの初期値にもなる。
-            Surface(
-                color = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.height(40.dp).clickable { onChordClick() },
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("コード", style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        chordName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
             // リズムの自動生成。スタイルを選べる。
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -521,6 +511,14 @@ private fun StepGrid(
     onCycleLevel: (Int, Int) -> Unit,
     onPreview: (Int) -> Unit,
     onToggleMute: (Int) -> Unit,
+    /** その枠に置いてあるコード（無ければ null）。 */
+    placedChord: (Int) -> Chord?,
+    /** その枠で実際に鳴っているコード。置いていなければ曲構成のもの。 */
+    soundingChord: (Int) -> Chord,
+    onPlaceChord: (Int) -> Unit,
+    onClearChord: (Int) -> Unit,
+    onClearPlacedChords: () -> Unit,
+    hasPlacedChords: Boolean,
 ) {
     val scroll = rememberScrollState()
     val labelWidth = 78.dp
@@ -551,6 +549,48 @@ private fun StepGrid(
                                 },
                             )
                         }
+                    }
+                }
+            }
+
+            // コードを置く帯。8 分音符ごとに 1 枠で、打ち込みのマス 2 つぶんの幅。
+            // 打点（CHD 行）とは別物で、こちらは「何の和音か」を決める。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.width(labelWidth),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    if (hasPlacedChords) {
+                        TextButton(
+                            onClick = onClearPlacedChords,
+                            contentPadding = TIGHT_BUTTON_PADDING,
+                        ) {
+                            Text("曲に任せる", style = MaterialTheme.typography.labelSmall)
+                        }
+                    } else {
+                        Text(
+                            text = "コード",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(gap))
+                Row(
+                    modifier = Modifier.horizontalScroll(scroll),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    repeat(CHORD_SLOTS) { slot ->
+                        ChordSlotCell(
+                            placed = placedChord(slot),
+                            sounding = soundingChord(slot),
+                            playing = chordSlotOf(playingStep.coerceAtLeast(0)) == slot && playingStep >= 0,
+                            onBeat = slot % 2 == 0,
+                            // マス 2 つぶん＋その間の隙間。打ち込みの列とぴったり合う。
+                            width = cellWidth * 2 + gap,
+                            onClick = { onPlaceChord(slot) },
+                            onLongClick = { onClearChord(slot) },
+                        )
                     }
                 }
             }
@@ -644,6 +684,52 @@ private fun TrackLabel(
                 modifier = Modifier.size(16.dp),
             )
         }
+    }
+}
+
+/**
+ * コードを置く枠ひとつ。
+ *
+ * 置いてあれば濃い色でコード名、置いていなければ薄く「実際に鳴っているコード」を
+ * 出す。押すと置ける／差し替えられる。長押しで外す。
+ *
+ * 置いていないほうも名前を出すのは、置く前に「いま何が鳴っているか」を
+ * 見せるため。空欄にすると、コードが無いように見えてしまう。
+ */
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun ChordSlotCell(
+    placed: Chord?,
+    sounding: Chord,
+    playing: Boolean,
+    onBeat: Boolean,
+    width: Dp,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val color = when {
+        placed != null && playing -> scheme.tertiary
+        placed != null -> scheme.secondary
+        playing -> scheme.outline
+        onBeat -> scheme.surfaceContainerHigh
+        else -> scheme.surfaceVariant.copy(alpha = 0.45f)
+    }
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(CELL_HEIGHT)
+            .background(color = color, shape = RoundedCornerShape(6.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = (placed ?: sounding).name,
+            maxLines = 1,
+            fontSize = 11.sp,
+            fontWeight = if (placed != null) FontWeight.Bold else FontWeight.Normal,
+            color = if (placed != null) scheme.onSecondary else scheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
     }
 }
 

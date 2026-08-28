@@ -5,6 +5,24 @@ import kotlinx.serialization.Serializable
 /** 1 小節あたりのステップ数（16 分音符 x 16）。 */
 const val STEPS_PER_BAR = 16
 
+/**
+ * 1 小節の中でコードを置ける数。8 分音符の位置だけに置ける。
+ *
+ * 16 か所すべてに置けるようにはしていない。指で狙うには小さすぎるし、
+ * コードが 16 分で動く曲はまず無い。8 分あれば、先取り（4 拍目の裏で
+ * 次の和音が食い込む）もツーファイブ（1 小節に 2 つ）も書ける。
+ */
+const val CHORD_SLOTS = 8
+
+/** コードを置ける位置の間隔（ステップ）。 */
+const val CHORD_STEP = STEPS_PER_BAR / CHORD_SLOTS
+
+/** [step] が入るコードの枠。 */
+fun chordSlotOf(step: Int): Int = (step / CHORD_STEP).coerceIn(0, CHORD_SLOTS - 1)
+
+/** [slot] 番目の枠が始まるステップ。 */
+fun chordStepOf(slot: Int): Int = slot.coerceIn(0, CHORD_SLOTS - 1) * CHORD_STEP
+
 /** ドラム音色の数。 */
 val DRUM_COUNT = Voice.entries.size
 
@@ -257,10 +275,11 @@ data class BarGrid(
         rows = List(STEP_ROW_COUNT) { rowAt(it) },
         accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
         ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
-        // 同じステップに 2 つ置かれていたら後のほうを残し、順に並べておく。
-        // 読むときに毎回並べ替えなくて済む。
+        // 置ける位置（8 分音符）に寄せ、同じ枠に 2 つあれば後のほうを残して
+        // 順に並べておく。読むときに毎回並べ替えなくて済む。
         chords = chords
             .filter { it.step in 0 until STEPS_PER_BAR }
+            .map { it.copy(step = chordStepOf(chordSlotOf(it.step))) }
             .associateBy { it.step }
             .values
             .sortedBy { it.step },
@@ -468,13 +487,26 @@ data class Pattern(
     val hasChords: Boolean
         get() = chords.isNotEmpty() || extraBars.any { it.chords.isNotEmpty() }
 
-    /** [bar] の [step] にコードを置く（同じ位置にあれば差し替え）。 */
-    fun withChordAt(bar: Int, step: Int, chord: Chord): Pattern =
-        editBar(bar) { it.copy(chords = it.chords + ChordAt(step, chord)) }
+    /**
+     * [bar] の [step] にコードを置く（同じ枠にあれば差し替え）。
+     * 置ける位置は 8 分音符ごとなので、間の [step] は手前の枠に寄る。
+     */
+    fun withChordAt(bar: Int, step: Int, chord: Chord): Pattern {
+        val at = chordStepOf(chordSlotOf(step))
+        return editBar(bar) { it.copy(chords = it.chords + ChordAt(at, chord)) }
+    }
 
-    /** [bar] の [step] に置いたコードを外す。 */
-    fun withoutChordAt(bar: Int, step: Int): Pattern =
-        editBar(bar) { it.copy(chords = it.chords.filterNot { placed -> placed.step == step }) }
+    /** [bar] の [step] の枠に置いたコードを外す。 */
+    fun withoutChordAt(bar: Int, step: Int): Pattern {
+        val at = chordStepOf(chordSlotOf(step))
+        return editBar(bar) { it.copy(chords = it.chords.filterNot { placed -> placed.step == at }) }
+    }
+
+    /** [bar] の [slot] 番目の枠に置いてあるコード。無ければ null。 */
+    fun chordSlotAt(bar: Int, slot: Int): Chord? {
+        val at = chordStepOf(slot)
+        return gridAt(bar).chords.firstOrNull { it.step == at }?.chord
+    }
 
     /** 置いたコードをすべて外す（コードは曲構成に任せる形に戻る）。 */
     fun withoutChords(): Pattern = copy(

@@ -109,6 +109,56 @@ class PatternChordsTest {
     }
 
     @Test
+    fun `chords land on the eighth-note grid`() {
+        // 置けるのは 8 分の位置だけ。間を押しても手前の枠に寄る。
+        assertEquals(8, CHORD_SLOTS)
+        assertEquals(2, CHORD_STEP)
+        assertEquals(listOf(0, 2, 4, 6, 8, 10, 12, 14), (0 until CHORD_SLOTS).map { chordStepOf(it) })
+
+        val placed = pattern().withChordAt(0, 5, f)
+        assertEquals(listOf(4), placed.gridAt(0).chords.map { it.step })
+        assertEquals(f, placed.chordAt(0, 4))
+        // 枠の手前ではまだ変わっていない。
+        assertNull(placed.chordAt(0, 3))
+    }
+
+    @Test
+    fun `the anticipation slot is placeable`() {
+        // 4 拍目の裏（15 の手前）に置けることが、先取りが書ける条件。
+        val placed = pattern().withChordAt(0, 14, g)
+        assertEquals(listOf(14), placed.gridAt(0).chords.map { it.step })
+        assertEquals(g, placed.chordAt(0, 14))
+        assertEquals(g, placed.chordAt(0, 15))
+    }
+
+    @Test
+    fun `two chords in one bar fit`() {
+        val placed = pattern().withChordAt(0, 0, c).withChordAt(0, 8, g)
+        assertEquals(listOf(0, 8), placed.gridAt(0).chords.map { it.step })
+    }
+
+    @Test
+    fun `slots can be read back one at a time`() {
+        val placed = pattern().withChordAt(0, 0, c).withChordAt(0, 8, g)
+        assertEquals(c, placed.chordSlotAt(0, 0))
+        assertNull(placed.chordSlotAt(0, 1))
+        assertEquals(g, placed.chordSlotAt(0, 4))
+    }
+
+    @Test
+    fun `taking one away works from anywhere inside its slot`() {
+        val placed = pattern().withChordAt(0, 4, f)
+        assertNull(placed.withoutChordAt(0, 5).chordSlotAt(0, 2))
+    }
+
+    @Test
+    fun `a chord saved off the grid is pulled onto it`() {
+        // 手で書いたファイルや、刻みを変えたときの持ち越し対策。
+        val broken = Pattern.empty("A").copy(chords = listOf(ChordAt(7, f)))
+        assertEquals(listOf(6), broken.normalized().gridAt(0).chords.map { it.step })
+    }
+
+    @Test
     fun `a chord placed past the end of the bar is dropped`() {
         val broken = Pattern.empty("A").copy(chords = listOf(ChordAt(99, c), ChordAt(-1, f)))
         assertEquals(emptyList<ChordAt>(), broken.normalized().gridAt(0).chords)
