@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -27,10 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,10 +54,10 @@ import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.BassStyle
 import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordProgressions
 import com.example.rhythmbox.core.ChordQuality
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordSuggestion
-import com.example.rhythmbox.core.ChordCruiser
 import com.example.rhythmbox.core.ChordVoicing
 import com.example.rhythmbox.core.DrumKit
 import com.example.rhythmbox.core.GameScene
@@ -254,6 +250,9 @@ fun PatternPickerDialog(
 /**
  * ルート音と種類を選んでコードを決めるダイアログ。選ぶたびに試聴できる。
  * [suggestions] には「この流れなら次はこれ」というおすすめが入る。
+ *
+ * [progressions] を渡すと、王道進行をまるごと置く欄も出る。1 つ選ぶのと
+ * 進行を丸ごと置き直すのは効き方がまるで違うので、欄を分けて、たたんでおく。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -261,6 +260,10 @@ fun ChordPickerDialog(
     title: String,
     current: Chord,
     suggestions: List<ChordSuggestion> = emptyList(),
+    /** まるごと置ける進行の種。空なら欄ごと出さない。 */
+    progressions: List<ChordProgressions.Seed> = emptyList(),
+    /** 進行を選んだとき。渡さなければ欄は出ない。 */
+    onProgression: ((ChordProgressions.Seed) -> Unit)? = null,
     keyName: String? = null,
     /** 前後のコード。「Am → ? → F」のように、何に挟まれているかを見せる。 */
     neighbours: Pair<Chord?, Chord?> = null to null,
@@ -274,6 +277,7 @@ fun ChordPickerDialog(
     var quality by remember { mutableStateOf(current.quality) }
     var bass by remember { mutableStateOf(current.bass) }
     val chord = Chord(root, quality, bass)
+    var progressionsOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -369,6 +373,50 @@ fun ChordPickerDialog(
                                     )
                                 }
                             }
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                }
+                if (progressions.isNotEmpty() && onProgression != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "進行をまるごと置く",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { progressionsOpen = !progressionsOpen }) {
+                            Text(if (progressionsOpen) "たたむ" else "ひらく")
+                        }
+                    }
+                    if (progressionsOpen) {
+                        Text(
+                            text = "このパターンのコードを置き直します。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        progressions.forEach { seed ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onProgression(seed) },
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                    Text(
+                                        text = seed.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = seed.chords.joinToString(" - ") { it.name },
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
                         }
                     }
                     Spacer(Modifier.height(2.dp))
@@ -1262,123 +1310,5 @@ fun KeyDialog(
         dismissButton = {
             TextButton(onClick = { onPick(null) }) { Text("自動に戻す") }
         },
-    )
-}
-
-/**
- * コードクルーザー。4 小節ぶんの進行だけを取り出して、聴きながら捏ねる。
- *
- * これまでコードを触る手段は「1 小節ずつ選ぶ」か「曲全体を書き換える」かしか
- * 無く、しかも決める前に進行として聴けなかった（試聴で鳴るのは和音ひとつ）。
- * ここでは差し込むまで曲を書き換えないので、何度でも試せる。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun ChordCruiserDialog(
-    chords: List<Chord>,
-    seedName: String,
-    playing: Boolean,
-    seeds: () -> List<ChordCruiser.Seed>,
-    onChordClick: (Int) -> Unit,
-    onSeed: (ChordCruiser.Seed) -> Unit,
-    onTogglePlay: () -> Unit,
-    onApply: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    // 引き直すのは、開いたときと「別のを出す」を押したときだけ。
-    // 描き直すたびに引くと、選んでいる最中に候補が入れ替わってしまう。
-    var offered by remember { mutableStateOf(seeds()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("コード ${chords.size} 小節") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // いま捏ねている進行。押すとその小節を差し替えられる。
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    chords.forEachIndexed { bar, chord ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.clickable { onChordClick(bar) },
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .widthIn(min = 62.dp)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(
-                                    text = "${bar + 1}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = chord.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = onTogglePlay, contentPadding = TIGHT_BUTTON_PADDING) {
-                        Icon(
-                            imageVector = if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                            contentDescription = if (playing) "止める" else "聴く",
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (playing) "止める" else "聴く")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = seedName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Text(
-                    text = "鳴らしたまま下から選べます。差し込むまで曲は変わりません。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "進行を選ぶ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    TextButton(
-                        onClick = { offered = seeds() },
-                        contentPadding = TIGHT_BUTTON_PADDING,
-                    ) {
-                        Text("別のを出す")
-                    }
-                }
-                offered.forEach { seed ->
-                    OptionRow(
-                        label = seed.name,
-                        selected = seed.name == seedName,
-                        onClick = { onSeed(seed) },
-                        detail = seed.chords.take(chords.size).joinToString(" ") { it.name },
-                    )
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onApply) { Text("差し込む") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("やめる") } },
     )
 }

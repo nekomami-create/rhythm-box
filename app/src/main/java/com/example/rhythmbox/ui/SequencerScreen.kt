@@ -182,12 +182,20 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     if (slot >= 0) {
         val current = viewModel.placedChordAt(state.selectedBar, slot)
             ?: viewModel.chordAtStep(state.song, state.selectedPattern, state.selectedBar, slot * 2)
+        // 種は開いたときに一度だけ引く。作らせたものが混ざっているので、
+        // 描き直すたびに作ると、指を伸ばしている間に中身が入れ替わってしまう。
+        val seeds = remember(slot) { viewModel.progressionSeeds() }
         ChordPickerDialog(
             title = "${state.selectedBar + 1} 小節目 ・ ${slot / 2 + 1} 拍目${if (slot % 2 == 1) "の裏" else ""}",
             current = current,
             suggestions = viewModel.chordSuggestions(
                 viewModel.placedChordBefore(state.selectedBar, slot),
             ),
+            progressions = seeds,
+            onProgression = {
+                viewModel.placeProgression(it)
+                chordSlot = -1
+            },
             keyName = viewModel.detectedKey().name,
             onPreview = viewModel::previewChord,
             onPick = {

@@ -251,41 +251,6 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         onDismiss = { dialog = null },
     )
 
-    // コードクルーザー。曲構成のブロックから開く。
-    if (state.cruise.isNotEmpty()) {
-        var editingBar by remember { mutableStateOf(-1) }
-        ChordCruiserDialog(
-            chords = state.cruise,
-            seedName = state.cruiseSeed,
-            playing = state.cruisePlaying,
-            seeds = viewModel::cruiserSeeds,
-            onChordClick = { editingBar = it },
-            onSeed = viewModel::loadCruiseSeed,
-            onTogglePlay = viewModel::toggleCruise,
-            onApply = viewModel::applyCruise,
-            onDismiss = viewModel::closeCruiser,
-        )
-        val bar = editingBar
-        if (bar in state.cruise.indices) {
-            // 捏ねている進行の中での前後を見せる。何に挟まれているかで選び方が変わる。
-            val previous = state.cruise.getOrNull(bar - 1)
-            val following = state.cruise.getOrNull(bar + 1)
-            ChordPickerDialog(
-                title = "${bar + 1} 小節目",
-                current = state.cruise[bar],
-                suggestions = viewModel.chordSuggestions(previous, following),
-                keyName = viewModel.detectedKey().name,
-                neighbours = previous to following,
-                onPreview = viewModel::previewChord,
-                onPick = {
-                    viewModel.setCruiseChord(bar, it)
-                    editingBar = -1
-                },
-                onDismiss = { editingBar = -1 },
-            )
-        }
-    }
-
     if (songBuilderOpen) {
         GenreDialog(
             title = "オート作曲",

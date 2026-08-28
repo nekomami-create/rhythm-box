@@ -41,7 +41,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -182,7 +181,6 @@ fun SongScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                     canMoveDown = index < song.arrangement.lastIndex,
                     onPatternClick = { editingPattern = index },
                     onChordClick = { bar -> editingChord = ChordTarget(index, bar) },
-                    onCruise = { viewModel.openCruiser(index) },
                     onRepeatChange = { viewModel.setArrangementRepeat(index, it) },
                     onMove = { viewModel.moveArrangementStep(index, it) },
                     onRemove = { viewModel.removeArrangementStep(index) },
@@ -316,7 +314,6 @@ private fun ArrangementRow(
     canMoveDown: Boolean,
     onPatternClick: () -> Unit,
     onChordClick: (Int) -> Unit,
-    onCruise: () -> Unit,
     onRepeatChange: (Int) -> Unit,
     onMove: (Int) -> Unit,
     onRemove: () -> Unit,
@@ -369,10 +366,6 @@ private fun ArrangementRow(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                // このブロックのコードだけを、聴きながら捏ねる。
-                TextButton(onClick = onCruise, contentPadding = TIGHT_BUTTON_PADDING) {
-                    Text("コード", style = MaterialTheme.typography.labelMedium)
-                }
                 IconButton(onClick = { onMove(-1) }, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
                     Icon(
                         Icons.Filled.KeyboardArrowUp,
