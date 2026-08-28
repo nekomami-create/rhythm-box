@@ -218,6 +218,16 @@ data class Chord(
 }
 
 /**
+ * 打ち込みの中に置いたコード。[step] から次に置いたものまで、この和音が鳴る。
+ *
+ * 打点（CHD 行の ON/OFF）とは別のもの。打点は「いつ弾くか」で、こちらは
+ * 「何の和音になっているか」。弾かない小節でもコードは変わり続けるし、
+ * 逆に和音が変わらないまま何度も弾くこともある。
+ */
+@Serializable
+data class ChordAt(val step: Int, val chord: Chord)
+
+/**
  * 1 小節ぶんの打ち込み（ドラム・コード・ベースの ON/OFF と強弱）。
  *
  * パターンが 2 小節以上のとき、2 小節目から先をこれで持つ。
@@ -230,6 +240,11 @@ data class BarGrid(
     val rows: List<Int> = List(STEP_ROW_COUNT) { 0 },
     val accents: List<Int> = emptyList(),
     val ghosts: List<Int> = emptyList(),
+    /**
+     * この小節で和音が変わる位置。空なら、この小節では変わらない
+     * （前の小節から続いているか、曲構成が決めたコードになる）。
+     */
+    val chords: List<ChordAt> = emptyList(),
 ) {
     fun rowAt(row: Int): Int = rows.getOrElse(row) { 0 } and Pattern.STEP_MASK
 
@@ -242,6 +257,13 @@ data class BarGrid(
         rows = List(STEP_ROW_COUNT) { rowAt(it) },
         accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
         ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
+        // 同じステップに 2 つ置かれていたら後のほうを残し、順に並べておく。
+        // 読むときに毎回並べ替えなくて済む。
+        chords = chords
+            .filter { it.step in 0 until STEPS_PER_BAR }
+            .associateBy { it.step }
+            .values
+            .sortedBy { it.step },
     )
 
     private fun maskAt(masks: List<Int>, row: Int): Int =
@@ -288,6 +310,11 @@ data class Pattern(
      */
     val leadAccents: List<Int> = emptyList(),
     val leadGhosts: List<Int> = emptyList(),
+    /**
+     * 1 小節目で和音が変わる位置。2 小節目から先は [extraBars] の中にある。
+     * 空にしておけば、コードは今までどおり曲構成が決める。
+     */
+    val chords: List<ChordAt> = emptyList(),
 ) {
     /** 実際に使う旋律の一覧。旧形式しか無いときはそれを 1 小節ぶんとして扱う。 */
     val leadBars: List<List<Int>>
@@ -315,7 +342,7 @@ data class Pattern(
     /** [bar] 小節目の打ち込み。持っている数より先を訊かれたら頭から繰り返す。 */
     fun gridAt(bar: Int): BarGrid {
         val index = bar.mod(barCount).mod(gridCount)
-        return if (index == 0) BarGrid(rows, accents, ghosts) else extraBars[index - 1]
+        return if (index == 0) BarGrid(rows, accents, ghosts, chords) else extraBars[index - 1]
     }
 
     /**
@@ -335,6 +362,7 @@ data class Pattern(
             rows = grid.rows,
             accents = grid.accents,
             ghosts = grid.ghosts,
+            chords = grid.chords,
             extraBars = emptyList(),
         )
     }
@@ -344,7 +372,12 @@ data class Pattern(
         val fixed = grid.normalized()
         val index = bar.mod(barCount)
         if (index == 0 && gridCount == 1) {
-            return copy(rows = fixed.rows, accents = fixed.accents, ghosts = fixed.ghosts)
+            return copy(
+                rows = fixed.rows,
+                accents = fixed.accents,
+                ghosts = fixed.ghosts,
+                chords = fixed.chords,
+            )
         }
         // 打ち込みが旋律より短いパターンに書き込むときは、
         // 足りない小節を今の中身で埋めてから差し替える（鳴り方は変わらない）。
@@ -354,6 +387,7 @@ data class Pattern(
             rows = grids[0].rows,
             accents = grids[0].accents,
             ghosts = grids[0].ghosts,
+            chords = grids[0].chords,
             extraBars = grids.drop(1),
         )
     }
@@ -384,6 +418,7 @@ data class Pattern(
         rows = List(STEP_ROW_COUNT) { 0 },
         accents = emptyList(),
         ghosts = emptyList(),
+        // 置いたコードは打ち込みとは別物なので、打ち込みを消しても残す。
         extraBars = List(extraBars.size) { BarGrid() },
     )
 
@@ -403,9 +438,49 @@ data class Pattern(
             rows = grids[0].rows,
             accents = grids[0].accents,
             ghosts = grids[0].ghosts,
+            chords = grids[0].chords,
             extraBars = grids.drop(1),
         ).withLeads(List(target) { bars[it.mod(bars.size)] })
     }
+
+    /**
+     * [bar] の [step] で鳴っている和音。打ち込みに置かれていなければ null。
+     *
+     * 置いた和音は、次に置いたものが来るまで続く。小節もまたぐし、
+     * ループの継ぎ目もまたぐ（最後に置いた和音が、次の周回の頭まで続く）。
+     * だから 1 つでも置けば、そのパターンのコードは打ち込みが決めることになる。
+     * 1 つも置かなければ null が返り、今までどおり曲構成が決める。
+     */
+    fun chordAt(bar: Int, step: Int): Chord? {
+        if (!hasChords) return null
+        var at = bar.mod(barCount)
+        var from = step
+        // 見つかるまで小節をさかのぼる。1 周して戻ったら、どこにも無いということ。
+        repeat(barCount) {
+            gridAt(at).chords.lastOrNull { it.step <= from }?.let { return it.chord }
+            at = (at - 1).mod(barCount)
+            from = STEPS_PER_BAR - 1
+        }
+        return null
+    }
+
+    /** 打ち込みにコードが 1 つでも置いてあるか。 */
+    val hasChords: Boolean
+        get() = chords.isNotEmpty() || extraBars.any { it.chords.isNotEmpty() }
+
+    /** [bar] の [step] にコードを置く（同じ位置にあれば差し替え）。 */
+    fun withChordAt(bar: Int, step: Int, chord: Chord): Pattern =
+        editBar(bar) { it.copy(chords = it.chords + ChordAt(step, chord)) }
+
+    /** [bar] の [step] に置いたコードを外す。 */
+    fun withoutChordAt(bar: Int, step: Int): Pattern =
+        editBar(bar) { it.copy(chords = it.chords.filterNot { placed -> placed.step == step }) }
+
+    /** 置いたコードをすべて外す（コードは曲構成に任せる形に戻る）。 */
+    fun withoutChords(): Pattern = copy(
+        chords = emptyList(),
+        extraBars = extraBars.map { it.copy(chords = emptyList()) },
+    )
 
     fun isOn(row: Int, step: Int): Boolean = (rowAt(row) shr step) and 1 == 1
 
@@ -705,6 +780,8 @@ data class Pattern(
         accents = compact(List(STEP_ROW_COUNT) { maskAt(accents, it) and rowAt(it) }),
         ghosts = compact(List(STEP_ROW_COUNT) { maskAt(ghosts, it) and rowAt(it) }),
         extraBars = extraBars.take(MAX_BARS - 1).map { it.normalized() },
+        // 置いたコードも、範囲外・重複を落として並べておく。
+        chords = BarGrid(chords = chords).normalized().chords,
         // 旋律は withLeads を通す。音の無いところに残った強弱もそこで落ちる。
     ).withLeads(leadBars)
 
