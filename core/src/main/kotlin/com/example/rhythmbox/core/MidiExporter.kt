@@ -66,11 +66,12 @@ object MidiExporter {
 
         for (bar in 0 until plan.barCount) {
             val pattern = plan.patternAt(bar)
-            val chord = plan.chordAt(bar)
             val leadBar = plan.patternBarAt(bar)
             for (step in 0 until STEPS_PER_BAR) {
                 val at = bar * STEPS_PER_BAR + step
                 val start = starts[at]
+                // 和音は小節の頭だけでなく、打ち込みに置いた位置でも変わる。
+                val chord = plan.chordAt(bar, step)
 
                 for (voice in Voice.entries) {
                     if (!pattern.isOn(voice.ordinal, step)) continue
@@ -89,7 +90,8 @@ object MidiExporter {
                     val index = pattern.hitIndex(ROW_CHORD, step)
                     // 書き出す音は、アプリで鳴っているものと同じにする。
                     // 繋がりを解いた結果はプランが持っているので、そこから取る。
-                    val voicing = if (song.chordVoicing.smooth) plan.voicingAt(bar) else chord.voicing()
+                    val voicing =
+                        if (song.chordVoicing.smooth) plan.voicingAt(bar, step) else chord.voicing()
                     val notes = if (song.chordVoicing.lowRoot && !song.chordStyle.chipArpeggio) {
                         listOf(Voicing.lowRoot(chord)) + voicing
                     } else {
@@ -103,14 +105,15 @@ object MidiExporter {
                 if (pattern.isOn(ROW_BASS, step)) {
                     val nextHit = pattern.nextHit(ROW_BASS, step)
                     val steps = minOf(nextHit - step, BASS_MAX_STEPS)
+                    // 向かう先は「次に和音が変わるところ」。再生と同じ規則にする。
                     parts.getValue(Instrument.BASS) += Note(
                         start = start,
                         length = spanTicks(starts, at, steps, bar, plan.barCount),
                         midi = Bassline.noteAt(
                             chord = chord,
-                            next = plan.nextChordAt(bar),
+                            next = plan.nextChordAt(bar, step),
                             hitIndex = pattern.hitIndex(ROW_BASS, step),
-                            last = nextHit >= STEPS_PER_BAR,
+                            last = nextHit >= plan.nextChangeStepAt(bar, step),
                             style = song.bassStyle,
                         ),
                         velocity = velocityOf(pattern.levelAt(ROW_BASS, step)),

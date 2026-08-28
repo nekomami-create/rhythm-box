@@ -9,14 +9,20 @@ data class Bar(
     val patternIndex: Int,
     val chord: Chord,
     val patternBar: Int = 0,
-    /**
-     * 前後と繋がるように選び直した和音の音（[Voicing.lead] の結果）。
-     * 空なら [Chord.voicing] をそのまま使う。
-     *
-     * ここで持たせるのは、決めるのに前後の小節が要るから。プランは全小節の
-     * コードを知っているので 1 回で解けるが、音声スレッドは 1 小節ずつしか
-     * 見ていないので解きようがない。
-     */
+)
+
+/**
+ * 和音が変わる位置と、そこで鳴らす音。
+ *
+ * 打ち込みにコードを置けるようになって、和音は小節の頭以外でも変わるように
+ * なった。「いつ何の和音か」を 1 本の並びにしておくと、鳴らす側は
+ * 小節でもステップでも同じ引き方で済む。
+ */
+data class ChordChange(
+    val bar: Int,
+    val step: Int,
+    val chord: Chord,
+    /** 前後と繋がるように選び直した音。 */
     val voicing: List<Int> = emptyList(),
 )
 
@@ -28,6 +34,53 @@ class PlaybackPlan(
     private val patterns: List<Pattern>,
     val bars: List<Bar>,
 ) {
+    /**
+     * 和音が変わるところを頭から並べたもの。小節ごとに必ず 1 つ（頭のぶん）あり、
+     * 打ち込みに置いたコードがあればその位置にも入る。
+     *
+     * 声部の繋がりはこの並びに沿って解く。小節ごとに解いていたのを変わり目ごとに
+     * したので、1 小節に 2 つ置いても間が繋がる。
+     */
+    val changes: List<ChordChange> = buildChanges()
+
+    /** 小節ごとの、[changes] の中での開始位置。引くときに頭から探さなくて済む。 */
+    private val barStart: IntArray = IntArray(bars.size).also { starts ->
+        changes.forEachIndexed { index, change ->
+            if (change.step == 0 && change.bar in starts.indices) starts[change.bar] = index
+        }
+    }
+
+    private fun buildChanges(): List<ChordChange> {
+        if (bars.isEmpty() || patterns.isEmpty()) return emptyList()
+        val raw = buildList {
+            bars.forEachIndexed { index, bar ->
+                val pattern = patterns.getOrNull(bar.patternIndex)
+                val placed = pattern?.takeIf { it.hasChords }
+                // 小節の頭は必ず 1 つ置く。ここが決まっていれば、あとは
+                // 「その位置を過ぎない最後のもの」を探すだけで引ける。
+                add(ChordChange(index, 0, placed?.chordAt(bar.patternBar, 0) ?: bar.chord))
+                placed?.gridAt(bar.patternBar)?.chords
+                    ?.filter { it.step > 0 }
+                    ?.forEach { add(ChordChange(index, it.step, it.chord)) }
+            }
+        }
+        val voicings = Voicing.lead(raw.map { it.chord })
+        return raw.mapIndexed { index, change -> change.copy(voicing = voicings[index]) }
+    }
+
+    /** [bar] の [step] の時点で効いている変わり目。 */
+    private fun changeAt(bar: Int, step: Int): ChordChange? {
+        if (changes.isEmpty()) return null
+        val at = bar.coerceIn(bars.indices)
+        var index = barStart.getOrElse(at) { 0 }
+        while (index + 1 < changes.size &&
+            changes[index + 1].bar == at &&
+            changes[index + 1].step <= step
+        ) {
+            index++
+        }
+        return changes[index]
+    }
     val barCount: Int get() = bars.size
 
     val isEmpty: Boolean get() = bars.isEmpty() || patterns.isEmpty()
@@ -45,25 +98,48 @@ class PlaybackPlan(
         return patterns[at.patternIndex.coerceIn(patterns.indices)].at(at.patternBar)
     }
 
-    fun chordAt(bar: Int): Chord = barAt(bar).chord
+    /** [bar] の [step] で鳴っている和音。 */
+    fun chordAt(bar: Int, step: Int = 0): Chord = changeAt(bar, step)?.chord ?: barAt(bar).chord
 
     /**
-     * その小節で鳴らす和音の音。繋がりを解いた結果が無ければ、和音そのものから作る。
+     * [bar] の [step] で鳴らす和音の音。繋がりを解いた結果が無ければ、和音そのものから作る。
      *
      * 解いた結果は常に持たせてあるが、実際に使うかどうかは鳴らす側が決める
      * （曲の設定は途中で変えられるので、プランを作り直さずに切り替えられる）。
      */
-    fun voicingAt(bar: Int): List<Int> = barAt(bar).voicing.ifEmpty { barAt(bar).chord.voicing() }
+    fun voicingAt(bar: Int, step: Int = 0): List<Int> {
+        val change = changeAt(bar, step)
+        return change?.voicing?.ifEmpty { change.chord.voicing() } ?: chordAt(bar, step).voicing()
+    }
 
     /**
-     * 次の小節の和音。最後の小節では先頭へ戻る。
+     * [bar] の [step] のあと、次に変わる和音。無ければ先頭へ戻る。
      *
      * 曲はループするので、最後の次は先頭。書き出し（1 回だけ鳴らす）でも
      * 同じ扱いにしておくと、終わりの小節が頭のコードへ入る形になり、
      * 繰り返して聴いたときに繋がる。
      */
-    fun nextChordAt(bar: Int): Chord =
-        if (bars.isEmpty()) Chord() else chordAt((bar + 1).mod(bars.size))
+    fun nextChordAt(bar: Int, step: Int = STEPS_PER_BAR - 1): Chord {
+        if (changes.isEmpty()) return Chord()
+        val here = changeAt(bar, step) ?: return changes.first().chord
+        val index = changes.indexOf(here)
+        return changes[(index + 1).mod(changes.size)].chord
+    }
+
+    /**
+     * [bar] の [step] より後で、この小節の中で次に和音が変わるステップ。
+     * この小節の中で変わらなければ [STEPS_PER_BAR]（＝小節の終わり）。
+     *
+     * ベースが「次の和音へ向かう音」をどこで弾くかを決めるのに使う。
+     * 小節の途中で和音が変われば、その手前が向かう先になる。
+     */
+    fun nextChangeStepAt(bar: Int, step: Int): Int {
+        val at = bar.coerceIn(bars.indices)
+        return changes
+            .firstOrNull { it.bar == at && it.step > step }
+            ?.step
+            ?: STEPS_PER_BAR
+    }
 
     /** その小節で鳴らす、パターンの中の小節番号。 */
     fun patternBarAt(bar: Int): Int = barAt(bar).patternBar
@@ -73,20 +149,6 @@ class PlaybackPlan(
         PlaybackPlan(patterns, List(times.coerceAtLeast(1)) { bars }.flatten())
 
     companion object {
-        /**
-         * 並んだ小節に、前後と繋がる和音の音を入れる。
-         *
-         * 曲の設定に関係なく必ず解いておく。そうしておけば、設定を切り替えた
-         * ときにプランを作り直さずに済む（切り替えは鳴らす側で効く）。
-         * 解くのは 1 小節あたり 30 通りほどの候補を比べるだけで、
-         * ユーザーの操作 1 回につき 1 度しか走らない。
-         */
-        private fun voiceLed(bars: List<Bar>): List<Bar> {
-            if (bars.isEmpty()) return bars
-            val voicings = Voicing.lead(bars.map { it.chord })
-            return bars.mapIndexed { index, bar -> bar.copy(voicing = voicings[index]) }
-        }
-
         /**
          * 1 パターンだけをループする。
          * 2 小節以上のパターンは、そのぶんだけ小節を並べて順に鳴らす。
@@ -101,7 +163,7 @@ class PlaybackPlan(
             val bars = List(pattern.barCount) { bar ->
                 Bar(index, block?.chordAt(bar, fallback) ?: fallback, bar)
             }
-            return PlaybackPlan(song.patterns, voiceLed(bars))
+            return PlaybackPlan(song.patterns, bars)
         }
 
         /**
@@ -115,7 +177,7 @@ class PlaybackPlan(
                     val chord = song.patternChord(index)
                     List(song.pattern(index).barCount) { bar -> Bar(index, chord, bar) }
                 }
-            return PlaybackPlan(song.patterns, voiceLed(bars))
+            return PlaybackPlan(song.patterns, bars)
         }
 
         /** 曲構成（繰り返し数ぶん展開したもの）。構成が空なら空のプランになる。 */
@@ -130,7 +192,7 @@ class PlaybackPlan(
                     }
                 }
             }
-            return PlaybackPlan(song.patterns, voiceLed(bars))
+            return PlaybackPlan(song.patterns, bars)
         }
 
         const val MAX_REPEAT = 64

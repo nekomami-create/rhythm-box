@@ -46,7 +46,6 @@ import com.example.rhythmbox.core.SongCodec
 import com.example.rhythmbox.core.SoundSet
 import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Transposer
-import com.example.rhythmbox.core.Voicing
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
@@ -948,12 +947,11 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val song = state.song
         val index = (song.arrangement.getOrNull(state.cruiseBlock)?.patternIndex ?: state.selectedPattern)
             .coerceIn(song.patterns.indices)
-        // 声部の繋がりは通常のプランと同じ手順で解く。試聴と本番で音が違うと、
-        // 聴いて選んだ意味が無くなる。
-        val voicings = Voicing.lead(state.cruise)
+        // 声部の繋がりはプランが自分で解くので、ここは並べるだけでいい
+        // （試聴と本番で同じ手順を通るので、音が食い違わない）。
         return PlaybackPlan(
             song.patterns,
-            state.cruise.mapIndexed { bar, chord -> Bar(index, chord, bar, voicings[bar]) },
+            state.cruise.mapIndexed { bar, chord -> Bar(index, chord, bar) },
         )
     }
 

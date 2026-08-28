@@ -130,8 +130,9 @@ class VoicingTest {
         val song = Song.newSong("s", "test", 0L)
         val plan = PlaybackPlan.arrangement(song)
         assertTrue(plan.barCount > 0)
-        (0 until plan.barCount).forEach { bar ->
-            assertTrue("小節 $bar が解かれていない", plan.barAt(bar).voicing.isNotEmpty())
+        assertEquals("和音の変わり目が小節ごとに 1 つ", plan.barCount, plan.changes.size)
+        plan.changes.forEach { change ->
+            assertTrue("${change.bar} 小節目が解かれていない", change.voicing.isNotEmpty())
         }
     }
 
@@ -142,8 +143,8 @@ class VoicingTest {
     fun `the same song always gives the same voicings`() {
         val song = Song.newSong("s", "test", 0L)
         assertEquals(
-            PlaybackPlan.arrangement(song).bars.map { it.voicing },
-            PlaybackPlan.arrangement(song).bars.map { it.voicing },
+            PlaybackPlan.arrangement(song).changes.map { it.voicing },
+            PlaybackPlan.arrangement(song).changes.map { it.voicing },
         )
     }
 }

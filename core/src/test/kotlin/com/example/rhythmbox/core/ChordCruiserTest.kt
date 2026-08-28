@@ -90,9 +90,7 @@ class ChordCruiserTest {
         val plan = PlaybackPlan(song.patterns, chords.mapIndexed { bar, chord -> Bar(0, chord, bar) })
         assertEquals(4, plan.barCount)
         assertEquals(chords, (0 until plan.barCount).map { plan.chordAt(it) })
-        // 声部を解いた結果も足せる（試聴と本番で音が変わらないように）。
-        val voicings = Voicing.lead(chords)
-        val led = PlaybackPlan(song.patterns, chords.mapIndexed { bar, chord -> Bar(0, chord, bar, voicings[bar]) })
-        assertEquals(voicings, (0 until led.barCount).map { led.voicingAt(it) })
+        // 声部はプランが自分で解く。試聴と本番で同じ手順を通るので音が食い違わない。
+        assertEquals(Voicing.lead(chords), (0 until plan.barCount).map { plan.voicingAt(it) })
     }
 }

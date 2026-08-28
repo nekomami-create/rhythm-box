@@ -220,6 +220,30 @@ class MidiExporterTest {
     }
 
     @Test
+    fun `a chord placed inside the bar is written into the file`() {
+        // 1 小節に 2 つ置いたら、書き出したファイルにも 2 つ出てくる。
+        val rows = Array(STEP_ROW_COUNT) { "................" }
+        rows[ROW_CHORD] = "x.......x......."
+        val g = Chord(7)
+        val c = Chord(0)
+        val song = Song("s", "test")
+            .withPattern(
+                0,
+                Pattern.of("A", *rows).withChordAt(0, 0, g).withChordAt(0, 8, c),
+            )
+            .withPatternChord(0, Chord(9, ChordQuality.MINOR)) // 置いたほうが勝つ
+            .copy(chordVoicing = ChordVoicing.PLAIN)
+
+        val notes = notesOf(MidiExporter.export(song, PlaybackPlan.single(song, 0)))
+            .filter { it.channel == 0 }
+        val head = notes.filter { it.start == 0 }.map { it.midi }.sorted()
+        val later = notes.filter { it.start == 8 * MidiExporter.TICKS_PER_STEP }.map { it.midi }.sorted()
+
+        assertEquals(g.voicing().sorted(), head)
+        assertEquals(c.voicing().sorted(), later)
+    }
+
+    @Test
     fun `the tempo is written into the file`() {
         val bytes = MidiExporter.export(songOf("x...............", bpm = 140), PlaybackPlan.single(songOf("x..............."), 0))
         // FF 51 03 のあとの 3 バイトが 1 拍あたりのマイクロ秒。

@@ -326,8 +326,14 @@ class PlaybackEngine(
      * 低いルートは高速アルペジオのときは足さない。あれは 1 声部で和音を
      * 装う技で、音を 1 つ足すと「1 つの音色に聞こえる」効き目が崩れる。
      */
-    private fun voicingFor(cfg: EngineConfig, plan: PlaybackPlan, bar: Int, chord: Chord): List<Int> {
-        val notes = if (cfg.chordVoicing.smooth) plan.voicingAt(bar) else chord.voicing()
+    private fun voicingFor(
+        cfg: EngineConfig,
+        plan: PlaybackPlan,
+        bar: Int,
+        step: Int,
+        chord: Chord,
+    ): List<Int> {
+        val notes = if (cfg.chordVoicing.smooth) plan.voicingAt(bar, step) else chord.voicing()
         if (!cfg.chordVoicing.lowRoot || cfg.chordStyle.chipArpeggio) return notes
         return listOf(Voicing.lowRoot(chord)) + notes
     }
@@ -351,7 +357,8 @@ class PlaybackEngine(
         }
         val step = (absoluteStep % STEPS_PER_BAR).toInt()
         val pattern = plan.patternAt(bar)
-        val chord = plan.chordAt(bar)
+        // 和音は小節の頭だけでなく、打ち込みに置いた位置でも変わる。
+        val chord = plan.chordAt(bar, step)
         val leadBar = plan.patternBarAt(bar)
 
         // 拍の頭だけ鳴らす。小節の頭は高い音にして、どこが 1 拍目か分かるようにする。
@@ -364,7 +371,7 @@ class PlaybackEngine(
         }
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
-            val voicing = voicingFor(cfg, plan, bar, chord)
+            val voicing = voicingFor(cfg, plan, bar, step, chord)
             // 高速アルペジオは 1 声部で鳴らし、構成音までの距離を渡して回してもらう。
             val arpeggio = if (cfg.chordStyle.chipArpeggio && voicing.isNotEmpty()) {
                 IntArray(voicing.size) { voicing[it] - voicing[0] }
@@ -383,13 +390,15 @@ class PlaybackEngine(
         if (pattern.isOn(ROW_BASS, step)) {
             val timbre = timbreOf(cfg, Instrument.BASS)
             val nextHit = pattern.nextHit(ROW_BASS, step)
+            // 向かう先は「次に和音が変わるところ」。小節の途中で変われば、
+            // その手前の打点が入り口になる。
             triggerNote(
                 Instrument.BASS,
                 Bassline.noteAt(
                     chord = chord,
-                    next = plan.nextChordAt(bar),
+                    next = plan.nextChordAt(bar, step),
                     hitIndex = pattern.hitIndex(ROW_BASS, step),
-                    last = nextHit >= STEPS_PER_BAR,
+                    last = nextHit >= plan.nextChangeStepAt(bar, step),
                     style = cfg.bassStyle,
                 ),
                 gateFrames(nextHit - step, timbre, cfg.bpm),
