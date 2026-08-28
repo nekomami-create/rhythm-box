@@ -10,7 +10,9 @@ import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.BassStyle
 import com.example.rhythmbox.core.CHANNELS
+import com.example.rhythmbox.core.Bar
 import com.example.rhythmbox.core.Chord
+import com.example.rhythmbox.core.ChordCruiser
 import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordVoicing
@@ -44,6 +46,7 @@ import com.example.rhythmbox.core.SongCodec
 import com.example.rhythmbox.core.SoundSet
 import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Transposer
+import com.example.rhythmbox.core.Voicing
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
 import kotlinx.coroutines.Job
@@ -130,6 +133,17 @@ data class RhythmUiState(
      * 既定は切（手で書いた旋律を勝手に消さない）。
      */
     val followMelody: Boolean = false,
+    /**
+     * コードクルーザーで捏ねている進行。空なら開いていない。
+     * 曲には入っていない（「差し込む」まで、いじっても曲は変わらない）。
+     */
+    val cruise: List<Chord> = emptyList(),
+    /** クルーザーが差し込む先の、曲構成のブロック番号。 */
+    val cruiseBlock: Int = -1,
+    /** いま流し込んでいる種の名前。 */
+    val cruiseSeed: String = "",
+    /** クルーザーの試聴を鳴らしているか。 */
+    val cruisePlaying: Boolean = false,
     /** リズムの「ランダム」が書き換える範囲。 */
     val rhythmScope: GenerateScope = GenerateScope.PATTERN,
     /** 旋律の「ランダム」が書き換える範囲。 */
@@ -545,7 +559,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         val state = _uiState.value
         val song = state.song
         if (song.patterns.isEmpty()) return
-        val plan = when (state.mode) {
+        // 試聴中は、捏ねている進行のほうを鳴らす。曲には入っていないので、
+        // ここで差し込まないと聴きようがない。
+        val plan = cruisePlan(state) ?: when (state.mode) {
             PlayMode.PATTERN -> PlaybackPlan.single(song, state.selectedPattern)
             PlayMode.CHAIN -> PlaybackPlan.chain(song, state.chain)
             PlayMode.SONG -> PlaybackPlan.arrangement(song)
@@ -917,6 +933,126 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             val bar = state.selectedBar.takeIf { state.rhythmScope == GenerateScope.BAR }
             SongEditor.withGeneratedRhythm(song, targets, bar, style, Random)
         }
+    }
+
+    // --- コードクルーザー ----------------------------------------------------
+
+    /**
+     * 試聴のためのプラン。捏ねている進行を、そのブロックのパターンに乗せて並べる。
+     *
+     * 曲そのものは書き換えない。ここでプランだけ作って鳴らせば、
+     * 差し込む前に「今のドラムとベースの上でどう聞こえるか」が分かる。
+     */
+    private fun cruisePlan(state: RhythmUiState): PlaybackPlan? {
+        if (!state.cruisePlaying || state.cruise.isEmpty()) return null
+        val song = state.song
+        val index = (song.arrangement.getOrNull(state.cruiseBlock)?.patternIndex ?: state.selectedPattern)
+            .coerceIn(song.patterns.indices)
+        // 声部の繋がりは通常のプランと同じ手順で解く。試聴と本番で音が違うと、
+        // 聴いて選んだ意味が無くなる。
+        val voicings = Voicing.lead(state.cruise)
+        return PlaybackPlan(
+            song.patterns,
+            state.cruise.mapIndexed { bar, chord -> Bar(index, chord, bar, voicings[bar]) },
+        )
+    }
+
+    /** [block] のコードを捏ねはじめる。中身は今そこにあるコード。 */
+    fun openCruiser(block: Int) {
+        val song = _uiState.value.song
+        val step = song.arrangement.getOrNull(block) ?: return
+        val fallback = song.patternChord(step.patternIndex)
+        val bars = step.repeat.coerceIn(1, PlaybackPlan.MAX_REPEAT)
+        _uiState.update {
+            it.copy(
+                cruise = List(bars) { bar -> step.chordAt(bar, fallback) },
+                cruiseBlock = block,
+                cruiseSeed = "いまのまま",
+                cruisePlaying = false,
+            )
+        }
+    }
+
+    /** 捏ねるのをやめる。曲には何も残らない。 */
+    fun closeCruiser() {
+        if (_uiState.value.cruisePlaying) stopCruise()
+        _uiState.update { it.copy(cruise = emptyList(), cruiseBlock = -1, cruiseSeed = "") }
+    }
+
+    /** [bar] 小節目のコードを差し替える。 */
+    fun setCruiseChord(bar: Int, chord: Chord) {
+        _uiState.update { state ->
+            if (bar !in state.cruise.indices) return@update state
+            state.copy(
+                cruise = state.cruise.toMutableList().also { it[bar] = chord },
+                cruiseSeed = "手で直した",
+            )
+        }
+        if (_uiState.value.cruisePlaying) syncEngine() else previewChord(chord)
+    }
+
+    /** 種を選べる形で出す。定番の型と、その場で作った進行。 */
+    fun cruiserSeeds(): List<ChordCruiser.Seed> {
+        val bars = _uiState.value.cruise.size.coerceAtLeast(1)
+        return ChordCruiser.seeds(detectedKey(), bars, Random)
+    }
+
+    /** 種を流し込む。長さはブロックに合わせる。 */
+    fun loadCruiseSeed(seed: ChordCruiser.Seed) {
+        _uiState.update { state ->
+            if (state.cruise.isEmpty()) return@update state
+            state.copy(
+                cruise = ChordCruiser.fit(seed.chords, state.cruise.size),
+                cruiseSeed = seed.name,
+            )
+        }
+        if (_uiState.value.cruisePlaying) syncEngine()
+    }
+
+    /** 捏ねている 4 小節をループで鳴らす。 */
+    fun playCruise() {
+        if (_uiState.value.cruise.isEmpty()) return
+        _uiState.update { it.copy(cruisePlaying = true, isPlaying = true, followSuspended = true) }
+        syncEngine()
+        audio.resume()
+        engine.start()
+        keepAlive.start(_uiState.value.song.name)
+        startPositionUpdates()
+    }
+
+    fun stopCruise() {
+        _uiState.update { it.copy(cruisePlaying = false) }
+        engine.stop()
+        clearPlayingState()
+        syncEngine()
+    }
+
+    fun toggleCruise() {
+        if (_uiState.value.cruisePlaying) stopCruise() else playCruise()
+    }
+
+    /**
+     * 捏ねた進行をブロックに差し込む。
+     *
+     * 変わるのはそのブロックのコードだけ。パターンも打ち込みも旋律も触らない
+     * （旋律は前のコードに合わせて書かれているので、勝手に作り直さない）。
+     */
+    fun applyCruise() {
+        val state = _uiState.value
+        val block = state.cruiseBlock
+        val chords = state.cruise
+        if (chords.isEmpty() || block < 0) return
+        snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            val next = song.arrangement.toMutableList()
+            if (block !in next.indices) return@updateCurrentSong song
+            val fallback = song.patternChord(next[block].patternIndex)
+            var step = next[block].withChordSlots(fallback)
+            chords.forEachIndexed { bar, chord -> step = step.withChord(bar, chord, fallback) }
+            next[block] = step
+            song.copy(arrangement = next)
+        }
+        closeCruiser()
     }
 
     /** 曲構成のコードを、起承転結の流れで埋める。 */
