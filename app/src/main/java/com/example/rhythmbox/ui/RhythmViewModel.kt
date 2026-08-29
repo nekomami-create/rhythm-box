@@ -15,6 +15,7 @@ import com.example.rhythmbox.core.ChordProgressions
 import com.example.rhythmbox.core.ChordPads
 import com.example.rhythmbox.core.ChordStyle
 import com.example.rhythmbox.core.ChordVoicing
+import com.example.rhythmbox.core.CHORD_SLOTS
 import com.example.rhythmbox.core.chordStepOf
 import com.example.rhythmbox.core.ChordSuggester
 import com.example.rhythmbox.core.ChordSuggestion
@@ -818,30 +819,34 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * 打ち込みにまるごと置ける進行の種。定番の型と、その場で作ったものが並ぶ。
+     * 小節にまるごと置ける進行の種。定番の型と、その場で作ったものが並ぶ。
      *
-     * 長さは [ChordProgressions.BARS] のまま渡す。パターンが何小節でも
-     * [ChordProgressions.spread] が枠に割り振ってくれるので、ここで小節数に
-     * 合わせて切ると、短いパターンで進行が 1 つに潰れてしまう。
+     * 長さは [ChordProgressions.BARS]（4 つ）で揃える。1 小節を
+     * [CHORD_SLOTS] 枠に割った上に等間隔で置くので、4 つなら 1 拍に 1 つ
+     * になる。ここを小節数で変えると、進行の長さが場面ごとに変わって
+     * 「何が置かれるか」が読めなくなる。
      */
     fun progressionSeeds(): List<ChordProgressions.Seed> =
         ChordProgressions.seeds(detectedKey())
 
     /**
-     * [seed] のコードを、開いているパターン全体へ等間隔に置く。
+     * [seed] のコードを、いま開いている小節に等間隔で置く。
      *
-     * 先に置いてあったコードは外す。残したまま混ぜると、進行の途中に
-     * 前のコードが挟まって、名前の付いた流れとして鳴らなくなる。
+     * 入るのはその 1 小節だけ。4 つの進行なら 1 拍に 1 つになる。ほかの
+     * 小節は触らないので、小節ごとに違う進行を置いていける。
+     *
+     * その小節に前から置いてあったコードは外す。残したまま混ぜると、
+     * 進行の途中に前のコードが挟まって、名前どおりの流れに鳴らない。
      */
     fun placeProgression(seed: ChordProgressions.Seed) {
         val state = _uiState.value
         val index = state.selectedPattern
-        val bars = state.pattern.barCount
+        val bar = state.selectedBar
         snapshotForUndo()
         repository.updateCurrentSong { song ->
-            var pattern = song.pattern(index).withoutChords()
-            ChordProgressions.spread(seed.chords, bars).forEach { at ->
-                pattern = pattern.withChordAt(at.bar, chordStepOf(at.slot), at.chord)
+            var pattern = song.pattern(index).withoutChordsAt(bar)
+            ChordProgressions.spread(seed.chords).forEach { at ->
+                pattern = pattern.withChordAt(bar, chordStepOf(at.slot), at.chord)
             }
             song.withPattern(index, pattern)
         }

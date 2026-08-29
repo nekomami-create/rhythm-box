@@ -252,7 +252,7 @@ fun PatternPickerDialog(
  * [suggestions] には「この流れなら次はこれ」というおすすめが入る。
  *
  * [progressions] を渡すと、王道進行をまるごと置く欄も出る。1 つ選ぶのと
- * 進行を丸ごと置き直すのは効き方がまるで違うので、欄を分けて、たたんでおく。
+ * その小節を置き直すのは効き方がまるで違うので、欄を分けて、たたんでおく。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -390,7 +390,7 @@ fun ChordPickerDialog(
                     }
                     if (progressionsOpen) {
                         Text(
-                            text = "このパターンのコードを置き直します。",
+                            text = "この小節のコードを置き直します（4 つの進行なら 1 拍に 1 つ）。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

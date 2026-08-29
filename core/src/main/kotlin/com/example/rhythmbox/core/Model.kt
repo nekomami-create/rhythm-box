@@ -508,6 +508,9 @@ data class Pattern(
         return gridAt(bar).chords.firstOrNull { it.step == at }?.chord
     }
 
+    /** [bar] に置いたコードだけを外す（ほかの小節はそのまま）。 */
+    fun withoutChordsAt(bar: Int): Pattern = editBar(bar) { it.copy(chords = emptyList()) }
+
     /** 置いたコードをすべて外す（コードは曲構成に任せる形に戻る）。 */
     fun withoutChords(): Pattern = copy(
         chords = emptyList(),

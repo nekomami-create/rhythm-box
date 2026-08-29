@@ -71,6 +71,24 @@ class PatternChordsTest {
     }
 
     @Test
+    fun `clearing one bar leaves the other bars alone`() {
+        // 進行を置き直すとき、開いている小節だけを空にする。
+        // 全部消すと、ほかの小節に手で置いたコードまで巻き添えになる。
+        val placed = Pattern.empty("p").withBarCount(3)
+            .withChordAt(0, 0, Chord(0))
+            .withChordAt(1, 0, Chord(5))
+            .withChordAt(1, 8, Chord(7))
+            .withChordAt(2, 0, Chord(9))
+        val cleared = placed.withoutChordsAt(1)
+
+        assertEquals(Chord(0), cleared.chordSlotAt(0, 0))
+        assertNull(cleared.chordSlotAt(1, 0))
+        assertNull(cleared.chordSlotAt(1, 4))
+        assertEquals(Chord(9), cleared.chordSlotAt(2, 0))
+        assertTrue("ほかの小節が残っているので、まだ打ち込み側が勝つ", cleared.hasChords)
+    }
+
+    @Test
     fun `placed chords come back in order`() {
         val placed = pattern().withChordAt(0, 12, g).withChordAt(0, 4, f).withChordAt(0, 0, c)
         assertEquals(listOf(0, 4, 12), placed.gridAt(0).chords.map { it.step })

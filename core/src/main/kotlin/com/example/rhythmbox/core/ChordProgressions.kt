@@ -22,8 +22,8 @@ object ChordProgressions {
     /** 違う進行を 1 つ見つけるのに、何回まで引き直すか。 */
     private const val TRIES = 12
 
-    /** 置き場所ひとつ。 */
-    data class Placement(val bar: Int, val slot: Int, val chord: Chord)
+    /** 1 小節の中の置き場所ひとつ。 */
+    data class Placement(val slot: Int, val chord: Chord)
 
     /** 名前の付いたコード進行ひと組。 */
     data class Seed(val name: String, val chords: List<Chord>)
@@ -68,25 +68,21 @@ object ChordProgressions {
     }
 
     /**
-     * [chords] を [bars] 小節ぶんの枠に等間隔で割り当てる。
+     * [chords] を 1 小節の枠に等間隔で割り当てる。
      *
-     * 1 小節は [CHORD_SLOTS] 枠なので、置ける場所は全部で bars × 8 個ある。
-     * そこへ等間隔で並べると、
+     * 1 小節は [CHORD_SLOTS] 枠あるので、4 つなら 1 拍に 1 つ、2 つなら
+     * 半小節に 1 つ、8 つなら 8 分ごとに 1 つになる。
      *
-     * - 4 小節のパターンに 4 つ … 1 小節に 1 つ（いちばんよくある形）
-     * - 2 小節のパターンに 4 つ … 半小節に 1 つ
-     * - 1 小節のパターンに 4 つ … 1 拍に 1 つ
-     *
-     * と、長さに合わせて素直な置き方になる。規則が 1 本で済むので、
-     * 小節数ごとに場合分けしなくていい。
+     * 小節をまたいで散らさないのは、コードを置くのが「開いている小節を
+     * 直す」操作だから。パターン全体に散らすと、4 小節のパターンでは
+     * 開いている小節の頭が 1 つ変わるだけになり、押しても何も起きて
+     * いないように見える。
      */
-    fun spread(chords: List<Chord>, bars: Int): List<Placement> {
-        if (chords.isEmpty() || bars <= 0) return emptyList()
-        val total = bars * CHORD_SLOTS
-        val used = chords.take(total)
+    fun spread(chords: List<Chord>): List<Placement> {
+        if (chords.isEmpty()) return emptyList()
+        val used = chords.take(CHORD_SLOTS)
         return used.mapIndexed { index, chord ->
-            val at = index * total / used.size
-            Placement(at / CHORD_SLOTS, at % CHORD_SLOTS, chord)
+            Placement(index * CHORD_SLOTS / used.size, chord)
         }
     }
 

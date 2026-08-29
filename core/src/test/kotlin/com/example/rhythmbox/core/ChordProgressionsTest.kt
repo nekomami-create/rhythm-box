@@ -109,43 +109,32 @@ class ChordProgressionsTest {
     }
 
     @Test
-    fun `four chords over four bars land one to a bar, on the downbeat`() {
+    fun `four chords fall one to a beat`() {
+        // 一番よくある形。1 小節に 4 つなら 1 拍ずつ。
         val chords = List(4) { Chord(it) }
-        assertEquals(
-            listOf(0 to 0, 1 to 0, 2 to 0, 3 to 0),
-            ChordProgressions.spread(chords, 4).map { it.bar to it.slot },
-        )
-        assertEquals(chords, ChordProgressions.spread(chords, 4).map { it.chord })
+        assertEquals(listOf(0, 2, 4, 6), ChordProgressions.spread(chords).map { it.slot })
+        assertEquals(chords, ChordProgressions.spread(chords).map { it.chord })
     }
 
     @Test
-    fun `a shorter pattern packs the same progression tighter`() {
-        val chords = List(4) { Chord(it) }
-        // 2 小節なら半小節ごと、1 小節なら 1 拍ごと。規則は 1 本のまま。
+    fun `fewer or more chords still divide the bar evenly`() {
+        assertEquals(listOf(0), ChordProgressions.spread(List(1) { Chord(it) }).map { it.slot })
+        assertEquals(listOf(0, 4), ChordProgressions.spread(List(2) { Chord(it) }).map { it.slot })
+        assertEquals(listOf(0, 2, 5), ChordProgressions.spread(List(3) { Chord(it) }).map { it.slot })
         assertEquals(
-            listOf(0 to 0, 0 to 4, 1 to 0, 1 to 4),
-            ChordProgressions.spread(chords, 2).map { it.bar to it.slot },
-        )
-        assertEquals(
-            listOf(0 to 0, 0 to 2, 0 to 4, 0 to 6),
-            ChordProgressions.spread(chords, 1).map { it.bar to it.slot },
+            (0 until CHORD_SLOTS).toList(),
+            ChordProgressions.spread(List(CHORD_SLOTS) { Chord(it) }).map { it.slot },
         )
     }
 
     @Test
-    fun `spreading never places two chords in the same slot`() {
+    fun `spreading never puts two chords in the same slot`() {
         // 同じ枠に二度置くと、あとから置いたほうだけが残ってコードが消える。
-        listOf(1, 2, 4, 8).forEach { bars ->
-            (1..bars * CHORD_SLOTS).forEach { count ->
-                val places = ChordProgressions.spread(List(count) { Chord(it.mod(12)) }, bars)
-                assertEquals("$bars 小節に $count 個で欠けた", count, places.size)
-                assertEquals(
-                    "$bars 小節に $count 個で枠がぶつかった",
-                    count,
-                    places.map { it.bar to it.slot }.distinct().size,
-                )
-                assertTrue(places.all { it.bar in 0 until bars && it.slot in 0 until CHORD_SLOTS })
-            }
+        (1..CHORD_SLOTS).forEach { count ->
+            val places = ChordProgressions.spread(List(count) { Chord(it.mod(12)) })
+            assertEquals("$count 個で欠けた", count, places.size)
+            assertEquals("$count 個で枠がぶつかった", count, places.map { it.slot }.distinct().size)
+            assertTrue(places.all { it.slot in 0 until CHORD_SLOTS })
         }
     }
 
@@ -153,50 +142,38 @@ class ChordProgressionsTest {
     fun `spreading really is even, right through to the end`() {
         // どのコードも受け持つ長さがほぼ同じで、最後のコードの後ろだけが
         // 余る、ということも無い。端数を頭で丸めると、後半がすかすかになる。
-        listOf(1, 2, 4, 8).forEach { bars ->
-            val total = bars * CHORD_SLOTS
-            (1..total).forEach { count ->
-                val at = ChordProgressions.spread(List(count) { Chord(it.mod(12)) }, bars)
-                    .map { it.bar * CHORD_SLOTS + it.slot }
-                val spans = at.indices.map { (at.getOrNull(it + 1) ?: total) - at[it] }
-                assertTrue(
-                    "$bars 小節に $count 個で長さがばらけた: $spans",
-                    spans.max() - spans.min() <= 1,
-                )
-            }
+        (1..CHORD_SLOTS).forEach { count ->
+            val at = ChordProgressions.spread(List(count) { Chord(it.mod(12)) }).map { it.slot }
+            val spans = at.indices.map { (at.getOrNull(it + 1) ?: CHORD_SLOTS) - at[it] }
+            assertTrue("$count 個で長さがばらけた: $spans", spans.max() - spans.min() <= 1)
         }
     }
 
     @Test
     fun `spreading keeps the order and starts at the very top`() {
-        val places = ChordProgressions.spread(List(3) { Chord(it) }, 4)
-        assertEquals(0, places.first().bar)
+        val places = ChordProgressions.spread(List(3) { Chord(it) })
         assertEquals(0, places.first().slot)
         assertEquals(List(3) { Chord(it) }, places.map { it.chord })
     }
 
     @Test
     fun `spreading drops what will not fit rather than piling it up`() {
-        val bars = 1
         val chords = List(CHORD_SLOTS + 4) { Chord(it.mod(12)) }
-        val places = ChordProgressions.spread(chords, bars)
+        val places = ChordProgressions.spread(chords)
         assertEquals(CHORD_SLOTS, places.size)
         assertEquals(chords.take(CHORD_SLOTS), places.map { it.chord })
     }
 
     @Test
     fun `spreading nothing places nothing`() {
-        assertEquals(emptyList<ChordProgressions.Placement>(), ChordProgressions.spread(emptyList(), 4))
-        assertEquals(emptyList<ChordProgressions.Placement>(), ChordProgressions.spread(listOf(Chord(0)), 0))
+        assertEquals(emptyList<ChordProgressions.Placement>(), ChordProgressions.spread(emptyList()))
     }
 
     @Test
-    fun `every seed fits a four bar pattern one chord to a bar`() {
-        // 画面から渡すのは既定の長さのまま。どの種も 1 小節に 1 つで収まる。
+    fun `every seed fills a bar a beat at a time`() {
+        // 画面から渡すのは既定の長さのまま。どの種も 1 拍に 1 つで収まる。
         ChordProgressions.seeds(cMajor, random = Random(3)).forEach { seed ->
-            val places = ChordProgressions.spread(seed.chords, 4)
-            assertEquals(seed.name, 4, places.size)
-            assertTrue(seed.name, places.all { it.slot == 0 })
+            assertEquals(seed.name, listOf(0, 2, 4, 6), ChordProgressions.spread(seed.chords).map { it.slot })
         }
     }
 
