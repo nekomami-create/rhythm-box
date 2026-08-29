@@ -463,25 +463,19 @@ data class Pattern(
     }
 
     /**
-     * [bar] の [step] で鳴っている和音。打ち込みに置かれていなければ null。
+     * [bar] の [step] で鳴っている和音。その小節に置かれていなければ null。
      *
-     * 置いた和音は、次に置いたものが来るまで続く。小節もまたぐし、
-     * ループの継ぎ目もまたぐ（最後に置いた和音が、次の周回の頭まで続く）。
-     * だから 1 つでも置けば、そのパターンのコードは打ち込みが決めることになる。
-     * 1 つも置かなければ null が返り、今までどおり曲構成が決める。
+     * 置いた和音が効くのは、**その小節の中だけ**。次に置いたものが来るまで
+     * 続き、小節の終わりで切れる。小節の頭に何も置いていない小節は null が
+     * 返り、そこは曲構成のコードが鳴る。
+     *
+     * 小節をまたいで引き継いでいた頃は、1 つ置いただけでパターン全体の
+     * コードを打ち込みが決めてしまい、曲構成側の 4 小節の進行が丸ごと
+     * 消えた。小節の中の進行と小節をまたぐ進行は別のものなので、
+     * ここで混ぜない。
      */
-    fun chordAt(bar: Int, step: Int): Chord? {
-        if (!hasChords) return null
-        var at = bar.mod(barCount)
-        var from = step
-        // 見つかるまで小節をさかのぼる。1 周して戻ったら、どこにも無いということ。
-        repeat(barCount) {
-            gridAt(at).chords.lastOrNull { it.step <= from }?.let { return it.chord }
-            at = (at - 1).mod(barCount)
-            from = STEPS_PER_BAR - 1
-        }
-        return null
-    }
+    fun chordAt(bar: Int, step: Int): Chord? =
+        gridAt(bar.mod(barCount)).chords.lastOrNull { it.step <= step }?.chord
 
     /** 打ち込みにコードが 1 つでも置いてあるか。 */
     val hasChords: Boolean

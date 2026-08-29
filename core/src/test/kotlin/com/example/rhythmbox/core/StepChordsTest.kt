@@ -47,6 +47,23 @@ class StepChordsTest {
     }
 
     @Test
+    fun `the arrangement keeps its progression in the bars you did not touch`() {
+        // 小節をまたぐ進行（曲構成）と、小節の中の進行（打ち込み）は別もの。
+        // 2 小節目に置いても、1・3・4 小節目は曲構成のコードのまま鳴る。
+        val base = song().copy(
+            arrangement = listOf(ArrangementStep(0, 4, listOf(c, am, f, g))),
+        )
+        var pattern = base.pattern(0).withBarCount(4).withChordAt(1, 8, Chord(2, ChordQuality.MINOR))
+        val plan = PlaybackPlan.arrangement(base.withPattern(0, pattern))
+
+        assertEquals("1 小節目は曲構成のまま", c, plan.chordAt(0, 0))
+        assertEquals("2 小節目の頭もまだ曲構成", am, plan.chordAt(1, 0))
+        assertEquals("置いたところから打ち込み", Chord(2, ChordQuality.MINOR), plan.chordAt(1, 8))
+        assertEquals("3 小節目で曲構成に戻る", f, plan.chordAt(2, 0))
+        assertEquals("4 小節目も曲構成のまま", g, plan.chordAt(3, 0))
+    }
+
+    @Test
     fun `two chords in one bar both come out`() {
         // これが今回の狙い。1 小節に 2 つ置ける＝本来のツーファイブが書ける。
         val plan = PlaybackPlan.single(place(song(), 0 to g, 8 to c), 0)

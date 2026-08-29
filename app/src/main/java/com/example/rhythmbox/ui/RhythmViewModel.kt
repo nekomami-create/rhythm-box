@@ -833,7 +833,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         ChordProgressions.seeds(detectedKey())
 
     /**
-     * [seed] のコードを、いま開いている小節に等間隔で置く。
+     * [seed] のコードを、いま開いている小節の中に等間隔で置く。
      *
      * 入るのはその 1 小節だけ。4 つの進行なら 1 拍に 1 つになる。ほかの
      * 小節は触らないので、小節ごとに違う進行を置いていける。
@@ -841,7 +841,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
      * その小節に前から置いてあったコードは外す。残したまま混ぜると、
      * 進行の途中に前のコードが挟まって、名前どおりの流れに鳴らない。
      */
-    fun placeProgression(seed: ChordProgressions.Seed) {
+    fun placeProgressionInBar(seed: ChordProgressions.Seed) {
         val state = _uiState.value
         val index = state.selectedPattern
         val bar = state.selectedBar
@@ -853,6 +853,36 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
             }
             song.withPattern(index, pattern)
         }
+    }
+
+    /**
+     * [seed] のコードを、開いている小節から 1 小節に 1 つずつ置く。
+     *
+     * 王道進行が本来そう読まれる形。パターンの最後の小節を過ぎるぶんは
+     * 入らない（足りない小節に押し込むと、名前どおりの流れにならない）。
+     *
+     * 通り道の小節はいったん空にする。小節の途中に前のコードが残っていると、
+     * 1 小節に 1 つのはずの進行がそこだけ二重になる。
+     */
+    fun placeProgressionOverBars(seed: ChordProgressions.Seed) {
+        val state = _uiState.value
+        val index = state.selectedPattern
+        val from = state.selectedBar
+        val bars = state.pattern.barCount
+        snapshotForUndo()
+        repository.updateCurrentSong { song ->
+            var pattern = song.pattern(index)
+            ChordProgressions.overBars(seed.chords, from, bars).forEach { at ->
+                pattern = pattern.withoutChordsAt(at.bar).withChordAt(at.bar, 0, at.chord)
+            }
+            song.withPattern(index, pattern)
+        }
+    }
+
+    /** [seed] を「小節ごと」に置いたとき、実際に何小節ぶん入るか。 */
+    fun progressionBarSpan(seed: ChordProgressions.Seed): Int {
+        val state = _uiState.value
+        return ChordProgressions.overBars(seed.chords, state.selectedBar, state.pattern.barCount).size
     }
 
     /**

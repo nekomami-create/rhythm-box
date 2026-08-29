@@ -170,6 +170,27 @@ class ChordProgressionsTest {
     }
 
     @Test
+    fun `over bars puts one chord at the head of each bar`() {
+        val chords = List(4) { Chord(it) }
+        assertEquals(
+            listOf(0, 1, 2, 3),
+            ChordProgressions.overBars(chords, from = 0, barCount = 4).map { it.bar },
+        )
+        assertEquals(chords, ChordProgressions.overBars(chords, 0, 4).map { it.chord })
+    }
+
+    @Test
+    fun `over bars starts where you opened and drops what runs past the end`() {
+        val chords = List(4) { Chord(it) }
+        val places = ChordProgressions.overBars(chords, from = 2, barCount = 4)
+        assertEquals("はみ出したぶんは切る", listOf(2, 3), places.map { it.bar })
+        assertEquals(chords.take(2), places.map { it.chord })
+        // 1 小節しか無いパターンなら、頭の 1 つだけが入る。
+        assertEquals(1, ChordProgressions.overBars(chords, 0, 1).size)
+        assertEquals(emptyList<Int>(), ChordProgressions.overBars(chords, 4, 4).map { it.bar })
+    }
+
+    @Test
     fun `every seed fills a bar a beat at a time`() {
         // 画面から渡すのは既定の長さのまま。どの種も 1 拍に 1 つで収まる。
         ChordProgressions.seeds(cMajor, random = Random(3)).forEach { seed ->

@@ -25,6 +25,9 @@ object ChordProgressions {
     /** 1 小節の中の置き場所ひとつ。 */
     data class Placement(val slot: Int, val chord: Chord)
 
+    /** 小節をまたぐときの置き場所ひとつ。どの小節の頭に置くか。 */
+    data class BarPlacement(val bar: Int, val chord: Chord)
+
     /** 名前の付いたコード進行ひと組。 */
     data class Seed(val name: String, val chords: List<Chord>)
 
@@ -85,6 +88,18 @@ object ChordProgressions {
             Placement(index * CHORD_SLOTS / used.size, chord)
         }
     }
+
+    /**
+     * [chords] を [from] 小節目から 1 小節に 1 つずつ。
+     *
+     * 王道進行が本来そう読まれる形。[barCount] からはみ出すぶんは切る
+     * （足りない小節に押し込むと、名前どおりの流れにならない）。
+     */
+    fun overBars(chords: List<Chord>, from: Int, barCount: Int): List<BarPlacement> =
+        chords.mapIndexedNotNull { index, chord ->
+            val bar = from + index
+            if (bar in 0 until barCount) BarPlacement(bar, chord) else null
+        }
 
     /**
      * 種をひと通り。頭に定番、後ろに作らせたものを置く。

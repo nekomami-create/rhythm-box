@@ -46,21 +46,27 @@ class PatternChordsTest {
     }
 
     @Test
-    fun `a chord carries into the bars after it`() {
+    fun `a chord stops at the end of its bar`() {
+        // 置いた和音が効くのはその小節の中だけ。次の小節には持ち越さない。
         val placed = pattern(4).withChordAt(0, 0, c).withChordAt(2, 0, f)
         assertEquals(c, placed.chordAt(0, 0))
-        assertEquals(c, placed.chordAt(1, 8)) // 2 小節目は置いていないが続く
+        assertEquals(c, placed.chordAt(0, 15))
+        assertNull("2 小節目まで引きずっている", placed.chordAt(1, 8))
         assertEquals(f, placed.chordAt(2, 0))
-        assertEquals(f, placed.chordAt(3, 15))
+        assertNull("4 小節目まで引きずっている", placed.chordAt(3, 15))
     }
 
     @Test
-    fun `the last chord carries round the loop`() {
-        // パターンは繰り返す。3 小節目で変えた和音は、次の周の頭まで続く。
-        val placed = pattern(4).withChordAt(2, 0, g)
-        assertEquals(g, placed.chordAt(0, 0))
-        assertEquals(g, placed.chordAt(1, 15))
-        assertEquals(g, placed.chordAt(2, 0))
+    fun `a bar with nothing placed is left to the arrangement`() {
+        // 小節をまたぐ進行は曲構成が持つ。小節の中に置いたコードがそれを
+        // 丸ごと消してしまうと、二つを別々に扱えない。
+        val placed = pattern(4).withChordAt(2, 8, g)
+        assertNull(placed.chordAt(0, 0))
+        assertNull(placed.chordAt(1, 15))
+        assertNull("置いた位置より前は、その小節でもまだ曲構成", placed.chordAt(2, 7))
+        assertEquals(g, placed.chordAt(2, 8))
+        assertEquals(g, placed.chordAt(2, 15))
+        assertNull(placed.chordAt(3, 0))
     }
 
     @Test

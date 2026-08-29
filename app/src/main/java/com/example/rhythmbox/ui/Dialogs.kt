@@ -252,7 +252,11 @@ fun PatternPickerDialog(
  * [suggestions] には「この流れなら次はこれ」というおすすめが入る。
  *
  * [progressions] を渡すと、王道進行をまるごと置く欄も出る。1 つ選ぶのと
- * その小節を置き直すのは効き方がまるで違うので、欄を分けて、たたんでおく。
+ * 進行を置き直すのは効き方がまるで違うので、欄を分けて、たたんでおく。
+ *
+ * 置き方は 2 つある。「小節ごと」は 1 小節に 1 つずつ（王道進行が本来
+ * そう読まれる形）、「この小節に」は 1 小節の中に 1 拍ずつ。同じ進行でも
+ * まったく別の使い方なので、どちらで置くかを先に選ばせる。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -262,8 +266,10 @@ fun ChordPickerDialog(
     suggestions: List<ChordSuggestion> = emptyList(),
     /** まるごと置ける進行の種。空なら欄ごと出さない。 */
     progressions: List<ChordProgressions.Seed> = emptyList(),
-    /** 進行を選んだとき。渡さなければ欄は出ない。 */
-    onProgression: ((ChordProgressions.Seed) -> Unit)? = null,
+    /** 進行を選んだとき（第 2 引数が true なら小節ごと）。渡さなければ欄は出ない。 */
+    onProgression: ((ChordProgressions.Seed, Boolean) -> Unit)? = null,
+    /** 「小節ごと」で置いたとき、実際に何小節ぶん入るか。0 なら置けない。 */
+    progressionBarSpan: (ChordProgressions.Seed) -> Int = { 0 },
     keyName: String? = null,
     /** 前後のコード。「Am → ? → F」のように、何に挟まれているかを見せる。 */
     neighbours: Pair<Chord?, Chord?> = null to null,
@@ -278,6 +284,8 @@ fun ChordPickerDialog(
     var bass by remember { mutableStateOf(current.bass) }
     val chord = Chord(root, quality, bass)
     var progressionsOpen by remember { mutableStateOf(false) }
+    // 既定は「小節ごと」。王道進行はそう読むのが本来なので、名前どおりの音が先に出る。
+    var overBars by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -389,28 +397,55 @@ fun ChordPickerDialog(
                         }
                     }
                     if (progressionsOpen) {
+                        // どちらで置くかを先に決める。同じ進行でも、1 小節に 1 つずつ
+                        // 置くのと 1 小節の中に詰めるのとでは、まるで違う音になる。
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PickerChip(
+                                label = "小節ごと",
+                                selected = overBars,
+                                width = 84.dp,
+                                onClick = { overBars = true },
+                            )
+                            PickerChip(
+                                label = "この小節に",
+                                selected = !overBars,
+                                width = 84.dp,
+                                onClick = { overBars = false },
+                            )
+                        }
                         Text(
-                            text = "この小節のコードを置き直します（4 つの進行なら 1 拍に 1 つ）。",
+                            text = if (overBars) {
+                                "開いている小節から、1 小節に 1 つずつ置きます。"
+                            } else {
+                                "開いている小節の中に、1 拍に 1 つずつ置きます。"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(4.dp))
                         progressions.forEach { seed ->
+                            // 小節ごとに置くと、パターンの終わりを過ぎるぶんは入らない。
+                            // 押す前に何小節ぶん入るかを出しておく。
+                            val span = if (overBars) progressionBarSpan(seed) else seed.chords.size
+                            val short = overBars && span < seed.chords.size
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onProgression(seed) },
+                                    .clickable(enabled = span > 0) { onProgression(seed, overBars) },
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                                     Text(
-                                        text = seed.name,
+                                        text = seed.name + if (short) "（頭の $span 小節ぶんだけ入ります）" else "",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = seed.chords.joinToString(" - ") { it.name },
+                                        text = seed.chords.mapIndexed { index, chord ->
+                                            // 入らないコードは薄く見せず、印で分かるようにする。
+                                            if (index < span) chord.name else "(${chord.name})"
+                                        }.joinToString(" - "),
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
                                     )

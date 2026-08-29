@@ -192,10 +192,11 @@ fun SequencerScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
                 viewModel.placedChordBefore(state.selectedBar, slot),
             ),
             progressions = seeds,
-            onProgression = {
-                viewModel.placeProgression(it)
+            onProgression = { seed, overBars ->
+                if (overBars) viewModel.placeProgressionOverBars(seed) else viewModel.placeProgressionInBar(seed)
                 chordSlot = -1
             },
+            progressionBarSpan = viewModel::progressionBarSpan,
             keyName = viewModel.detectedKey().name,
             onPreview = viewModel::previewChord,
             onPick = {
