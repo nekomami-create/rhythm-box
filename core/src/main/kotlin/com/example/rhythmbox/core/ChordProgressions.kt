@@ -136,6 +136,7 @@ object ChordProgressions {
         ProgressionTemplate.CITY,
         ProgressionTemplate.TWO_FIVE_ONE,
         ProgressionTemplate.MINOR_TWO_FIVE,
+        ProgressionTemplate.ANDALUSIAN,
         ProgressionTemplate.TURNAROUND,
         ProgressionTemplate.DOUBLE_DOMINANT,
         ProgressionTemplate.GAME_FIELD,

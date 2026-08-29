@@ -89,6 +89,88 @@ class GenreTest {
     }
 
     @Test
+    fun `the andalusian lifts its last chord out of the minor scale`() {
+        // ここが型の肝。ナチュラルマイナーのままだと v は短三和音（Em）で、
+        // i へ落ちる力が出ない。長三和音の 7th にして初めてこの型になる。
+        val aMinor = MusicKey(9, Scale.NATURAL_MINOR)
+        assertEquals(
+            listOf("Am", "G", "F", "E7"),
+            ProgressionTemplate.ANDALUSIAN.chords(aMinor).map { it.name },
+        )
+        val last = ProgressionTemplate.ANDALUSIAN.chords(aMinor).last()
+        assertEquals("V が短三和音のままでは効かない", ChordQuality.SEVENTH, last.quality)
+        // 主音を変えても付いてくる。
+        assertEquals(
+            listOf("Em", "D", "C", "B7"),
+            ProgressionTemplate.ANDALUSIAN.chords(MusicKey(4, Scale.NATURAL_MINOR)).map { it.name },
+        )
+    }
+
+    @Test
+    fun `hard rock pushes with chords and bass, not with the drums`() {
+        // ハードロックらしさはギターの刻みとベースの連打から来る。ドラムは
+        // ロックとそう変わらないので、そこで測っても違いが出ない。
+        val rock = perBar(Genre.ROCK)
+        val hard = perBar(Genre.HARD_ROCK)
+        assertTrue("コードが刻めていない（ロック ${rock.chord} / ハードロック ${hard.chord}）",
+            hard.chord > rock.chord * 2)
+        assertTrue("ベースが押せていない（ロック ${rock.bass} / ハードロック ${hard.bass}）",
+            hard.bass > rock.bass * 2)
+        // ルートを押し続ける。5 度で動かすと軽くなる。
+        assertEquals(BassStyle.ROOT, Genre.HARD_ROCK.bassStyle)
+        // 三和音のまま。7th を足すと歪んだギターの角が取れる。
+        assertEquals(0.0, Genre.HARD_ROCK.seventhChance, 1e-9)
+    }
+
+    @Test
+    fun `hard rock stays in the minor scale`() {
+        // 長調の型が混ざると、狙っている暗さが毎回は出なくなる。
+        val aMinor = MusicKey(9, Scale.NATURAL_MINOR)
+        for (template in Genre.HARD_ROCK.progressions) {
+            val tonic = template.chords(aMinor).first()
+            assertTrue(
+                "${template.name} が短調で始まっていない（${tonic.name}）",
+                tonic.quality in listOf(ChordQuality.MINOR, ChordQuality.MINOR_SEVENTH, ChordQuality.HALF_DIMINISHED) ||
+                    template.keyFor(aMinor).scale != Scale.MAJOR,
+            )
+        }
+    }
+
+    @Test
+    fun `the digital genre drives on sixteenth bass`() {
+        // 打ち込みらしさは、動き続けるベースそのもの。
+        val dance = perBar(Genre.DANCE)
+        val digital = perBar(Genre.DIGITAL)
+        assertTrue("ベースが 16 分で動いていない（${digital.bass}）", digital.bass >= 10.0)
+        assertTrue("ダンスと変わらない（ダンス ${dance.bass} / 打ち込み ${digital.bass}）",
+            digital.bass > dance.bass * 2)
+        assertTrue("ハットが細かくない（${digital.hat}）", digital.hat >= 11.0)
+    }
+
+    private data class Density(val chord: Double, val bass: Double, val hat: Double)
+
+    /** そのジャンルで作った曲の、1 小節あたりの平均打点数。 */
+    private fun perBar(genre: Genre): Density {
+        var chord = 0; var bass = 0; var hat = 0; var bars = 0
+        repeat(30) { seed ->
+            val random = Random(seed)
+            val recipe = SongEditor.recipeFor(genre, null, random)
+            val song = SongBuilder.build(
+                Song.newSong("s", "x", 0L), recipe, MusicKey(9, Scale.NATURAL_MINOR), 8, random,
+            )
+            val pattern = song.pattern(0)
+            for (bar in 0 until pattern.barCount) {
+                bars++
+                val one = pattern.at(bar)
+                chord += (0 until STEPS_PER_BAR).count { one.isOn(ROW_CHORD, it) }
+                bass += (0 until STEPS_PER_BAR).count { one.isOn(ROW_BASS, it) }
+                hat += (0 until STEPS_PER_BAR).count { one.isOn(Voice.CLOSED_HAT.ordinal, it) }
+            }
+        }
+        return Density(chord.toDouble() / bars, bass.toDouble() / bars, hat.toDouble() / bars)
+    }
+
+    @Test
     fun `the genres really are different from each other`() {
         // テンポ帯が全部同じだと、選ぶ意味がない。
         val ranges = Genre.entries.map { it.bpmRange }

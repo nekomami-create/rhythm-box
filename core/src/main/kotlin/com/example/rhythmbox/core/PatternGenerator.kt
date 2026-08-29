@@ -10,6 +10,8 @@ enum class RhythmStyle(val label: String) {
     HIPHOP("ヒップホップ"),
     LATIN("ラテン"),
     CHIP_DRIVE("チップ"),
+    HARD_ROCK("ハードロック"),
+    DIGITAL("打ち込み"),
 }
 
 /**
@@ -276,6 +278,53 @@ object PatternGenerator {
             // チップ音源の「和音が 1 つの音色に聞こえる」効き目が薄れる。
             RowRule(ROW_CHORD, listOf(0, 4, 8, 12), chances(2 to 0.30, 10 to 0.30)),
             RowRule(ROW_BASS, listOf(0, 2, 4, 6, 8, 10, 12, 14)),
+        )
+
+        // ハードロック。芯はギターの刻みなので、コードは 8 分で打ち続ける。
+        // 1 小節に 1 発だと、どれだけ速くしても「刻んでいる」感じが出ない。
+        // ベースも 8 分でルートを押し続ける（動かすと軽くなる）。
+        RhythmStyle.HARD_ROCK -> listOf(
+            // バスドラの 16 分の連打がハードロックの推進力。2・3 と 10・11 に
+            // 寄せてあるのは、スネアの手前で詰まって聞こえるため。
+            RowRule(
+                Voice.KICK.ordinal,
+                listOf(0, 8),
+                chances(2 to 0.40, 3 to 0.35, 10 to 0.40, 11 to 0.35, 14 to 0.30),
+            ),
+            RowRule(Voice.SNARE.ordinal, listOf(4, 12), chances(7 to 0.20, 15 to 0.25)),
+            RowRule(
+                Voice.CLOSED_HAT.ordinal,
+                grids = listOf(EIGHTHS, EIGHTHS, EIGHTHS, SIXTEENTHS),
+                chances = odds(0.12),
+            ),
+            // 小節の頭のオープンハットはシンバル代わり。ここが無いと出だしが立たない。
+            RowRule(Voice.OPEN_HAT.ordinal, listOf(0), chances(8 to 0.30, 14 to 0.25)),
+            RowRule(Voice.TOM.ordinal, chances = chances(11 to 0.15, 13 to 0.18, 14 to 0.20, 15 to 0.20)),
+            RowRule(ROW_CHORD, listOf(0, 4, 8, 12), chances(2 to 0.35, 6 to 0.35, 10 to 0.35, 14 to 0.35)),
+            RowRule(ROW_BASS, listOf(0, 2, 4, 6, 8, 10, 12, 14)),
+        )
+
+        // 打ち込み。らしさは 16 分で動き続けるベースから出る。
+        // ドラムは 4 つ打ちに近い土台にして、コードは裏で刺す。
+        // コードを表で鳴らすとベースと団子になって、どちらも前に出ない。
+        RhythmStyle.DIGITAL -> listOf(
+            RowRule(Voice.KICK.ordinal, listOf(0, 4, 8, 12), chances(7 to 0.25, 15 to 0.30)),
+            RowRule(Voice.SNARE.ordinal, listOf(4, 12)),
+            RowRule(Voice.CLAP.ordinal, listOf(4, 12), chances(7 to 0.20)),
+            RowRule(Voice.CLOSED_HAT.ordinal, grids = BUSY_GRIDS, chances = odds(0.30)),
+            RowRule(Voice.OPEN_HAT.ordinal, chances = offbeats(0.25)),
+            RowRule(Voice.RIM.ordinal, chances = chances(3 to 0.15, 11 to 0.15)),
+            // 裏を厚めに埋める。1 小節に 2〜3 発だと、この速さでは
+            // 刺さっているというより、まばらに鳴っているだけに聞こえる。
+            RowRule(
+                ROW_CHORD,
+                listOf(0),
+                chances(2 to 0.55, 4 to 0.30, 6 to 0.60, 10 to 0.60, 12 to 0.30, 14 to 0.55),
+                lateStart = 0.20,
+            ),
+            // 8 分を土台に、裏を高い確率で埋める。全部 16 分で固定すると
+            // 機械の連打になって、動いている感じがかえって消える。
+            RowRule(ROW_BASS, listOf(0, 2, 4, 6, 8, 10, 12, 14), odds(0.55)),
         )
 
         RhythmStyle.LATIN -> listOf(

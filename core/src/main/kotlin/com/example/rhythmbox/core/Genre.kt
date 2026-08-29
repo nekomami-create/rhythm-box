@@ -191,6 +191,23 @@ data class ProgressionTemplate(
         )
 
         /**
+         * i - ♭VII - ♭VI - V。下がっていって、最後の V だけが持ち上げる。
+         *
+         * 肝は V を長三和音（7th）にすること。ナチュラルマイナーのままだと
+         * v は短三和音で、i へ落ちる力が出ない。ここだけ和声的短音階の
+         * 導音を借りている。イ短調なら Am - G - F - E7。
+         *
+         * ハードロックやヴィジュアル系がいちばんよく使う形。下降と、
+         * 最後に張り詰める V の組み合わせがそのまま曲の性格になる。
+         */
+        val ANDALUSIAN = ProgressionTemplate(
+            "i-♭VII-♭VI-V",
+            listOf(0, 6, 5, 4),
+            listOf(null, null, null, ChordQuality.SEVENTH),
+            scale = Scale.NATURAL_MINOR,
+        )
+
+        /**
          * I - IV - II7 - V。II7 は V へ向かうセカンダリードミナント（V/V）。
          *
          * ii が長三和音になって、そのまま V へ落ちる。ロックやブルースで
@@ -361,6 +378,25 @@ enum class Genre(
         MelodyDensity.NORMAL,
         bassStyle = BassStyle.FIFTH,
     ),
+    HARD_ROCK(
+        "ハードロック",
+        "速い8ビート・短調で押す",
+        150..176,
+        listOf(RhythmStyle.HARD_ROCK),
+        // どれも短調。i から下がって最後に持ち上げる形が芯になる。
+        // ♭VI-♭VII-i と i-♭VII-♭VI-♭VII は、名前のとおり度数の型なので
+        // ゲーム音楽と共用しているだけで、ハードロックの定番でもある。
+        listOf(
+            ProgressionTemplate.ANDALUSIAN,
+            ProgressionTemplate.GAME_FIELD,
+            ProgressionTemplate.GAME_BOSS,
+            ProgressionTemplate.MINOR_TWO_FIVE,
+        ),
+        MelodyDensity.NORMAL,
+        // 7th は足さない。角が取れて、歪んだギターで押す感じが消える。
+        // ベースもルートを押し続ける。5 度で動かすと軽くなってしまう。
+        bassStyle = BassStyle.ROOT,
+    ),
     JPOP(
         "J-POP",
         "王道進行・小室進行・カノン進行",
@@ -413,6 +449,24 @@ enum class Genre(
         listOf(ProgressionTemplate.DANCE_LOOP, ProgressionTemplate.KOMURO),
         MelodyDensity.NORMAL,
         seventhChance = 0.15,
+        bassStyle = BassStyle.FIFTH,
+    ),
+    DIGITAL(
+        "打ち込み",
+        "16 分のシンセベース・速い",
+        150..172,
+        listOf(RhythmStyle.DIGITAL),
+        listOf(
+            ProgressionTemplate.DANCE_LOOP,
+            ProgressionTemplate.ROYAL_ROAD,
+            ProgressionTemplate.KOMURO,
+            // サビで持ち上げる形。長調の型に混ぜると、明暗の落差が付く。
+            ProgressionTemplate.GAME_BOSS,
+        ),
+        MelodyDensity.BUSY,
+        // 少しだけ色を付ける。素の三和音だと、速さのわりに平たく聞こえる。
+        seventhChance = 0.30,
+        // ルートと 5 度の交互。16 分で刻むと、これがそのまま推進力になる。
         bassStyle = BassStyle.FIFTH,
     ),
     GAME(
