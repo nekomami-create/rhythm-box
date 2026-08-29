@@ -96,9 +96,27 @@ class DrumJitterTest {
     }
 
     @Test
-    fun `each voice keeps its own count`() {
-        // キックとスネアは別々に数える。スネアを何発挟んでも、
-        // キックの 2 発目は「キックの 2 発目」の揺らぎで鳴る。
+    fun `looping the same bar gives the same sound every time round`() {
+        // 鳴らした回数で揺らぎの表を引いていたころは、1 周の打点数が表の長さの
+        // 倍数でないかぎり周ごとに表がずれ、同じ打ち込みなのに 2 周目から
+        // ドラムの高さが変わっていた。1 小節に 4 発（表は 7 個）はまさにその形。
+        val bars = 4
+        val out = render("x...x...x...x...", bars = bars)
+        val framesPerBar = (sampleRate * secondsPerStep(bpm) * STEPS_PER_BAR).roundToInt()
+        val first = out.copyOfRange(0, framesPerBar).toList()
+        for (loop in 1 until bars) {
+            assertEquals(
+                "${loop + 1} 周目が 1 周目と違う",
+                first,
+                out.copyOfRange(loop * framesPerBar, (loop + 1) * framesPerBar).toList(),
+            )
+        }
+    }
+
+    @Test
+    fun `what else is playing does not change a hit's wobble`() {
+        // 揺らぎはその打点の場所だけで決まる。スネアを何発挟んでも、
+        // キックの音は 1 つも変わらない。
         val song = { snare: String ->
             Song("s", "test", bpm = bpm)
                 .withPattern(0, Pattern.of("A", "x.......x.......", snare))

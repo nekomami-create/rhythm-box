@@ -90,7 +90,24 @@ class PlaybackEngine(
      */
     private val chipVoiceSamples: List<FloatArray> = voiceSamples,
     private val maxPolyphony: Int = 24,
-    private val maxTonePolyphony: Int = 12,
+    /**
+     * 同時に鳴らせる発振器の数。
+     *
+     * 12 だと足りない。和音は最大 4 音、1 オクターヴ下のルートを足して 5 声で、
+     * 次の和音を鳴らすとき前の 5 声はまだ減衰中なので、それだけで 10 声。
+     * ベースとリードを入れるとちょうど 12 で、常に上限に張り付いていた。
+     * 足りなくなると一番小さい声を奪うので、和音の余韻が毎回途中で切れる。
+     *
+     * しかも奪う相手は「そのとき一番小さい声」なので、前の周の減衰具合で
+     * 変わる。同じ打ち込みなのに 1 周目と 2 周目で音が違って聞こえていた
+     * 原因の半分がこれだった。
+     *
+     * 自動生成した 36 曲で測ったところ、必要なのは 28〜40 声。48 にすると
+     * どの曲も奪わずに済む。空いている声は描画で即座に抜けるので、
+     * 増やしても鳴っていない間の負荷は変わらない（実測でも 32 声と 48 声の
+     * 負荷はほぼ同じだった）。増えるのは、これまで切っていた余韻のぶん。
+     */
+    private val maxTonePolyphony: Int = 48,
 ) {
     /** 音色ごとのチョークグループ。同じ番号の音は打ち直しで前の音を止める。 */
     private val chokeGroups = IntArray(DRUM_COUNT) { it }.also {
@@ -120,11 +137,14 @@ class PlaybackEngine(
     private val slotRate = DoubleArray(maxPolyphony) { 1.0 }
 
     /**
-     * 音色ごとに何発目か。揺らぎの表を引く番号に使う。
+     * 音色ごとに、パッドで何発叩いたか。揺らぎの表を引く番号に使う。
      *
      * 乱数ではなく通し番号にしてある。乱数だと書き出すたびに結果が変わり、
      * 同じ曲から同じファイルが出てこなくなる。頭から鳴らせば必ず同じになり、
      * それでいて続けて叩いたぶんは違う音になる。
+     *
+     * 打ち込みの再生では使わない。走る数え上げで引くと、ループするたびに
+     * 表がずれてドラムの高さが変わってしまう（[jitterAt] を参照）。
      */
     private val hitCount = IntArray(DRUM_COUNT)
 
@@ -159,7 +179,8 @@ class PlaybackEngine(
 
     /** ドラムを単発で鳴らす（パッドを叩いたときのプレビュー用）。 */
     fun trigger(voice: Int) {
-        if (voice in 0 until DRUM_COUNT) triggerDrum(voice)
+        // パッドはループしないので、叩いた回数で揺らす。連打しても同じ音が並ばない。
+        if (voice in 0 until DRUM_COUNT) triggerDrum(voice, jitter = hitCount[voice]++)
     }
 
     /**
@@ -367,7 +388,9 @@ class PlaybackEngine(
             clickPos = 0
         }
         for (voice in 0 until DRUM_COUNT) {
-            if (pattern.isOn(voice, step)) triggerDrum(voice, pattern.levelAt(voice, step).gain)
+            if (pattern.isOn(voice, step)) {
+                triggerDrum(voice, pattern.levelAt(voice, step).gain, jitterAt(bar, step, voice))
+            }
         }
         if (pattern.isOn(ROW_CHORD, step)) {
             val timbre = timbreOf(cfg, Instrument.CHORD)
@@ -483,7 +506,22 @@ class PlaybackEngine(
         return (limited * framesPerStep(bpm) * GATE_RATIO).toLong()
     }
 
-    private fun triggerDrum(voice: Int, velocity: Float = 1f) {
+    /**
+     * その打点の揺らぎを引く番号。位置から決めるので、ループしても並びがずれない。
+     *
+     * 走る数え上げで引くと、1 周ぶんの打点数が表の長さの倍数でないかぎり
+     * 周ごとに表がずれる。同じ打ち込みなのに 1 周目と 2 周目でドラムの高さが
+     * 変わって聞こえるので、鳴らした回数ではなく鳴る場所から引く。
+     * （和音の分散を [chordHitIndex] で数えているのと同じ理屈。）
+     *
+     * 声部ぶんずらすのは、同じステップのキックとスネアが揃って高く（低く）
+     * なるのを避けるため。[VOICE_SPREAD] は表の長さと互いに素なので、
+     * 声部が違えば必ず違うところを引く。
+     */
+    private fun jitterAt(bar: Int, step: Int, voice: Int): Int =
+        bar * STEPS_PER_BAR + step + voice * VOICE_SPREAD
+
+    private fun triggerDrum(voice: Int, velocity: Float = 1f, jitter: Int = 0) {
         val group = chokeGroups[voice]
         var slot = -1
         var oldest = -1
@@ -512,9 +550,8 @@ class PlaybackEngine(
         // 高さのほうは、ほかに表現する手立てが無い。
         slotVoice[target] = voice
         slotPos[target] = 0.0
-        slotRate[target] = PITCH_JITTER[hitCount[voice].mod(PITCH_JITTER.size)]
+        slotRate[target] = PITCH_JITTER[jitter.mod(PITCH_JITTER.size)]
         slotGain[target] = velocity
-        hitCount[voice]++
     }
 
     private fun triggerChord(
@@ -877,6 +914,9 @@ class PlaybackEngine(
         private val PITCH_JITTER = doubleArrayOf(
             1.000, 1.012, 0.991, 1.005, 0.982, 1.018, 0.996,
         )
+
+        /** 声部ごとに揺らぎをずらす幅。[PITCH_JITTER] の長さと互いに素にしてある。 */
+        private const val VOICE_SPREAD = 3
 
         const val DEFAULT_SAMPLE_RATE = 44_100
 
