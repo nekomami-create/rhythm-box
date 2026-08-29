@@ -301,6 +301,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update {
             it.copy(
                 isPlaying = false,
+                // 止めたら録音も終わる。鳴っていないと打点が決まらないので、
+                // 「録音中」のまま残すと、赤いのに何も入らない状態になる。
+                padRecording = false,
                 playingStep = -1,
                 playingBar = -1,
                 playingPattern = -1,

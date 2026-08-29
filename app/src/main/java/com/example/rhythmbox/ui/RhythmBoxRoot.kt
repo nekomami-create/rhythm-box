@@ -10,12 +10,15 @@ import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -129,6 +132,24 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                                 "曲全体をループ再生"
                             },
                         )
+                    }
+                    // 止めるボタンは鳴っている間だけ出す。再生ボタンは画面ごとに
+                    // 別々の場所（パターン・チェーン・曲構成・パッド）にあるので、
+                    // 止めるためにいちいちそこまで戻るのが手間だった。
+                    //
+                    // 置き場所はメニューの手前。上の並びは右詰めなので、ここに
+                    // 足しても右端の ⋮ は動かない（頭に足すと全部ずれる）。
+                    if (state.isPlaying) {
+                        FilledIconButton(
+                            onClick = viewModel::stop,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                // 鳴っているところを指す色。打ち込みの再生位置と同じにしてある。
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary,
+                            ),
+                        ) {
+                            Icon(Icons.Filled.Stop, contentDescription = "再生を止める")
+                        }
                     }
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "曲メニュー")
