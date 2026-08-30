@@ -65,6 +65,9 @@ private val PADS: List<Pad> = buildList {
 fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     // 長押しで開くコードの割り当て画面。開いているパッドの番号を持つ。
     var editingPad by remember { mutableStateOf<Int?>(null) }
+    // 単独モードの「調」チップから開く。ほかの画面と同じダイアログをここでも出す
+    // （メニューまで戻らずに、パッドを見ながら調を選べるように）。
+    var keyOpen by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -72,7 +75,7 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         PadTransport(state, viewModel)
 
         if (state.padMode == PadMode.CHORD) {
-            ChordPadModeRow(state, viewModel)
+            ChordPadModeRow(state, viewModel, onOpenKey = { keyOpen = true })
         }
 
         Text(
@@ -100,6 +103,15 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
             PadMode.DRUM -> DrumPads(state, viewModel)
             PadMode.CHORD -> ChordPadGrid(state, viewModel, editing = { editingPad = it })
         }
+    }
+
+    if (keyOpen) {
+        KeyDialog(
+            current = state.song.key,
+            detected = viewModel.autoKey(),
+            onPick = { viewModel.setKey(it); keyOpen = false },
+            onDismiss = { keyOpen = false },
+        )
     }
 
     // 単独モードでは onHold を渡していないので、この let の中身は
@@ -164,19 +176,26 @@ private fun ColumnScope.DrumPads(state: RhythmUiState, viewModel: RhythmViewMode
  * 入にすると、演奏に専念できる「その調の主和音 7 つだけ」の並びになる。
  */
 @Composable
-private fun ChordPadModeRow(state: RhythmUiState, viewModel: RhythmViewModel) {
+private fun ChordPadModeRow(state: RhythmUiState, viewModel: RhythmViewModel, onOpenKey: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ToggleChip(
             label = "単独",
             on = state.song.chordPadStandalone,
             onClick = { viewModel.setChordPadStandalone(!state.song.chordPadStandalone) },
         )
-        // セブンスの有無は単独モードのときだけ意味を持つ。
+        // セブンスと調は単独モードのときだけ意味を持つ。
         if (state.song.chordPadStandalone) {
             ToggleChip(
                 label = "セブンス",
                 on = state.song.chordPadSevenths,
                 onClick = { viewModel.setChordPadSevenths(!state.song.chordPadSevenths) },
+            )
+            // 主和音そのものは調で決まるので、選び直せないぶん調を
+            // その場で変えられないと使い物にならない。ここから直接開く。
+            OptionChip(
+                label = "調 ${viewModel.detectedKey().name}",
+                selected = false,
+                onClick = onOpenKey,
             )
         }
     }
