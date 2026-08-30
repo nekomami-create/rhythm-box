@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.rhythmbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 63
-        versionName = "1.63"
+        versionCode = 64
+        versionName = "1.64"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

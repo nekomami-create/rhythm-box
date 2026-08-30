@@ -387,16 +387,29 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** パッドに並べる 12 個。自分で決めていなければ調から作る。 */
-    fun chordPads(): List<Chord> =
-        ChordPads.resolve(_uiState.value.song.chordPads, detectedKey())
+    /**
+     * パッドに並べる和音。
+     *
+     * 単独モードが入なら、調から毎回作る主和音 7 つ（[Song.chordPadSevenths]
+     * で 7th 化）。切なら、いつもの 12 個（自分で決めていなければ調から作る）。
+     */
+    fun chordPads(): List<Chord> {
+        val song = _uiState.value.song
+        val key = detectedKey()
+        if (song.chordPadStandalone) {
+            val primary = ChordPads.primary(key)
+            return if (song.chordPadSevenths) ChordPads.withSevenths(primary) else primary
+        }
+        return ChordPads.resolve(song.chordPads, key)
+    }
 
     fun setPadMode(mode: PadMode) {
         _uiState.update { it.copy(padMode = mode) }
     }
 
-    /** [index] のパッドに別の和音を割り当てる。 */
+    /** [index] のパッドに別の和音を割り当てる。単独モード中は選び直せない。 */
     fun setChordPad(index: Int, chord: Chord) {
+        if (_uiState.value.song.chordPadStandalone) return
         if (index !in 0 until ChordPads.COUNT) return
         val pads = chordPads()
         repository.updateCurrentSong { song ->
@@ -408,6 +421,19 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun resetChordPads() {
         snapshotForUndo()
         repository.updateCurrentSong { it.copy(chordPads = emptyList()) }
+    }
+
+    /**
+     * コードパッドの単独モード。入だと、曲の中身に関わらずその調の主和音 7 つ
+     * だけが並ぶ。演奏に専念したいときの、いちばん単純な形。
+     */
+    fun setChordPadStandalone(standalone: Boolean) {
+        repository.updateCurrentSong { it.copy(chordPadStandalone = standalone) }
+    }
+
+    /** 単独モードの 7 つを、三和音のままにするか 7th にするか。 */
+    fun setChordPadSevenths(sevenths: Boolean) {
+        repository.updateCurrentSong { it.copy(chordPadSevenths = sevenths) }
     }
 
     /**
@@ -794,6 +820,23 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** [bar] 回目の小節で鳴るコード。曲構成で使われていれば、そこのコードを見る。 */
     fun chordForBar(bar: Int): Chord =
         chordAtStep(_uiState.value.song, _uiState.value.selectedPattern, bar, 0)
+
+    /**
+     * いま実際に鳴っている和音。コードパッドを光らせるのに使う。
+     *
+     * [currentPlan] は音声エンジンに渡しているのと同じプランなので、
+     * ここで引けば「置いたコード・曲構成のコードのどちらが効いているか」を
+     * もう一度組み立てずに済む。止まっていれば、開いている小節の頭のコード。
+     */
+    fun soundingChord(): Chord {
+        val state = _uiState.value
+        val plan = currentPlan
+        return if (state.isPlaying && plan != null && state.playingBar in plan.bars.indices) {
+            plan.chordAt(state.playingBar, state.playingStep.coerceAtLeast(0))
+        } else {
+            chordForBar(state.selectedBar)
+        }
+    }
 
     /** 選んでいるパターンの [bar] 小節目、[slot] 番目の枠に置いてあるコード。 */
     fun placedChordAt(bar: Int, slot: Int): Chord? =

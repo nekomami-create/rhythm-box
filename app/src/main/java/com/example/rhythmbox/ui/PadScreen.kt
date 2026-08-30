@@ -71,12 +71,18 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
     ) {
         PadTransport(state, viewModel)
 
+        if (state.padMode == PadMode.CHORD) {
+            ChordPadModeRow(state, viewModel)
+        }
+
         Text(
             text = when {
                 state.padRecording && state.padMode == PadMode.CHORD ->
                     "弾いたコードが、いま鳴っている小節に入ります。流しながら順に叩いてください。"
                 state.padRecording ->
                     "叩いた音がパターン ${state.pattern.name} に入ります。近いステップに寄せて置きます。"
+                state.padMode == PadMode.CHORD && state.song.chordPadStandalone ->
+                    "この調の主和音が並びます。押すとコードが鳴ります（選び直しはできません）。"
                 state.padMode == PadMode.CHORD ->
                     "押すとコードが鳴ります。長押しでそのパッドの和音を選び直せます。"
                 else ->
@@ -96,6 +102,8 @@ fun PadScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
         }
     }
 
+    // 単独モードでは onHold を渡していないので、この let の中身は
+    // 選び直しができる（12 個の）モードでしか呼ばれない。
     editingPad?.let { index ->
         val pads = viewModel.chordPads()
         val neighbours = pads.getOrNull(index - 1) to pads.getOrNull(index + 1)
@@ -151,16 +159,52 @@ private fun ColumnScope.DrumPads(state: RhythmUiState, viewModel: RhythmViewMode
     }
 }
 
-/** 調のコードを 12 個並べる。3 列 x 4 段にちょうど収まる。 */
+/**
+ * 単独モードの切り替え。コードパッドのときだけ出す。
+ * 入にすると、演奏に専念できる「その調の主和音 7 つだけ」の並びになる。
+ */
+@Composable
+private fun ChordPadModeRow(state: RhythmUiState, viewModel: RhythmViewModel) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ToggleChip(
+            label = "単独",
+            on = state.song.chordPadStandalone,
+            onClick = { viewModel.setChordPadStandalone(!state.song.chordPadStandalone) },
+        )
+        // セブンスの有無は単独モードのときだけ意味を持つ。
+        if (state.song.chordPadStandalone) {
+            ToggleChip(
+                label = "セブンス",
+                on = state.song.chordPadSevenths,
+                onClick = { viewModel.setChordPadSevenths(!state.song.chordPadSevenths) },
+            )
+        }
+    }
+}
+
+/**
+ * 調のコードを並べる。既定は 12 個（3 列 x 4 段）で、長押しで 1 マスずつ選び直せる。
+ * 単独モードでは主和音 7 つだけになり、選び直しはできない（つねに調から作る）。
+ *
+ * 光るのは、いま実際にそのコードが鳴っている瞬間だけ。打ち込みの CHD 行が
+ * 打点を刻んだ位置と、そこで鳴っている和音（曲構成・置いたコードのどちらでも）
+ * を突き合わせるので、内部の状態が変わればここも必ず付いてくる。
+ */
 @Composable
 private fun ColumnScope.ChordPadGrid(
     state: RhythmUiState,
     viewModel: RhythmViewModel,
     editing: (Int) -> Unit,
 ) {
+    val standalone = state.song.chordPadStandalone
     val pads = viewModel.chordPads()
     val degrees = viewModel.detectedKey().degreeLabels()
     val diatonic = viewModel.detectedKey().diatonicChords()
+    val sounding = if (state.playingStep >= 0 && state.soundingPattern.isOn(ROW_CHORD, state.playingStep)) {
+        viewModel.soundingChord()
+    } else {
+        null
+    }
     pads.chunked(3).forEachIndexed { rowIndex, row ->
         Row(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -170,14 +214,24 @@ private fun ColumnScope.ChordPadGrid(
                 val index = rowIndex * 3 + columnIndex
                 PadButton(
                     label = chord.name,
-                    // 度数が分かると、押しているうちに進行の形が見えてくる。
-                    caption = degrees.getOrNull(diatonic.indexOfFirst { it.root == chord.root }) ?: "",
+                    // 単独モードは並びそのものが度数順なので、そのまま引ける。
+                    // 12 個モードは 5 つが重なりのある「厚くした」和音なので、根音で探す。
+                    caption = if (standalone) {
+                        degrees.getOrElse(index) { "" }
+                    } else {
+                        degrees.getOrNull(diatonic.indexOfFirst { it.root == chord.root }) ?: ""
+                    },
                     melodic = true,
-                    playing = false,
+                    playing = sounding != null && chord == sounding,
                     modifier = Modifier.weight(1f),
                     onHit = { viewModel.chordPadHit(index) },
-                    onHold = { editing(index) },
+                    onHold = if (standalone) null else ({ editing(index) }),
                 )
+            }
+            // 7 個だと最後の段が 1 つだけ余る。埋めずに空けると、そこだけ幅が
+            // 3 倍に伸びて他のマスと揃わない。空マスを足して幅を合わせる。
+            repeat(3 - row.size) {
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
@@ -263,7 +317,8 @@ private fun PadTransport(state: RhythmUiState, viewModel: RhythmViewModel) {
                 onClick = viewModel::toggleMetronome,
             )
             Spacer(Modifier.weight(1f))
-            if (state.padMode == PadMode.CHORD) {
+            // 単独モードは常に調から作るので、作り直すボタンは意味を持たない。
+            if (state.padMode == PadMode.CHORD && !state.song.chordPadStandalone) {
                 IconButton(onClick = viewModel::resetChordPads, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Filled.Refresh,

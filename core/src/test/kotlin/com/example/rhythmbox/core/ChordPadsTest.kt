@@ -66,4 +66,66 @@ class ChordPadsTest {
         assertEquals(ChordPads.COUNT, resolved.size)
         assertEquals("F", resolved.first().name)
     }
+
+    @Test
+    fun `primary is exactly the seven diatonic chords, nothing thickened`() {
+        val key = MusicKey(0, Scale.MAJOR)
+        assertEquals(key.diatonicChords(), ChordPads.primary(key))
+        assertEquals(listOf("C", "Dm", "Em", "F", "G", "Am", "Bdim"), ChordPads.primary(key).map { it.name })
+    }
+
+    @Test
+    fun `withSevenths colours every degree without changing the root`() {
+        val key = MusicKey(0, Scale.MAJOR)
+        val sevenths = ChordPads.withSevenths(ChordPads.primary(key))
+        assertEquals(
+            listOf("CM7", "Dm7", "Em7", "FM7", "G7", "Am7", "Bm7-5"),
+            sevenths.map { it.name },
+        )
+        // 根音は動かない。7th は色付けであって別の和音にすり替わるわけではない。
+        assertEquals(ChordPads.primary(key).map { it.root }, sevenths.map { it.root })
+    }
+
+    @Test
+    fun `withSevenths keeps the dominant a plain seventh, not major`() {
+        // V を M7 にすると緊張が消えて、主和音へ落ちる力が無くなる
+        // （HelpScreen に書いてある理屈と同じ）。単独モードでも同じ規則にする。
+        val key = MusicKey(0, Scale.MAJOR)
+        val v = ChordPads.withSevenths(ChordPads.primary(key))[4]
+        assertEquals(ChordQuality.SEVENTH, v.quality)
+    }
+
+    @Test
+    fun `withSevenths respects a minor key's own degrees`() {
+        // 自然短音階の v は短三和音のまま（導音を借りていない）ので、
+        // ドミナントらしい G7 ではなく Gm7... ではなく素直な GM7 になる。
+        // 「5 番目だから 7」ではなく「そこにある三和音の性格を保つ」規則。
+        val key = MusicKey(9, Scale.NATURAL_MINOR)
+        val sevenths = ChordPads.withSevenths(ChordPads.primary(key))
+        assertEquals(
+            listOf("Am7", "Bm7-5", "CM7", "Dm7", "Em7", "FM7", "GM7"),
+            sevenths.map { it.name },
+        )
+    }
+
+    @Test
+    fun `withSevenths only makes the dominant a plain seventh when it is actually major`() {
+        // 5 番目の和音は「V」ではなく「その調の 5 番目」。自然短音階では
+        // 短三和音なので、7th を足しても m7 のまま（ドミナント 7th にはならない）。
+        val minor = ChordPads.withSevenths(ChordPads.primary(MusicKey(9, Scale.NATURAL_MINOR)))[4]
+        assertEquals("Em7", minor.name)
+        assertEquals(ChordQuality.MINOR_SEVENTH, minor.quality)
+    }
+
+    @Test
+    fun `withSevenths is idempotent on root and length`() {
+        // 表を差し替えても壊れていないことを、いくつもの調で押さえる。
+        for (scale in Scale.entries) {
+            val key = MusicKey(0, scale)
+            val primary = ChordPads.primary(key)
+            val sevenths = ChordPads.withSevenths(primary)
+            assertEquals(scale.name, 7, sevenths.size)
+            assertEquals(scale.name, primary.map { it.root }, sevenths.map { it.root })
+        }
+    }
 }

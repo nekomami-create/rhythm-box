@@ -983,8 +983,17 @@ data class Song(
     /**
      * コードパッドに並べる和音。空なら調から作る（調を変えると付いてくる）。
      * 1 つでも自分で決めたら、その時点で 12 個ぶんを持つ。
+     * [chordPadStandalone] が入だと使わない（そちらは調から毎回作る）。
      */
     val chordPads: List<Chord> = emptyList(),
+    /**
+     * コードパッドの単独モード。入だと [chordPads] を無視して、その調の
+     * 主和音 7 つ（[chordPadSevenths] で 7th 化）だけを並べる。パッドは
+     * 選び直せない。曲ごとの好みなので、他の設定と同じように保存する。
+     */
+    val chordPadStandalone: Boolean = false,
+    /** 単独モードで、7 つを三和音のままにするか 7th にするか。 */
+    val chordPadSevenths: Boolean = false,
     val updatedAt: Long = 0L,
 ) {
     fun pattern(index: Int): Pattern = patterns[index.coerceIn(patterns.indices)]

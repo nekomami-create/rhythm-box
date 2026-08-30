@@ -54,6 +54,27 @@ object ChordPads {
     private const val EXTRA_SIXTH = 5
 
     /**
+     * 単独モード用：その調の主和音 7 つ（音階順、三和音のまま）。
+     *
+     * 曲の中身にもパッドの保存にも触れない。押すとその調のダイアトニックが
+     * 並ぶだけの、いちばん単純な形。
+     */
+    fun primary(key: MusicKey): List<Chord> = key.diatonicChords()
+
+    /**
+     * [primary] を、度数ごとの「よく使う 7th」に色付けする。
+     *
+     * 規則は [Harmony.seventhFor] とまったく同じ（度数ごとに別の表を
+     * 単独モード用に作らない）。V だけドミナント 7th、それ以外は三和音の
+     * 性格（長・短・減）をそのまま 7th にする。三和音でなければ触らない。
+     */
+    fun withSevenths(chords: List<Chord>): List<Chord> =
+        chords.mapIndexed { degree, chord ->
+            val seventh = Harmony.seventhFor(degree, chord.quality) ?: chord.quality
+            chord.copy(quality = seventh)
+        }
+
+    /**
      * 実際に並べる 12 個。
      * [saved] が空なら調から作る（調を変えると付いてくる）。
      * 1 つでも自分で決めていれば、そちらを尊重して足りないぶんだけ補う。
