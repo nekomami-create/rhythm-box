@@ -176,9 +176,19 @@ data class RhythmUiState(
     /**
      * いま鳴っている小節の打ち込み。止まっていれば開いている小節。
      * パッドを今の拍で光らせるのに使う（複数小節のパターンでは小節ごとに中身が違う）。
+     *
+     * 見るパターンは [playingPattern]（実際に鳴っているほう）で、画面に開いている
+     * [selectedPattern] ではない。チェーンや曲構成の再生中は、鳴っているパターンと
+     * 開いているパターンが別物のことがある。そこを [pattern]（selectedPattern 側）
+     * のまま引くと、ステップの位置は合っているのに中身が別のパターンのものになり、
+     * 鳴っていない音のパッドが光る・鳴っている音のパッドが光らない、が起きる。
      */
     val soundingPattern: Pattern
-        get() = pattern.at(if (playingPatternBar >= 0) playingPatternBar else selectedBar)
+        get() {
+            val index = if (isPlaying && playingPattern >= 0) playingPattern else selectedPattern
+            val bar = if (playingPatternBar >= 0) playingPatternBar else selectedBar
+            return song.pattern(index).at(bar)
+        }
 
     /** 今まさに画面に出している小節が鳴っているか。 */
     private val onScreenNow: Boolean
