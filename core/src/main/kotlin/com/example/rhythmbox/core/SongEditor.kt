@@ -70,8 +70,12 @@ object SongEditor {
     }
 
     /**
-     * チップ音源で鳴らす中身なら、音色とドラムと弾き方をまとめて切り替えた曲。
+     * チップ音源で鳴らす中身なら、音色とドラムをまとめて切り替えた曲。
      * どれか 1 つだけでは「ゲーム音楽っぽさ」にならない。
+     *
+     * 弾き方（[Song.chordStyle]）は触らない。高速アルペジオは耳に刺さりやすく、
+     * 常に付いてくると鑑賞モードのような長時間再生ではしつこいので、
+     * 選びたい人が明示的に選ぶ道具（ChordStyle のピッカー）に留める。
      */
     fun withChipSound(song: Song, recipe: GenreRecipe): Song =
         if (!recipe.chip) {
@@ -81,7 +85,6 @@ object SongEditor {
                 soundSet = SoundSet.CHIP,
                 drumKit = DrumKit.CHIP,
                 leadVoice = recipe.leadVoice,
-                chordStyle = ChordStyle.CHIP_ARPEGGIO,
             )
         }
 

@@ -43,6 +43,7 @@ import com.example.rhythmbox.core.ROW_BASS
 import com.example.rhythmbox.core.ROW_CHORD
 import com.example.rhythmbox.core.RhythmStyle
 import com.example.rhythmbox.core.STEPS_PER_BAR
+import com.example.rhythmbox.core.StepTimeline
 import com.example.rhythmbox.core.Song
 import com.example.rhythmbox.core.SongEditor
 import com.example.rhythmbox.core.SongBuilder
@@ -61,6 +62,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
@@ -125,6 +127,13 @@ data class RhythmUiState(
      * 再生していなければ空。
      */
     val appreciationLeadTrail: List<LeadTrailPoint?> = emptyList(),
+    /**
+     * 鑑賞モードで、「今」より先の見立て。古いもの（＝今に近い）が先頭。
+     * 鑑賞モードは決まった手順で先の小節まで作ってあるので、まだ鳴って
+     * いない音も読める（[appreciationLeadTrail] と違い、毎回作り直す）。
+     * 休符は null。再生していなければ空。
+     */
+    val appreciationLeadFuture: List<LeadTrailPoint?> = emptyList(),
     /**
      * 鑑賞モードで、直前のキック / スネアからどれだけ経ったかを表す 0〜1。
      * 叩いた瞬間に 1、そこから毎ティック減衰する。可視化の脈動に使う。
@@ -424,6 +433,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 appreciation = null,
                 appreciationChord = null,
                 appreciationLeadTrail = emptyList(),
+                appreciationLeadFuture = emptyList(),
                 appreciationDrumPulse = 0f,
             )
         }
@@ -476,30 +486,64 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 var chord: Chord? = null
                 var point: LeadTrailPoint? = null
                 var drumHit = false
+                var future: List<LeadTrailPoint?> = emptyList()
                 val plan = currentPlan
                 if (position != null && plan != null && position.bar in plan.bars.indices) {
-                    val currentChord = plan.chordAt(position.bar, position.step)
-                    chord = currentChord
+                    chord = plan.chordAt(position.bar, position.step)
+                    point = leadPointAt(plan, stream, position.bar, position.step)
                     // タイ（音を伸ばす記号）を解決した、実際に鳴っている高さ。
                     // PlaybackEngine が音を鳴らすときと同じ引き方（patternBarAt を挟む）。
                     val pattern = plan.patternAt(position.bar)
-                    val pitch = pattern.soundingLead(plan.patternBarAt(position.bar), position.step)
-                        .takeIf(Pattern::isNote)
-                    point = pitch?.let { LeadTrailPoint(it, noteRole(it, currentChord, stream.status.key)) }
                     drumHit = pattern.isOn(Voice.KICK.ordinal, position.step) ||
                         pattern.isOn(Voice.SNARE.ordinal, position.step)
+                    future = readFutureTrail(plan, stream, position, stream.status.bpm)
                 }
                 _uiState.update {
                     it.copy(
                         appreciation = stream.status,
                         appreciationChord = chord,
                         appreciationLeadTrail = (it.appreciationLeadTrail + point)
-                            .takeLast(APPRECIATION_TRAIL_CAPACITY),
+                            .takeLast(APPRECIATION_TRAIL_PAST_CAPACITY),
+                        appreciationLeadFuture = future,
                         // 叩いた瞬間に 1 まで戻り、そこから毎ティック減衰する。
                         appreciationDrumPulse = if (drumHit) 1f else it.appreciationDrumPulse * DRUM_PULSE_DECAY,
                     )
                 }
                 delay(POSITION_POLL_MS)
+            }
+        }
+    }
+
+    /** [bar]・[step] で鳴っている（鳴る予定の）リードの高さと役割。休符なら null。 */
+    private fun leadPointAt(plan: PlaybackPlan, stream: Appreciation.Stream, bar: Int, step: Int): LeadTrailPoint? {
+        val pattern = plan.patternAt(bar)
+        val pitch = pattern.soundingLead(plan.patternBarAt(bar), step).takeIf(Pattern::isNote) ?: return null
+        return LeadTrailPoint(pitch, noteRole(pitch, plan.chordAt(bar, step), stream.status.key))
+    }
+
+    /**
+     * 「今」より先の見立て。鑑賞モードは常に [APPRECIATION_LOOKAHEAD_BARS] 小節
+     * ぶん先まで作ってあるので、まだ鳴っていない音も読める。過去の軌跡と同じ
+     * 刻み幅（[POSITION_POLL_MS] ごと）で先読みし、テンポからステップ数に
+     * 換算する（[secondsPerStep]）。作ってある範囲を超えたら、そこから先は
+     * 休符として扱う（先読みの余裕を切ってあるので、実際にはまず起きない）。
+     */
+    private fun readFutureTrail(
+        plan: PlaybackPlan,
+        stream: Appreciation.Stream,
+        position: StepTimeline.Position,
+        bpm: Int,
+    ): List<LeadTrailPoint?> {
+        val stepSeconds = secondsPerStep(bpm)
+        val startStep = position.bar * STEPS_PER_BAR + position.step
+        val totalSteps = plan.barCount * STEPS_PER_BAR
+        return (1..APPRECIATION_TRAIL_FUTURE_CAPACITY).map { i ->
+            val stepsAhead = ((i * POSITION_POLL_MS / 1000.0) / stepSeconds).roundToInt()
+            val absoluteStep = startStep + stepsAhead
+            if (absoluteStep >= totalSteps) {
+                null
+            } else {
+                leadPointAt(plan, stream, absoluteStep / STEPS_PER_BAR, absoluteStep % STEPS_PER_BAR)
             }
         }
     }
@@ -513,7 +557,9 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         engine.config = EngineConfig(
             plan = plan,
             bpm = stream.status.bpm,
-            chordStyle = if (chip) ChordStyle.CHIP_ARPEGGIO else ChordStyle.BLOCK,
+            // 弾き方はチップ音源でも固定でアルペジオにはしない（刺さりやすく、
+            // 鑑賞モードのように延々流すとしつこいため）。
+            chordStyle = ChordStyle.BLOCK,
             leadVoice = if (chip) recipe.leadVoice else ToneSynth.LeadVoice.SQUARE,
             drumKit = if (chip) DrumKit.CHIP else DrumKit.NORMAL,
             soundSet = if (chip) SoundSet.CHIP else SoundSet.NORMAL,
@@ -1867,10 +1913,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         private const val APPRECIATION_LOOKAHEAD_BARS = 8
 
         /**
-         * 鑑賞モードのリードの軌跡（[RhythmUiState.appreciationLeadTrail]）を
-         * 何件まで持つか。[POSITION_POLL_MS] 刻みなので、200 件でだいたい 4.8 秒ぶん。
+         * 鑑賞モードのリードの軌跡（[RhythmUiState.appreciationLeadTrail]・
+         * [RhythmUiState.appreciationLeadFuture]）を、過去・未来それぞれ何件まで
+         * 持つか。[POSITION_POLL_MS] 刻みなので、100 件でだいたい 2.4 秒ぶん。
+         * 「今」を画面の真ん中あたりに置くため、過去と未来を同じ件数にしてある。
          */
-        private const val APPRECIATION_TRAIL_CAPACITY = 200
+        private const val APPRECIATION_TRAIL_PAST_CAPACITY = 100
+        private const val APPRECIATION_TRAIL_FUTURE_CAPACITY = 100
 
         /**
          * 鑑賞モードのドラムの脈動（[RhythmUiState.appreciationDrumPulse]）が

@@ -123,13 +123,15 @@ class SongEditorTest {
     // --- チップ音源への切り替え ---------------------------------------------
 
     @Test
-    fun `a chip recipe switches the sound, the drums and the playing style together`() {
+    fun `a chip recipe switches the sound and the drums, but not the playing style`() {
         // どれか 1 つだけでは「ゲーム音楽っぽさ」にならない。
+        // 弾き方（アルペジオ等）は強制しない。刺さりやすい音なので、
+        // 選びたい人が自分で選ぶ道具に留める。
         val next = SongEditor.withChipSound(song(), GameScene.BOSS.recipe())
 
         assertEquals(SoundSet.CHIP, next.soundSet)
         assertEquals(DrumKit.CHIP, next.drumKit)
-        assertEquals(ChordStyle.CHIP_ARPEGGIO, next.chordStyle)
+        assertEquals(song().chordStyle, next.chordStyle)
         assertEquals(GameScene.BOSS.recipe().leadVoice, next.leadVoice)
     }
 
