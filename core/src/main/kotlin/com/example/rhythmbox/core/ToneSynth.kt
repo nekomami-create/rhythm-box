@@ -6,6 +6,7 @@ import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tanh
 
 /**
  * コード / ベース / リード用の音程を持つ音づくり。
@@ -60,6 +61,16 @@ object ToneSynth {
          */
         data class Noise(val shortPeriod: Boolean = false) : Waveform {
             override val levelTrim = 0.45f
+        }
+
+        /**
+         * 歪ませたノコギリ波。エレキギターのオーバードライブ/ディストーションの
+         * ような、倍音の多い荒れた音。[drive] が大きいほど歪みが深くなる
+         * （[distort] 参照）。歪みで音圧が上がるので、素通しの波形より控えめに
+         * 音量を落としてある。
+         */
+        data class Distortion(val drive: Float = 6f) : Waveform {
+            override val levelTrim = 0.5f
         }
     }
 
@@ -284,6 +295,16 @@ object ToneSynth {
             decayScale = 0.7,
             sustainScale = 0.3f,
         ),
+        DISTORTION(
+            // ノコギリ波を歪ませる。加算合成の倍音だけでは出せない、
+            // エレキギターのオーバードライブのような荒れた鳴り。
+            "ディストーション",
+            listOf(Partial(1, 1.0f)), // 波形を直接作るので中身は使われない
+            attackScale = 0.5,
+            decayScale = 2.0,
+            sustainScale = 1.3f,
+            wave = Waveform.Distortion(drive = 6f),
+        ),
 
         // ここから下はチップ音源（ファミコン / ゲームボーイ）の音。
         // 実機のチャンネルは押している間ずっと同じ音量で鳴るので、
@@ -429,6 +450,29 @@ object ToneSynth {
             }
             else -> 0f
         }
+    }
+
+    /**
+     * ノコギリ波 1 サンプル。1 周期に 1 つだけ段差があるので、そこだけ
+     * [blep] で丸める（[pulse] と同じ考え方）。[Waveform.Distortion] の
+     * 素材になる波形で、単体では明るく硬い音。
+     */
+    fun sawtooth(phase: Double, phaseStep: Double): Float {
+        val t = phase - floor(phase)
+        var value = (t + t - 1.0).toFloat()
+        value -= blep(t, phaseStep)
+        return value
+    }
+
+    /**
+     * 歪みのソフトクリップ。[drive] が大きいほど深く歪む
+     * （エレキギターのオーバードライブ/ディストーションのような掛かり方）。
+     * tanh で丸めるので出力は必ず -1..1 に収まり、歪ませたぶんだけ
+     * 倍音が増えて音が潰れて伸びる。
+     */
+    fun distort(x: Float, drive: Float): Float {
+        val d = drive.coerceAtLeast(0.01f)
+        return tanh(d * x) / tanh(d)
     }
 
     /**

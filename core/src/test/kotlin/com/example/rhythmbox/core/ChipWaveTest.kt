@@ -57,6 +57,39 @@ class ChipWaveTest {
         return out
     }
 
+    private fun renderSaw(midi: Int, frames: Int): FloatArray {
+        val step = phaseStepFor(midi)
+        return FloatArray(frames) { ToneSynth.sawtooth(it * step, step) }
+    }
+
+    /** 段差を丸めない素朴なノコギリ波（比較用）。 */
+    private fun renderNaiveSaw(midi: Int, frames: Int): FloatArray {
+        val step = phaseStepFor(midi)
+        return FloatArray(frames) {
+            val t = (it * step).mod(1.0)
+            (t + t - 1.0).toFloat()
+        }
+    }
+
+    /**
+     * 折り返しの無い理想のノコギリ波（ナイキストより下の倍音をぜんぶ、
+     * 1/n で弱めながら足す）。[sawtooth] は t=0 で -1、t→1 で +1 まで
+     * 直線的に上がって折り返すので、符号は負（負のサイン級数）。
+     */
+    private fun renderIdealSaw(midi: Int, frames: Int): FloatArray {
+        val frequency = ToneSynth.frequency(midi)
+        val out = FloatArray(frames)
+        var harmonic = 1
+        while (frequency * harmonic < sampleRate / 2.0) {
+            val gain = -2.0 / (PI * harmonic)
+            for (i in 0 until frames) {
+                out[i] += (gain * sin(2 * PI * frequency * harmonic * i / sampleRate)).toFloat()
+            }
+            harmonic += 1
+        }
+        return out
+    }
+
     private fun magnitudeAt(buffer: FloatArray, frequency: Double): Double {
         var real = 0.0
         var imaginary = 0.0
@@ -186,6 +219,65 @@ class ChipWaveTest {
         // コードとベースも、この段階ではまだ触っていない。
         assertEquals(ToneSynth.Waveform.Additive, ToneSynth.timbre(Instrument.CHORD).wave)
         assertEquals(ToneSynth.Waveform.Additive, ToneSynth.timbre(Instrument.BASS).wave)
+    }
+
+    @Test
+    fun `the sawtooth ramps linearly away from the wrap`() {
+        // 折り返し（t=0 付近）だけ blep で丸めるので、そこから離れたところは
+        // 素朴な直線のまま。低い音（段差の影響が小さい）で確かめる。
+        val step = phaseStepFor(48) // C3
+        for (t in listOf(0.1, 0.3, 0.5, 0.7, 0.9)) {
+            assertEquals(2.0 * t - 1.0, ToneSynth.sawtooth(t, step).toDouble(), 0.01)
+        }
+    }
+
+    @Test
+    fun `smoothing the sawtooth's edge keeps high notes from turning metallic`() {
+        // pulse と同じ考え方（smoothing the edges keeps high notes ...）を
+        // ノコギリ波でも確かめる。
+        val midi = 96 // C7 = 2093Hz
+        val frames = 8_192
+        val ideal = renderIdealSaw(midi, frames)
+        val smoothed = difference(renderSaw(midi, frames), ideal)
+        val naive = difference(renderNaiveSaw(midi, frames), ideal)
+
+        assertTrue("丸めたほうが理想に近い（丸め $smoothed / 素朴 $naive）", smoothed < naive)
+    }
+
+    @Test
+    fun `distortion always stays within -1 and 1`() {
+        val step = phaseStepFor(60)
+        for (drive in listOf(0.5f, 2f, 6f, 20f)) {
+            for (i in 0 until 4_000) {
+                val sample = ToneSynth.sawtooth(i * step, step)
+                val distorted = ToneSynth.distort(sample, drive)
+                assertTrue("drive=$drive sample=$sample -> $distorted", distorted in -1f..1f)
+            }
+        }
+    }
+
+    @Test
+    fun `a gentle drive barely changes the signal`() {
+        // drive が小さいところでは tanh(d*x)/tanh(d) がほぼ x に一致する
+        // （x が小さいところの tanh の線形近似）。
+        for (x in listOf(-0.8f, -0.3f, 0.1f, 0.6f)) {
+            assertEquals(x, ToneSynth.distort(x, drive = 0.05f), 0.01f)
+        }
+    }
+
+    @Test
+    fun `a stronger drive squashes the signal harder toward the ends`() {
+        // 同じ振幅でも、drive を上げるほど ±1 に張り付いていく（歪みが深くなる）。
+        val gentle = ToneSynth.distort(0.5f, drive = 1f)
+        val hard = ToneSynth.distort(0.5f, drive = 10f)
+        assertTrue("gentle=$gentle hard=$hard", hard > gentle)
+        assertTrue(hard < 1f)
+    }
+
+    @Test
+    fun `the distortion guitar is wired to a distorted sawtooth`() {
+        val timbre = ToneSynth.timbre(Instrument.LEAD, ToneSynth.LeadVoice.DISTORTION)
+        assertEquals(ToneSynth.Waveform.Distortion(drive = 6f), timbre.wave)
     }
 
     @Test

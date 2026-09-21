@@ -681,6 +681,7 @@ class PlaybackEngine(
         private var noiseShort = false
         private var lfsr = ToneSynth.LFSR_SEED
         private var noiseValue = 1f
+        private var drive = 1f
 
         // 1/60 秒ごとに音を動かすための状態。動かすものが無ければ丸ごと飛ばす。
         private var modulated = false
@@ -733,6 +734,10 @@ class PlaybackEngine(
                     lfsr = ToneSynth.LFSR_SEED
                     noiseValue = 1f
                     WAVE_NOISE
+                }
+                is ToneSynth.Waveform.Distortion -> {
+                    drive = wave.drive
+                    WAVE_DISTORTION
                 }
                 ToneSynth.Waveform.ChipTriangle -> WAVE_CHIP_TRIANGLE
                 ToneSynth.Waveform.Additive -> WAVE_ADDITIVE
@@ -828,6 +833,7 @@ class PlaybackEngine(
             WAVE_PULSE -> ToneSynth.pulse(phase, duty, phaseStep)
             WAVE_CHIP_TRIANGLE -> ToneSynth.chipTriangle(phase)
             WAVE_NOISE -> noiseValue
+            WAVE_DISTORTION -> ToneSynth.distort(ToneSynth.sawtooth(phase, phaseStep), drive)
             else -> additive()
         }
 
@@ -897,6 +903,7 @@ class PlaybackEngine(
             const val WAVE_PULSE = 1
             const val WAVE_CHIP_TRIANGLE = 2
             const val WAVE_NOISE = 3
+            const val WAVE_DISTORTION = 4
 
             /** 高速アルペジオで回せる音の数。7 の和音でも足りる。 */
             const val MAX_ARPEGGIO = 8

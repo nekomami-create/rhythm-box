@@ -208,6 +208,9 @@ private const val NOW_GLOW_ALPHA = 0.25f
 private val CHIP_PADDING = 3.dp
 private val CHIP_CORNER_RADIUS = 6.dp
 
+/** 音名チップどうしが詰まりすぎないための最小間隔。 */
+private val CHIP_MIN_SPACING = 32.dp
+
 /**
  * いま鳴っているリードの高さの軌跡を線で描く部品。
  *
@@ -217,9 +220,9 @@ private val CHIP_CORNER_RADIUS = 6.dp
  * 真ん中に来る（[past]・[future] を同じ件数だけ渡す前提）。休符（null）の
  * ところは線をつながず、そこだけ途切れさせる。線は、その音がコードの
  * 構成音か・音階の中か・外かで色を変える（[NoteRole]、ピアノロールと
- * 同じ考え方）。音名のチップは「今」鳴っている音だけに添える。まだ鳴って
- * いない（[future] 側）の音は文字を出さず線だけ薄く見せ、鳴り終えて過去へ
- * 流れたら（次の音が「今」になったら）チップはすぐ消える。左はじに寄る
+ * 同じ考え方）。音名のチップは、鳴った音（過去〜今）にだけ、音が変わる
+ * ところごとに添える。まだ鳴っていない（[future] 側）の音は文字を出さず
+ * 線だけ薄く見せる（先読みで文字がちらつくのを避けるため）。左はじに寄る
  * ところは軌跡ごと素早くフェードアウトする。[drumPulse] が立つと、
  * キック・スネアに合わせて「今」の点のまわりが脈打つ。
  */
@@ -334,32 +337,43 @@ private fun LeadTrailVisualizer(
                     )
                 }
                 drawCircle(color = nowColor, radius = 9f, center = center)
-
-                // 音名のチップは「今」鳴っている音だけに添える。次の音が
-                // 「今」になった瞬間に、この音のチップはすぐ消える
-                // （先読みで文字がちらつくのも、過去に残り続けるのも避ける）。
-                val paddingPx = CHIP_PADDING.toPx()
-                val measured = textMeasurer.measure(midiName(lastPastPoint.midi), style = chipTextStyle)
-                val chipSize = Size(
-                    measured.size.width + paddingPx * 2,
-                    measured.size.height + paddingPx * 2,
-                )
-                val chipTopLeft = Offset(
-                    (center.x - chipSize.width / 2f).coerceIn(0f, (size.width - chipSize.width).coerceAtLeast(0f)),
-                    (center.y - chipSize.height - 14f).coerceAtLeast(0f),
-                )
-                drawRoundRect(
-                    color = chipBackgroundColor,
-                    topLeft = chipTopLeft,
-                    size = chipSize,
-                    cornerRadius = CornerRadius(CHIP_CORNER_RADIUS.toPx()),
-                )
-                drawText(
-                    textLayoutResult = measured,
-                    color = chipTextColor,
-                    topLeft = chipTopLeft + Offset(paddingPx, paddingPx),
-                )
             }
+        }
+
+        // 音名のチップは、鳴った音（過去〜今）だけに添える。まだ鳴っていない
+        // 未来側（index > nowIndex）には出さない。音が変わるところ（その音の
+        // 鳴り始め）ごとに 1 つ、詰まりすぎないよう最小間隔は空けて出す。
+        val paddingPx = CHIP_PADDING.toPx()
+        val minSpacingPx = CHIP_MIN_SPACING.toPx()
+        var lastChipX = Float.NEGATIVE_INFINITY
+        for (index in 0..nowIndex) {
+            val point = combined.getOrNull(index) ?: continue
+            val isNoteStart = index == 0 || combined[index - 1]?.midi != point.midi
+            if (!isNoteStart) continue
+            val x = xAt(index)
+            if (x - lastChipX < minSpacingPx) continue
+            lastChipX = x
+            val alpha = alphaFor(index)
+            val measured = textMeasurer.measure(midiName(point.midi), style = chipTextStyle)
+            val chipSize = Size(
+                measured.size.width + paddingPx * 2,
+                measured.size.height + paddingPx * 2,
+            )
+            val chipTopLeft = Offset(
+                (x - chipSize.width / 2f).coerceIn(0f, (size.width - chipSize.width).coerceAtLeast(0f)),
+                (yAt(point.midi) - chipSize.height - 14f).coerceAtLeast(0f),
+            )
+            drawRoundRect(
+                color = chipBackgroundColor.copy(alpha = alpha),
+                topLeft = chipTopLeft,
+                size = chipSize,
+                cornerRadius = CornerRadius(CHIP_CORNER_RADIUS.toPx()),
+            )
+            drawText(
+                textLayoutResult = measured,
+                color = chipTextColor.copy(alpha = alpha),
+                topLeft = chipTopLeft + Offset(paddingPx, paddingPx),
+            )
         }
     }
 }
