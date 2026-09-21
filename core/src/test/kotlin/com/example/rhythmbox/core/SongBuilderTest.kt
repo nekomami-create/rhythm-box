@@ -174,12 +174,16 @@ class SongBuilderTest {
 
     @Test
     fun `blocks reuse a handful of patterns instead of eating every slot`() {
+        // 6 幕（Aメロ→Bメロ→サビ→Aメロ→Cメロ→まとめ）を組めるだけの
+        // 長さが無い短い曲は、幕を後ろから間引いて頭から 1 ブロックずつ使う。
         assertEquals(listOf(0), SongBuilder.patternLayout(4))
         assertEquals(listOf(0, 1), SongBuilder.patternLayout(8))
         assertEquals(listOf(0, 1, 2), SongBuilder.patternLayout(12))
-        assertEquals(listOf(0, 1, 2, 3), SongBuilder.patternLayout(16))
-        // 16 小節を超えたら、また A から使い回す（曲としての繰り返しになる）
-        assertEquals(listOf(0, 1, 2, 3, 0, 1, 2, 3), SongBuilder.patternLayout(32))
+        // 16 小節でもまだ 4 幕ぶん（Aメロ・Bメロ・サビ・Aメロ）しか無いので、
+        // Cメロ・まとめ抜きで、2 回目のAメロはパターン 0 の使い回しに戻る。
+        assertEquals(listOf(0, 1, 2, 0), SongBuilder.patternLayout(16))
+        // 32 小節でようやく 6 幕を全部組める長さになる（[SongBuilder.sections] 参照）。
+        assertEquals(listOf(0, 0, 1, 2, 2, 0, 3, 2), SongBuilder.patternLayout(32))
 
         val song = SongBuilder.build(base(), Genre.ROCK.recipe(), key, 64, Random(1))
         val used = song.arrangement.map { it.patternIndex }.distinct()
@@ -191,22 +195,110 @@ class SongBuilderTest {
         )
     }
 
+    // --- 曲としてのまとまり（Aメロ→Bメロ→サビ→Aメロ→Cメロ→まとめ） -------
+
+    @Test
+    fun `a full song walks through the six sections in order`() {
+        val labels = SongBuilder.sections(64).map { it.section }
+        assertEquals(
+            listOf(
+                SongBuilder.Section.A_MELODY,
+                SongBuilder.Section.B_MELODY,
+                SongBuilder.Section.CHORUS,
+                SongBuilder.Section.A_MELODY,
+                SongBuilder.Section.C_MELODY,
+                SongBuilder.Section.OUTRO,
+            ),
+            labels,
+        )
+        // 64 小節ぶん、幕の長さを足すと過不足なく敷き詰まる。
+        assertEquals(64, SongBuilder.sections(64).sumOf { it.blocks } * SongBuilder.BLOCK)
+    }
+
+    @Test
+    fun `the second verse and the outro reprise earlier patterns`() {
+        val slots = SongBuilder.sections(64)
+        val byRole = slots.groupBy { it.section }
+        // 2 回目のAメロは 1 回目と同じパターン（＝同じ演奏）を使い回す。
+        assertEquals(2, byRole.getValue(SongBuilder.Section.A_MELODY).size)
+        assertEquals(
+            byRole.getValue(SongBuilder.Section.A_MELODY)[0].patternIndex,
+            byRole.getValue(SongBuilder.Section.A_MELODY)[1].patternIndex,
+        )
+        // まとめはサビの使い回し（サビをそのまま繰り返して終える）。
+        assertEquals(
+            byRole.getValue(SongBuilder.Section.CHORUS).single().patternIndex,
+            byRole.getValue(SongBuilder.Section.OUTRO).single().patternIndex,
+        )
+        // それでも全体では 4 パターンぶんしか使わない（E 以降は空けておく制約）。
+        assertEquals(SongBuilder.MAX_PATTERNS, slots.map { it.patternIndex }.distinct().size)
+    }
+
+    @Test
+    fun `short songs fall back to one section per block, skipping the later acts first`() {
+        assertEquals(listOf(SongBuilder.Section.A_MELODY), SongBuilder.sections(4).map { it.section })
+        assertEquals(
+            listOf(SongBuilder.Section.A_MELODY, SongBuilder.Section.B_MELODY),
+            SongBuilder.sections(8).map { it.section },
+        )
+        assertTrue(SongBuilder.sections(8).all { it.blocks == 1 })
+    }
+
+    @Test
+    fun `a full-length song's chorus usually starts on a different chord than the verse`() {
+        // 王道進行や丸サ進行のように、そもそも主和音（I）を通らない型もあるので
+        // 100% にはならない。それでも、たいていは Aメロと違う出だしになる。
+        var differ = 0
+        repeat(30) { seed ->
+            val song = SongBuilder.build(base(), Genre.JPOP.recipe(), key, 64, Random(seed))
+            val verseStart = song.arrangement.first { it.patternIndex == 0 }.chords.first()
+            val chorusStart = song.arrangement.first { it.patternIndex == 2 }.chords.first()
+            if (verseStart != chorusStart) differ++
+        }
+        assertTrue("30 回中 $differ 回しか違わない", differ >= 20)
+    }
+
     @Test
     fun `a repeated pattern still fits the chords wherever it comes back`() {
         // 同じパターンが後半にもう一度出てくるとき、そのブロックのコードが
         // 最初のブロックと同じでないと、作った旋律が合わなくなる。
+        // 種を 1 つに決め打ちすると、たまたま進行の長さがブロックの間隔と
+        // 割り切れる組み合わせしか通らず、見落としが起きる。何粒か振る。
         for (genre in Genre.entries) {
             for (bars in listOf(16, 32, 64)) {
-                val song = SongBuilder.build(base(), genre.recipe(), key, bars, Random(bars))
-                val byPattern = song.arrangement.groupBy { it.patternIndex }
-                byPattern.forEach { (index, blocks) ->
-                    val first = blocks.first().chords
-                    assertTrue(
-                        "${genre.label} $bars 小節: パターン $index のコードがブロックごとに違う",
-                        blocks.all { it.chords == first },
-                    )
+                for (seed in 0 until 5) {
+                    val song = SongBuilder.build(base(), genre.recipe(), key, bars, Random(bars * 100 + seed))
+                    val byPattern = song.arrangement.groupBy { it.patternIndex }
+                    byPattern.forEach { (index, blocks) ->
+                        val first = blocks.first().chords
+                        assertTrue(
+                            "${genre.label} $bars 小節 seed=$seed: パターン $index のコードがブロックごとに違う",
+                            blocks.all { it.chords == first },
+                        )
+                    }
                 }
             }
+        }
+    }
+
+    @Test
+    fun `a reused pattern keeps its chords even in a short, degraded song with a long progression`() {
+        // 短い曲（幕が足りず後ろから間引く）では、進行を頭から 1 本の流れの
+        // まま敷く。進行の長さ（ここではカノン進行、8 和音）がブロックの
+        // 間隔（16 小節では 12 小節ぶん）と割り切れないと、位置だけで決めると
+        // 使い回しのブロックが違うコードを引いてしまう。進行を固定して確かめる。
+        val canonOnly = GenreRecipe(
+            bpmRange = 100..100,
+            rhythms = listOf(RhythmStyle.EIGHT_BEAT),
+            progressions = listOf(ProgressionTemplate.CANON),
+            melodyDensity = MelodyDensity.NORMAL,
+            chip = false,
+        )
+        val song = SongBuilder.build(base(), canonOnly, key, 16, Random(1))
+        val byPattern = song.arrangement.groupBy { it.patternIndex }
+        byPattern.forEach { (index, blocks) ->
+            val first = blocks.first().chords
+            assertTrue("パターン $index のコードがブロックごとに違う", blocks.all { it.chords == first })
         }
     }
 
