@@ -185,8 +185,26 @@ private const val TRAIL_MAX_MIDI = 84
  */
 private const val FUTURE_ALPHA = 0.35f
 
-/** 音名チップが詰まりすぎないための、チップどうしの最小間隔。 */
-private val CHIP_MIN_SPACING = 32.dp
+/**
+ * 左はじに寄るところ（過去の軌跡から溜まりを外れる直前）を、幅に対する
+ * 割合でさっと薄くする。急に消えるより自然で、かつ長々とは残らない。
+ */
+private const val LEFT_FADE_FRACTION = 0.06f
+
+/** 線の下にもう一段太く薄い線を重ねて、ネオンのような滲みを作る。 */
+private const val GLOW_STROKE_WIDTH = 16f
+private const val GLOW_ALPHA_FACTOR = 0.28f
+
+/** オクターブごとの目安線（C の高さ）の濃さ。飾りなので薄く。 */
+private const val OCTAVE_GRID_ALPHA = 0.10f
+
+/** 「今」を貫く縦のビームの濃さ。プレイヘッドらしさを添える飾り。 */
+private const val NOW_BEAM_ALPHA = 0.18f
+
+/** 「今」の点の常時の淡い光暈（ドラムの脈動とは別に、常に薄く光らせる）。 */
+private const val NOW_GLOW_RADIUS = 22f
+private const val NOW_GLOW_ALPHA = 0.25f
+
 private val CHIP_PADDING = 3.dp
 private val CHIP_CORNER_RADIUS = 6.dp
 
@@ -199,8 +217,10 @@ private val CHIP_CORNER_RADIUS = 6.dp
  * 真ん中に来る（[past]・[future] を同じ件数だけ渡す前提）。休符（null）の
  * ところは線をつながず、そこだけ途切れさせる。線は、その音がコードの
  * 構成音か・音階の中か・外かで色を変える（[NoteRole]、ピアノロールと
- * 同じ考え方）。音が変わるたびに、その音名をチップで添える。[future] 側
- * （まだ鳴っていない、これから鳴る見立て）は薄く描く。[drumPulse] が立つと、
+ * 同じ考え方）。音名のチップは「今」鳴っている音だけに添える。まだ鳴って
+ * いない（[future] 側）の音は文字を出さず線だけ薄く見せ、鳴り終えて過去へ
+ * 流れたら（次の音が「今」になったら）チップはすぐ消える。左はじに寄る
+ * ところは軌跡ごと素早くフェードアウトする。[drumPulse] が立つと、
  * キック・スネアに合わせて「今」の点のまわりが脈打つ。
  */
 @Composable
@@ -215,6 +235,7 @@ private fun LeadTrailVisualizer(
     val outsideColor = MaterialTheme.colorScheme.onSurfaceVariant
     val nowColor = MaterialTheme.colorScheme.secondary
     val drumColor = MaterialTheme.colorScheme.error
+    val gridColor = MaterialTheme.colorScheme.onSurfaceVariant
     val chipTextColor = MaterialTheme.colorScheme.onSurface
     val chipBackgroundColor = MaterialTheme.colorScheme.surfaceVariant
     val chipTextStyle = MaterialTheme.typography.labelSmall
@@ -227,6 +248,7 @@ private fun LeadTrailVisualizer(
         // 渡す前提なので、これがだいたい画面の真ん中に来る。
         val nowIndex = past.lastIndex
         val span = (combined.size - 1).coerceAtLeast(1)
+        val leftFadeWidth = size.width * LEFT_FADE_FRACTION
         fun xAt(index: Int) = size.width * index / span
         fun yAt(midi: Int): Float {
             val t = (midi - TRAIL_MIN_MIDI).toFloat() / (TRAIL_MAX_MIDI - TRAIL_MIN_MIDI)
@@ -237,9 +259,39 @@ private fun LeadTrailVisualizer(
             NoteRole.SCALE_TONE -> scaleToneColor
             NoteRole.OUTSIDE -> outsideColor
         }
-        // まだ鳴っていない（future 側の）ところは薄く描く。
-        fun alphaFor(index: Int) = if (index > nowIndex) FUTURE_ALPHA else 1f
+        fun alphaFor(index: Int): Float {
+            // まだ鳴っていない（future 側の）ところは薄く。
+            val base = if (index > nowIndex) FUTURE_ALPHA else 1f
+            // 左はじへ寄るところは、溜まりから外れる前にさっと薄くする。
+            val edgeFade = if (leftFadeWidth > 0f) (xAt(index) / leftFadeWidth).coerceIn(0f, 1f) else 1f
+            return base * edgeFade
+        }
 
+        // 飾り: オクターブ（C）ごとの目安の横線。
+        var gridMidi = TRAIL_MIN_MIDI
+        while (gridMidi <= TRAIL_MAX_MIDI) {
+            val y = yAt(gridMidi)
+            drawLine(
+                color = gridColor.copy(alpha = OCTAVE_GRID_ALPHA),
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.5f,
+            )
+            gridMidi += 12
+        }
+
+        // 飾り: 「今」を貫く縦のビーム（プレイヘッド）。
+        if (nowIndex >= 0) {
+            val nowX = xAt(nowIndex)
+            drawLine(
+                color = nowColor.copy(alpha = NOW_BEAM_ALPHA),
+                start = Offset(nowX, 0f),
+                end = Offset(nowX, size.height),
+                strokeWidth = 3f,
+            )
+        }
+
+        // 軌跡の線。下にもう一段太く薄い線を重ねて、ネオンのような滲みを添える。
         var previous: Offset? = null
         combined.forEachIndexed { index, point ->
             if (point == null) {
@@ -248,8 +300,17 @@ private fun LeadTrailVisualizer(
             }
             val here = Offset(xAt(index), yAt(point.midi))
             previous?.let { from ->
+                val alpha = alphaFor(index)
+                val color = colorFor(point.role)
                 drawLine(
-                    color = colorFor(point.role).copy(alpha = alphaFor(index)),
+                    color = color.copy(alpha = alpha * GLOW_ALPHA_FACTOR),
+                    start = from,
+                    end = here,
+                    strokeWidth = GLOW_STROKE_WIDTH,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = color.copy(alpha = alpha),
                     start = from,
                     end = here,
                     strokeWidth = 5f,
@@ -263,7 +324,8 @@ private fun LeadTrailVisualizer(
             val lastPastPoint = past[nowIndex]
             if (lastPastPoint != null) {
                 val center = Offset(xAt(nowIndex), yAt(lastPastPoint.midi))
-                // ドラム（キック・スネア）の脈動。減衰につれて広がりながら薄くなる。
+                // 常時の淡い光暈。ドラムの脈動が乗るとさらに広がる。
+                drawCircle(color = nowColor.copy(alpha = NOW_GLOW_ALPHA), radius = NOW_GLOW_RADIUS, center = center)
                 if (drumPulse > 0.02f) {
                     drawCircle(
                         color = drumColor.copy(alpha = drumPulse * 0.5f),
@@ -272,43 +334,32 @@ private fun LeadTrailVisualizer(
                     )
                 }
                 drawCircle(color = nowColor, radius = 9f, center = center)
-            }
-        }
 
-        // 音が変わるところごとに、その音名をチップで添える（過去も未来も）。
-        // 詰まりすぎないよう、直前のチップから一定間隔は空ける。
-        val minSpacingPx = CHIP_MIN_SPACING.toPx()
-        val paddingPx = CHIP_PADDING.toPx()
-        val cornerPx = CHIP_CORNER_RADIUS.toPx()
-        var lastChipX = Float.NEGATIVE_INFINITY
-        combined.forEachIndexed { index, point ->
-            if (point == null) return@forEachIndexed
-            val isNoteStart = index == 0 || combined[index - 1]?.midi != point.midi
-            if (!isNoteStart) return@forEachIndexed
-            val x = xAt(index)
-            if (x - lastChipX < minSpacingPx) return@forEachIndexed
-            lastChipX = x
-            val alpha = alphaFor(index)
-            val measured = textMeasurer.measure(midiName(point.midi), style = chipTextStyle)
-            val chipSize = Size(
-                measured.size.width + paddingPx * 2,
-                measured.size.height + paddingPx * 2,
-            )
-            val chipTopLeft = Offset(
-                (x - chipSize.width / 2f).coerceIn(0f, (size.width - chipSize.width).coerceAtLeast(0f)),
-                (yAt(point.midi) - chipSize.height - 14f).coerceAtLeast(0f),
-            )
-            drawRoundRect(
-                color = chipBackgroundColor.copy(alpha = alpha * 0.9f),
-                topLeft = chipTopLeft,
-                size = chipSize,
-                cornerRadius = CornerRadius(cornerPx),
-            )
-            drawText(
-                textLayoutResult = measured,
-                color = chipTextColor.copy(alpha = alpha),
-                topLeft = chipTopLeft + Offset(paddingPx, paddingPx),
-            )
+                // 音名のチップは「今」鳴っている音だけに添える。次の音が
+                // 「今」になった瞬間に、この音のチップはすぐ消える
+                // （先読みで文字がちらつくのも、過去に残り続けるのも避ける）。
+                val paddingPx = CHIP_PADDING.toPx()
+                val measured = textMeasurer.measure(midiName(lastPastPoint.midi), style = chipTextStyle)
+                val chipSize = Size(
+                    measured.size.width + paddingPx * 2,
+                    measured.size.height + paddingPx * 2,
+                )
+                val chipTopLeft = Offset(
+                    (center.x - chipSize.width / 2f).coerceIn(0f, (size.width - chipSize.width).coerceAtLeast(0f)),
+                    (center.y - chipSize.height - 14f).coerceAtLeast(0f),
+                )
+                drawRoundRect(
+                    color = chipBackgroundColor,
+                    topLeft = chipTopLeft,
+                    size = chipSize,
+                    cornerRadius = CornerRadius(CHIP_CORNER_RADIUS.toPx()),
+                )
+                drawText(
+                    textLayoutResult = measured,
+                    color = chipTextColor,
+                    topLeft = chipTopLeft + Offset(paddingPx, paddingPx),
+                )
+            }
         }
     }
 }
