@@ -21,6 +21,9 @@ import kotlin.random.Random
  * 場面（ジャンル・調・テンポ）は一定のブロック数ごとに移り変わる。
  * ずっと同じ場面のままだと単調になるが、毎ブロック変えると逆に
  * 「曲」として聴けなくなるので、数十秒〜数分単位の「場面」で区切る。
+ * 切り替わるのは句（起承転結）の区切りだけで、しかもそこは必ず V7 → I の
+ * 終止に着地させてから次の場面へ渡す。句の途中でいきなり別ジャンルへ
+ * 飛ぶと、曲が終止しないまま断ち切られたように聞こえるため。
  */
 object Appreciation {
 
@@ -39,6 +42,12 @@ object Appreciation {
 
     /** 起承転結のうち「転」に当たるブロックの位置（0 始まり）。 */
     private const val TURN_BLOCK = 2
+
+    /** 起承転結のうち「結」に当たるブロックの位置（0 始まり）。 */
+    private const val CODA_BLOCK = PHRASE_BLOCKS - 1
+
+    /** 終止に使う和音の度数。V（ドミナント）。 */
+    private const val CADENCE_DOMINANT_DEGREE = 4
 
     /**
      * 場面が移り変わるまでのブロック数の範囲。
@@ -132,10 +141,15 @@ object Appreciation {
          * 呼ばれるたびに繰り返す。
          */
         fun grow() {
-            if (era.blocksLeft <= 0) era = newEra(null, null, null)
-            // 起承転結の中のどこかを、場面が変わっても・尽きて引き直しても崩れない
-            // ように、場面の中で何ブロック目かだけで決める(0=起 1=承 2=転 3=結)。
+            // 場面転換は起承転結の区切り（結を鳴らし終えたところ）でだけ起きる。
+            // ブロックの途中でいきなり別ジャンルへ切り替わると、曲が終止しないまま
+            // 断ち切られたように聞こえるため、句の途中では blocksLeft が尽きていても
+            // 待つ（結を待つ間、blocksLeft はマイナスまで進む。害はない）。
             val phraseBlock = era.blocksPlayed % PHRASE_BLOCKS
+            if (phraseBlock == 0 && era.blocksLeft <= 0) era = newEra(null, null, null)
+            // 場面の最後の結かどうか。ここだけは進行の終わりに関係なく、
+            // しっかり主和音へ着地させる（下の cadence）。
+            val endsEra = phraseBlock == CODA_BLOCK && era.blocksLeft <= 1
             era.blocksLeft--
             era.blocksPlayed++
 
@@ -150,6 +164,7 @@ object Appreciation {
             )
             val cycle = Harmony.sprinkleSus4(coloured, random)
             val chords = List(BLOCK) { cycle[it % cycle.size] }
+                .let { if (endsEra) withCadence(it, key) else it }
 
             val style = recipe.pickRhythm(random)
             val generated = PatternGenerator.generate(style, random, blockName(mutablePatterns.size))
@@ -176,6 +191,24 @@ object Appreciation {
 
         /** そのブロックのパターンに付ける、見分けが付けばいいだけの名前。 */
         private fun blockName(index: Int): String = "#${index + 1}"
+
+        /**
+         * 場面の最後の 2 小節を V7 → I の終止に差し替える。
+         *
+         * 次のブロックから別のジャンル・調・テンポへ切り替わるので、進行が
+         * 中途半端なところで断ち切られると、そこだけ曲が途切れたように聞こえる。
+         * 7th・sus4 の色付けより後にここで上書きすることで、色付けの結果に
+         * 関係なく必ずしっかり着地させる。
+         */
+        private fun withCadence(chords: List<Chord>, key: MusicKey): List<Chord> {
+            val diatonic = key.diatonicChords()
+            val dominant = diatonic[CADENCE_DOMINANT_DEGREE].copy(quality = ChordQuality.SEVENTH)
+            val tonic = diatonic[0]
+            return chords.toMutableList().apply {
+                this[lastIndex] = tonic
+                this[lastIndex - 1] = dominant
+            }
+        }
 
         /** 新しい場面を用意する。null を渡した軸はここでおまかせに決める。 */
         private fun newEra(genre: Genre?, key: MusicKey?, scene: GameScene?): Era {

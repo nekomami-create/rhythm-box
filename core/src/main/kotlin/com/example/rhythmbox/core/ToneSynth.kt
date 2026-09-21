@@ -199,7 +199,7 @@ object ToneSynth {
     private const val MAX_VIBRATO_DEPTH = 0.18
 
     /** 揺れの速さ（Hz）と、掛かり始めるまでの間（秒）。 */
-    private const val VIBRATO_HZ = 5.5
+    private const val VIBRATO_HZ = 4.5
     private const val VIBRATO_DELAY = 0.12
 
     /** 揺れが最大の幅になるまでの時間（秒）。いきなり最大だと不自然。 */

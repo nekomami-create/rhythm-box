@@ -93,6 +93,31 @@ class AppreciationTest {
     }
 
     @Test
+    fun `a scene only changes at a phrase boundary, landing on a V7-to-I cadence first`() {
+        // 場面転換がブロックの途中で起きると、進行が終止しないまま
+        // 断ち切られたように聞こえる。起承転結の区切り（4 ブロックごと）
+        // でしか変わらず、しかもその最後の 2 小節が V7 → I に着地することを確かめる。
+        val stream = Appreciation.Stream(Genre.HARD_ROCK, MusicKey(9, Scale.NATURAL_MINOR), random = Random(6))
+        val startKey = stream.status.key
+        var blocksGrown = 0
+        while (stream.status.genre == Genre.HARD_ROCK) {
+            stream.grow()
+            blocksGrown++
+        }
+        assertEquals("句（4 ブロック）の区切りでしか変わらない", 0, blocksGrown % 4)
+
+        val plan = stream.plan()
+        val lastBar = blocksGrown * Appreciation.BLOCK - 1
+        val diatonic = startKey.diatonicChords()
+        assertEquals("結の最後はトニックに着地する", diatonic[0], plan.chordAt(lastBar))
+        assertEquals(
+            "その 1 小節前はドミナント 7th",
+            diatonic[4].copy(quality = ChordQuality.SEVENTH),
+            plan.chordAt(lastBar - 1),
+        )
+    }
+
+    @Test
     fun `each 16-bar phrase keeps 起 and 承 and 結 on one progression, and 転 on another`() {
         // ブロックごとに進行をまるごと引き直すと、コードが毎回よそへ飛んでしまう。
         // ルート音（7th や sus4 を掛けても変わらない）を見れば、進行そのものが

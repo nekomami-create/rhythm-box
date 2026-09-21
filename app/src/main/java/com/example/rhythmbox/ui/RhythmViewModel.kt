@@ -110,6 +110,13 @@ data class RhythmUiState(
     /** 鑑賞モードでいま流している場面。再生していなければ null。 */
     val appreciation: Appreciation.Status? = null,
     /**
+     * 鑑賞モードで、いま実際に鳴っている和音。再生していなければ null。
+     *
+     * 曲を一切触らない使い捨ての再生なので、[soundingChord] とは別に持つ
+     * （あちらは開いている曲の [playingBar] を見る）。
+     */
+    val appreciationChord: Chord? = null,
+    /**
      * 鳴っているところに画面を合わせるか（本人の設定）。
      *
      * チェーンや曲を流しているときは、鳴っているパターン・小節が次々に変わる。
@@ -391,7 +398,7 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         appreciationStream = null
         engine.stop()
         clearPlayingState()
-        _uiState.update { it.copy(appreciating = false, appreciation = null) }
+        _uiState.update { it.copy(appreciating = false, appreciation = null, appreciationChord = null) }
     }
 
     /**
@@ -413,14 +420,24 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         appreciationJob?.cancel()
         appreciationJob = viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
-                val playedBar = audio.currentPosition()?.bar ?: 0
+                val position = audio.currentPosition()
+                val playedBar = position?.bar ?: 0
                 var grew = false
                 while (stream.barCount - playedBar <= APPRECIATION_LOOKAHEAD_BARS) {
                     stream.grow()
                     grew = true
                 }
                 if (grew) pushAppreciationPlan(stream)
-                _uiState.update { it.copy(appreciation = stream.status) }
+                // playingBar/playingStep は使わない。開いている曲の画面（曲構成の
+                // 再生位置表示など）が、無関係な鑑賞モードの位置で光ってしまうため。
+                // ここだけの専用の値として、いま鳴っている和音を直接持たせる。
+                val plan = currentPlan
+                val chord = if (position != null && plan != null && position.bar in plan.bars.indices) {
+                    plan.chordAt(position.bar, position.step)
+                } else {
+                    null
+                }
+                _uiState.update { it.copy(appreciation = stream.status, appreciationChord = chord) }
                 delay(POSITION_POLL_MS)
             }
         }

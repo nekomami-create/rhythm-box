@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.rhythmbox.core.Appreciation
+import com.example.rhythmbox.core.Chord
 import com.example.rhythmbox.core.SongBuilder
 
 /**
@@ -51,7 +52,7 @@ fun AppreciationScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 
         val appreciation = state.appreciation
         if (state.appreciating && appreciation != null) {
-            AppreciationStatusCard(appreciation)
+            AppreciationStatusCard(appreciation, state.appreciationChord)
         }
 
         OutlinedButton(
@@ -87,12 +88,17 @@ fun AppreciationScreen(state: RhythmUiState, viewModel: RhythmViewModel) {
 }
 
 @Composable
-private fun AppreciationStatusCard(status: Appreciation.Status) {
+private fun AppreciationStatusCard(status: Appreciation.Status, chord: Chord?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            Text(
+                text = chord?.name ?: "・・・",
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Bold,
+            )
             Text(
                 text = status.genre.label,
                 style = MaterialTheme.typography.headlineSmall,
