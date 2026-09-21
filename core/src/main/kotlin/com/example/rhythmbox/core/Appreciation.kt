@@ -50,6 +50,15 @@ object Appreciation {
     private const val CADENCE_DOMINANT_DEGREE = 4
 
     /**
+     * 小節の後半で、次の和音を先取りする確率。
+     *
+     * 鑑賞モードは 1 小節に 1 和音が続くと、進行がずっと同じ速さでしか
+     * 動かず単調になる。ここだけ（打ち込みでの手作業とは別に）ときどき
+     * 後半だけ次の小節の和音を先取りして、和音の動きに緩急を付ける。
+     */
+    private const val MID_BAR_CHANCE = 0.3
+
+    /**
      * 場面が移り変わるまでのブロック数の範囲。
      *
      * 常に同じ数だと切り替わりが規則的に聞こえてしまうので、幅を持たせて
@@ -171,6 +180,7 @@ object Appreciation {
             var pattern = generated
                 .withBarCount(BLOCK)
                 .withRhythmAt(BLOCK - 1, PatternGenerator.fill(generated, random))
+                .let { if (endsEra) it else withMidBarMovement(it, chords, random) }
 
             val leads = MelodyGenerator.generateBars(
                 chords = chords,
@@ -191,6 +201,30 @@ object Appreciation {
 
         /** そのブロックのパターンに付ける、見分けが付けばいいだけの名前。 */
         private fun blockName(index: Int): String = "#${index + 1}"
+
+        /**
+         * ブロックの中の小節（最後の小節を除く）を、ときどき半分だけ次の
+         * 小節の和音に差し替える。「打ち込みにコードを置く」と同じ仕組み
+         * （[Pattern.withChordAt]）にそのまま乗せるので、鳴らす側は普段の
+         * 打ち込みと区別せずに引ける。
+         *
+         * 旋律（[MelodyGenerator]）は 1 小節に 1 和音のままにしてある。
+         * 半小節ごとに旋律まで作り直すのは大掛かりになるうえ、先取りする
+         * 和音はどのみち次の小節でそのまま鳴る和音なので、後半だけ
+         * コード楽器が先に動くのは、旋律が向かう先を軽く先取りする形に
+         * 聞こえて破綻しない。
+         */
+        private fun withMidBarMovement(pattern: Pattern, chords: List<Chord>, random: Random): Pattern {
+            var result = pattern
+            for (bar in 0 until BLOCK - 1) {
+                val next = chords[bar + 1]
+                if (chords[bar] == next) continue
+                if (random.nextDouble() < MID_BAR_CHANCE) {
+                    result = result.withChordAt(bar, STEPS_PER_BAR / 2, next)
+                }
+            }
+            return result
+        }
 
         /**
          * 場面の最後の 2 小節を V7 → I の終止に差し替える。

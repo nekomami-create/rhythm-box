@@ -93,6 +93,25 @@ class AppreciationTest {
     }
 
     @Test
+    fun `a bar that moves mid-way anticipates the next bar's chord`() {
+        // 1 小節に 1 和音のままだと進行がずっと同じ速さでしか動かない。
+        // ときどき後半だけ次の小節の和音を先取りすることを確かめる。
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(3))
+        repeat(30) { stream.grow() }
+        val plan = stream.plan()
+        var sawMovement = false
+        for (bar in 0 until plan.barCount - 1) {
+            val head = plan.chordAt(bar, 0)
+            val secondHalf = plan.chordAt(bar, STEPS_PER_BAR / 2)
+            if (secondHalf != head) {
+                sawMovement = true
+                assertEquals("後半は次の小節の和音を先取りする", plan.chordAt(bar + 1, 0), secondHalf)
+            }
+        }
+        assertTrue("30 ブロックのうちに一度も小節内で和音が動かなかった", sawMovement)
+    }
+
+    @Test
     fun `a scene only changes at a phrase boundary, landing on a V7-to-I cadence first`() {
         // 場面転換がブロックの途中で起きると、進行が終止しないまま
         // 断ち切られたように聞こえる。起承転結の区切り（4 ブロックごと）
