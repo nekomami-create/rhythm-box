@@ -93,6 +93,28 @@ class AppreciationTest {
     }
 
     @Test
+    fun `each 16-bar phrase keeps 起 and 承 and 結 on one progression, and 転 on another`() {
+        // ブロックごとに進行をまるごと引き直すと、コードが毎回よそへ飛んでしまう。
+        // ルート音（7th や sus4 を掛けても変わらない）を見れば、進行そのものが
+        // 起承結で揃っていて、転だけ別物になっていることを確かめられる。
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(11))
+        repeat(3) { stream.grow() } // init の 1 回とあわせて、起承転結の 4 ブロックぶん
+        val plan = stream.plan()
+
+        fun rootsOf(block: Int): List<Int> =
+            (0 until Appreciation.BLOCK).map { plan.chordAt(block * Appreciation.BLOCK + it).root }
+
+        val ki = rootsOf(0)
+        val sho = rootsOf(1)
+        val ten = rootsOf(2)
+        val ketsu = rootsOf(3)
+
+        assertEquals("起と承は同じ進行", ki, sho)
+        assertEquals("結は起の進行に戻る", ki, ketsu)
+        assertTrue("転は別の進行になる", ki != ten)
+    }
+
+    @Test
     fun `blocksIntoEra counts up and resets when the scene changes`() {
         val stream = Appreciation.Stream(null, null, random = Random(7))
         var previous = stream.status

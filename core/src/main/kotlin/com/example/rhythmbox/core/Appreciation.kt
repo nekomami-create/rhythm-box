@@ -14,6 +14,10 @@ import kotlin.random.Random
  * 組むため。SongBuilder が 1 曲ぶんでやっていることを、ブロック単位で
  * 際限なく繰り返しているだけで、別の理屈は使っていない。
  *
+ * ただしブロックごとに進行をまるごと引き直すと、コード進行そのものが
+ * 毎回よそへ飛んでしまう。4 ブロック（16 小節）を起承転結の 1 組として、
+ * 転だけ別の進行に変え、結で起の進行へ戻す（[Stream.grow] を参照）。
+ *
  * 場面（ジャンル・調・テンポ）は一定のブロック数ごとに移り変わる。
  * ずっと同じ場面のままだと単調になるが、毎ブロック変えると逆に
  * 「曲」として聴けなくなるので、数十秒〜数分単位の「場面」で区切る。
@@ -22,6 +26,19 @@ object Appreciation {
 
     /** 1 ブロックの小節数。[SongBuilder] と揃えてある。 */
     const val BLOCK = SongBuilder.BLOCK
+
+    /**
+     * 起承転結、1 まとまりのブロック数。[BLOCK] と掛けて 16 小節。
+     *
+     * ブロックごとに進行をまるごと引き直すと、コードが毎回よそへ飛んで
+     * リードもそれに引きずられ、「曲」ではなく断片の連続に聞こえていた。
+     * 4 ブロックを 1 つの起承転結として、起（0）・承（1）は同じ進行、
+     * 転（2）だけ別の進行に変えて、結（3）で起の進行へ戻す。
+     */
+    private const val PHRASE_BLOCKS = 4
+
+    /** 起承転結のうち「転」に当たるブロックの位置（0 始まり）。 */
+    private const val TURN_BLOCK = 2
 
     /**
      * 場面が移り変わるまでのブロック数の範囲。
@@ -57,6 +74,10 @@ object Appreciation {
         val bpm: Int,
         /** 次の場面まで、あと何ブロックか。0 になったら引き直す。 */
         var blocksLeft: Int,
+        /** 起・承・結で使う進行。 */
+        val mainProgression: ProgressionTemplate,
+        /** 転だけで使う、対になる進行。 */
+        val turnProgression: ProgressionTemplate,
     ) {
         var blocksPlayed: Int = 0
     }
@@ -112,12 +133,15 @@ object Appreciation {
          */
         fun grow() {
             if (era.blocksLeft <= 0) era = newEra(null, null, null)
+            // 起承転結の中のどこかを、場面が変わっても・尽きて引き直しても崩れない
+            // ように、場面の中で何ブロック目かだけで決める(0=起 1=承 2=転 3=結)。
+            val phraseBlock = era.blocksPlayed % PHRASE_BLOCKS
             era.blocksLeft--
             era.blocksPlayed++
 
             val recipe = era.recipe
             val key = era.key
-            val progression = recipe.pickProgression(random)
+            val progression = if (phraseBlock == TURN_BLOCK) era.turnProgression else era.mainProgression
             val coloured = Harmony.enrichSevenths(
                 progression.chords(key),
                 progression.keyFor(key),
@@ -160,7 +184,18 @@ object Appreciation {
             val resolvedGenre = genre ?: Genre.entries.random(random)
             val resolvedKey = key ?: MusicKey(random.nextInt(12), KEY_SCALES.random(random))
             val recipe = SongEditor.recipeFor(resolvedGenre, scene, random)
-            return Era(resolvedGenre, resolvedKey, recipe, recipe.pickBpm(random), DRIFT_BLOCKS.random(random))
+            val main = recipe.pickProgression(random)
+            // 転は別の型を選ぶ。候補が 1 つしか無いジャンルは仕方なく同じになる。
+            val turn = recipe.progressions.filter { it != main }.randomOrNull(random) ?: main
+            return Era(
+                resolvedGenre,
+                resolvedKey,
+                recipe,
+                recipe.pickBpm(random),
+                DRIFT_BLOCKS.random(random),
+                mainProgression = main,
+                turnProgression = turn,
+            )
         }
     }
 }
