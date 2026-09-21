@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.rhythmbox.AppContainer
+import com.example.rhythmbox.core.Appreciation
 import com.example.rhythmbox.core.ArpeggioSpeed
 import com.example.rhythmbox.core.ArrangementStep
 import com.example.rhythmbox.core.BassStyle
@@ -48,6 +49,7 @@ import com.example.rhythmbox.core.ToneSynth
 import com.example.rhythmbox.core.Transposer
 import com.example.rhythmbox.core.formatDuration
 import com.example.rhythmbox.core.secondsPerStep
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,6 +102,13 @@ data class RhythmUiState(
     val playingPatternBar: Int = -1,
     /** グリッドとピアノロールで編集している、パターンの中の小節。 */
     val selectedBar: Int = 0,
+    /**
+     * 鑑賞モード（終わりなく新しい小節を作って流す）を再生中か。
+     * 曲は一切触らない使い捨ての再生なので、[song] とは別に持つ。
+     */
+    val appreciating: Boolean = false,
+    /** 鑑賞モードでいま流している場面。再生していなければ null。 */
+    val appreciation: Appreciation.Status? = null,
     /**
      * 鳴っているところに画面を合わせるか（本人の設定）。
      *
@@ -222,6 +231,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     /** 今エンジンに渡しているプラン。鳴っているパターンを割り出すのに使う。 */
     private var currentPlan: PlaybackPlan? = null
 
+    /** 鑑賞モードの続きを持ち続ける器。再生していなければ null。 */
+    private var appreciationStream: Appreciation.Stream? = null
+
+    /** 鑑賞モードの「先を作りながら流す」ループ。 */
+    private var appreciationJob: Job? = null
+
     /** 自動生成をやり直すための、直前の曲まるごとの控え。 */
     /**
      * 自動生成の前の曲を、新しいものから順に積んでおく。
@@ -266,7 +281,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun onScreenResumed() {
         audio.resume()
         // 画面を消しているあいだは位置の更新を止めてある。見る人が戻ったら再開する。
-        if (_uiState.value.isPlaying && positionJob == null) startPositionUpdates()
+        // 鑑賞モード中はここで動かさない。currentPlan が鑑賞モードのものになっている間に
+        // 開いている曲のパターンとして読もうとすると、無関係な番号を引いてしまう。
+        val state = _uiState.value
+        if (state.isPlaying && !state.appreciating && positionJob == null) startPositionUpdates()
     }
 
     fun onScreenPaused() {
@@ -284,6 +302,8 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     // --- 再生 ---------------------------------------------------------------
 
     fun play(mode: PlayMode) {
+        // エンジンは 1 つしか無いので、鑑賞モードが鳴っていれば先に止める。
+        if (_uiState.value.appreciating) stopAppreciating()
         val state = _uiState.value
         if (mode == PlayMode.SONG && state.song.arrangement.isEmpty()) return
         if (mode == PlayMode.CHAIN && state.chain.isEmpty()) return
@@ -299,6 +319,10 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun stop() {
+        if (_uiState.value.appreciating) {
+            stopAppreciating()
+            return
+        }
         engine.stop()
         clearPlayingState()
     }
@@ -330,6 +354,94 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     fun setLoopSong(loop: Boolean) {
         _uiState.update { it.copy(loopSong = loop) }
         syncEngine()
+    }
+
+    // --- 鑑賞モード -----------------------------------------------------------
+    //
+    // 終わりなく新しい小節を作りながら流す、聴くだけの再生。曲は一切触らない
+    // （保存もしない、開いている曲とは無関係の使い捨ての流れ）。エンジンは
+    // 1 つしか無いので、通常再生とは play()/stop() 側で互いに先に止め合う。
+
+    /**
+     * 鑑賞モードを始める。[genre]・[key] を渡さなければ、そこもおまかせになる。
+     * [scene] は [genre] がゲーム音楽で、場面を選んで始めたいときだけ渡す。
+     */
+    fun startAppreciating(genre: Genre?, key: MusicKey?, scene: GameScene?) {
+        if (_uiState.value.isPlaying) stop()
+        val stream = Appreciation.Stream(genre, key, scene, random = Random.Default)
+        // 鳴らし始める前に少し先まで作っておく。始まってすぐ追いつかれると危うい。
+        while (stream.barCount < APPRECIATION_STARTUP_BARS) stream.grow()
+        appreciationStream = stream
+        pushAppreciationPlan(stream)
+        _uiState.update {
+            it.copy(isPlaying = true, appreciating = true, appreciation = stream.status)
+        }
+        audio.resume()
+        engine.start()
+        // 画面を消してもプロセスを畳ませない（先を作り続けるにも音声スレッドを保つ必要がある）。
+        keepAlive.start("鑑賞モード")
+        startAppreciationUpdates(stream)
+    }
+
+    /** 鑑賞モードを止める。 */
+    fun stopAppreciating() {
+        if (!_uiState.value.appreciating) return
+        appreciationJob?.cancel()
+        appreciationJob = null
+        appreciationStream = null
+        engine.stop()
+        clearPlayingState()
+        _uiState.update { it.copy(appreciating = false, appreciation = null) }
+    }
+
+    /**
+     * 再生位置に追いつかれる前に、先を作り足し続けるループ。
+     *
+     * 曲の再生位置更新（[startPositionUpdates]）とは別に持つ。あちらは開いて
+     * いる曲の選択小節・追従を動かすためのもので、鑑賞モードは曲を触らない
+     * ので混ぜられない。[onScreenPaused] の対象にもしていない。画面を
+     * 消していても先を作り続けないと、そこで無音になってしまうため。
+     *
+     * [Appreciation.Stream.plan] の構築は鳴らした時間に応じて重くなっていく
+     * （[PlaybackPlan] が声部の繋がりを毎回ぜんぶ解き直すため）。何時間も
+     * 流しっぱなしにすると 1 回の構築が数百 ms になりうるが、それでも
+     * バックグラウンドのディスパッチャで動かし、音が途切れる前に十分な
+     * 余裕（[APPRECIATION_LOOKAHEAD_BARS]）を持たせてあるので、鳴っている
+     * 音そのものが遅れることはない。
+     */
+    private fun startAppreciationUpdates(stream: Appreciation.Stream) {
+        appreciationJob?.cancel()
+        appreciationJob = viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                val playedBar = audio.currentPosition()?.bar ?: 0
+                var grew = false
+                while (stream.barCount - playedBar <= APPRECIATION_LOOKAHEAD_BARS) {
+                    stream.grow()
+                    grew = true
+                }
+                if (grew) pushAppreciationPlan(stream)
+                _uiState.update { it.copy(appreciation = stream.status) }
+                delay(POSITION_POLL_MS)
+            }
+        }
+    }
+
+    /** [stream] の今の中身を、エンジンとその他の読み取り口（[currentPlan]）に渡す。 */
+    private fun pushAppreciationPlan(stream: Appreciation.Stream) {
+        val plan = stream.plan()
+        currentPlan = plan
+        val recipe = stream.status.recipe
+        val chip = recipe.chip
+        engine.config = EngineConfig(
+            plan = plan,
+            bpm = stream.status.bpm,
+            chordStyle = if (chip) ChordStyle.CHIP_ARPEGGIO else ChordStyle.BLOCK,
+            leadVoice = if (chip) recipe.leadVoice else ToneSynth.LeadVoice.SQUARE,
+            drumKit = if (chip) DrumKit.CHIP else DrumKit.NORMAL,
+            soundSet = if (chip) SoundSet.CHIP else SoundSet.NORMAL,
+            bassStyle = recipe.bassStyle,
+            loop = false, // 終わらせない。尽きる前に伸ばし続けるので、いつまでも切り替わらない
+        )
     }
 
     /**
@@ -546,6 +658,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun handlePlaybackFinished() {
+        // 鑑賞モードは先読みで尽きないようにしてあるので、ふつうは起きない。
+        // それでも万一エンジンが自然に止まったら、鑑賞モードの後始末
+        // （バックグラウンドで作り続けるループを止める）もここで一緒にする。
+        if (_uiState.value.appreciating) {
+            stopAppreciating()
+            return
+        }
         clearPlayingState()
     }
 
@@ -1662,6 +1781,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
         /** 何段まで戻せるか。 */
         private const val MAX_UNDO = 20
+
+        /** 鑑賞モードを始める前に、あらかじめ作っておく小節数。 */
+        private const val APPRECIATION_STARTUP_BARS = 16
+
+        /** 鑑賞モードで、再生位置より何小節先までは作ってあることにするか。 */
+        private const val APPRECIATION_LOOKAHEAD_BARS = 8
 
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { RhythmViewModel(container) }

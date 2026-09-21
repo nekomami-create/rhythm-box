@@ -41,6 +41,7 @@ private enum class Screen(val label: String) {
     PAD("パッド"),
     LEAD("リード"),
     SONG("曲構成"),
+    APPRECIATE("鑑賞"),
     HELP("ヘルプ"),
 }
 
@@ -236,7 +237,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            // タブが 5 つあるので、既定の字の大きさだと「パターン」が折り返す。
+            // タブが 6 つに増えたので、labelMedium のままだと「パターン」が折り返す。
             TabRow(selectedTabIndex = screen.ordinal) {
                 Screen.entries.forEach { entry ->
                     Tab(
@@ -247,7 +248,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                                 text = entry.label,
                                 maxLines = 1,
                                 softWrap = false,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                             )
                         },
                     )
@@ -260,6 +261,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                 Screen.PAD -> PadScreen(state, viewModel)
                 Screen.LEAD -> LeadScreen(state, viewModel)
                 Screen.SONG -> SongScreen(state, viewModel)
+                Screen.APPRECIATE -> AppreciationScreen(state, viewModel)
                 Screen.HELP -> HelpScreen(audioReport = viewModel.audioReport())
             }
         }
