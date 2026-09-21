@@ -117,6 +117,12 @@ data class RhythmUiState(
      */
     val appreciationChord: Chord? = null,
     /**
+     * 鑑賞モードで、直近のリード（旋律）の音の高さの軌跡。古いものが先頭。
+     * 休符は null。下の可視化（[AppreciationScreen]）が線で描くのに使う。
+     * 再生していなければ空。
+     */
+    val appreciationLeadTrail: List<Int?> = emptyList(),
+    /**
      * 鳴っているところに画面を合わせるか（本人の設定）。
      *
      * チェーンや曲を流しているときは、鳴っているパターン・小節が次々に変わる。
@@ -398,7 +404,14 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
         appreciationStream = null
         engine.stop()
         clearPlayingState()
-        _uiState.update { it.copy(appreciating = false, appreciation = null, appreciationChord = null) }
+        _uiState.update {
+            it.copy(
+                appreciating = false,
+                appreciation = null,
+                appreciationChord = null,
+                appreciationLeadTrail = emptyList(),
+            )
+        }
     }
 
     /**
@@ -430,14 +443,26 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 if (grew) pushAppreciationPlan(stream)
                 // playingBar/playingStep は使わない。開いている曲の画面（曲構成の
                 // 再生位置表示など）が、無関係な鑑賞モードの位置で光ってしまうため。
-                // ここだけの専用の値として、いま鳴っている和音を直接持たせる。
+                // ここだけの専用の値として、いま鳴っている和音・リードを直接持たせる。
+                var chord: Chord? = null
+                var pitch: Int? = null
                 val plan = currentPlan
-                val chord = if (position != null && plan != null && position.bar in plan.bars.indices) {
-                    plan.chordAt(position.bar, position.step)
-                } else {
-                    null
+                if (position != null && plan != null && position.bar in plan.bars.indices) {
+                    chord = plan.chordAt(position.bar, position.step)
+                    // タイ（音を伸ばす記号）を解決した、実際に鳴っている高さ。
+                    // PlaybackEngine が音を鳴らすときと同じ引き方（patternBarAt を挟む）。
+                    val pattern = plan.patternAt(position.bar)
+                    pitch = pattern.soundingLead(plan.patternBarAt(position.bar), position.step)
+                        .takeIf(Pattern::isNote)
                 }
-                _uiState.update { it.copy(appreciation = stream.status, appreciationChord = chord) }
+                _uiState.update {
+                    it.copy(
+                        appreciation = stream.status,
+                        appreciationChord = chord,
+                        appreciationLeadTrail = (it.appreciationLeadTrail + pitch)
+                            .takeLast(APPRECIATION_TRAIL_CAPACITY),
+                    )
+                }
                 delay(POSITION_POLL_MS)
             }
         }
@@ -1804,6 +1829,12 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
         /** 鑑賞モードで、再生位置より何小節先までは作ってあることにするか。 */
         private const val APPRECIATION_LOOKAHEAD_BARS = 8
+
+        /**
+         * 鑑賞モードのリードの軌跡（[RhythmUiState.appreciationLeadTrail]）を
+         * 何件まで持つか。[POSITION_POLL_MS] 刻みなので、200 件でだいたい 4.8 秒ぶん。
+         */
+        private const val APPRECIATION_TRAIL_CAPACITY = 200
 
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { RhythmViewModel(container) }
