@@ -479,6 +479,25 @@ enum class Genre(
         chip = true,
         scenes = GameScene.entries,
         bassStyle = BassStyle.FIFTH,
+    ),
+    VOCALOID(
+        "ボカロ",
+        "とにかく速い・畳み掛ける旋律",
+        170..195,
+        listOf(RhythmStyle.DIGITAL, RhythmStyle.HARD_ROCK),
+        listOf(
+            // 循環進行はセカンダリードミナントで回り続ける定番。
+            ProgressionTemplate.TURNAROUND,
+            // i-♭VII-♭VI-V の下降は、ボカロ・ヴィジュアル系が好む劇的な短調。
+            ProgressionTemplate.ANDALUSIAN,
+            ProgressionTemplate.DOUBLE_DOMINANT,
+            ProgressionTemplate.KOMURO,
+        ),
+        MelodyDensity.BUSY,
+        // 素の三和音だと速さに音の情報量が追いつかない。色を付けて密度を出す。
+        seventhChance = 0.35,
+        // ルート弾きっぱなしだと走り続ける感じが出ない。動き続けるベースで押す。
+        bassStyle = BassStyle.WALK,
     );
 
     /** 場面を選ばなかったときの中身。 */

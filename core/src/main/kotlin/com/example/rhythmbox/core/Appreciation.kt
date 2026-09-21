@@ -49,6 +49,20 @@ object Appreciation {
     /** 起承転結のうち「結」に当たるブロックの位置（0 始まり）。 */
     private const val CODA_BLOCK = PHRASE_BLOCKS - 1
 
+    /**
+     * 起承転結の 4 つの位置を、[SongBuilder] と同じ幕の呼び名に当てはめたもの。
+     * 「起承転結」は聞き慣れない人もいるので、画面にはこちらを出す
+     * （[Status.section]）。転はちょうど転調も掛かる盛り上がり所なので「サビ」、
+     * 結は場面の調へ戻る締めくくりなので、次の起（Aメロ）と被らないよう
+     * 「Cメロ」に当てている。
+     */
+    private val PHRASE_SECTIONS = listOf(
+        SongBuilder.Section.A_MELODY, // 起
+        SongBuilder.Section.B_MELODY, // 承
+        SongBuilder.Section.CHORUS, // 転
+        SongBuilder.Section.C_MELODY, // 結
+    )
+
     /** 終止に使う和音の度数。V（ドミナント）。 */
     private const val CADENCE_DOMINANT_DEGREE = 4
 
@@ -104,6 +118,8 @@ object Appreciation {
         val bpm: Int,
         val blocksIntoEra: Int,
         val recipe: GenreRecipe,
+        /** 直近で作ったブロックが、起承転結のどこに当たるか（Aメロ/Bメロ/サビ/Cメロ）。 */
+        val section: SongBuilder.Section,
     )
 
     /** 場面ひとつぶんの、変わらない設定。 */
@@ -160,7 +176,15 @@ object Appreciation {
 
         /** いまの場面のスナップショット。 */
         val status: Status
-            get() = Status(era.genre, era.key, bpmOverride ?: era.bpm, era.blocksPlayed, era.recipe)
+            get() = Status(
+                era.genre,
+                era.key,
+                bpmOverride ?: era.bpm,
+                era.blocksPlayed,
+                era.recipe,
+                // 直近で作ったブロック（blocksPlayed 件目、1 始まり）の位置。
+                section = PHRASE_SECTIONS[(era.blocksPlayed - 1).mod(PHRASE_BLOCKS)],
+            )
 
         init {
             grow()

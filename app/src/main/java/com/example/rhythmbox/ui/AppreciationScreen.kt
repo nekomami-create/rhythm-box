@@ -129,11 +129,15 @@ private fun AppreciationStatusCard(status: Appreciation.Status, chord: Chord?) {
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
             )
-            Text(
-                text = status.genre.label,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = status.genre.label,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                // いま鳴っているのが起承転結のどこか（Aメロ/Bメロ/サビ/Cメロ）。
+                OptionChip(label = status.section.label, selected = true, onClick = {})
+            }
             Text(
                 text = "${status.key.name} ・ ${status.bpm} BPM",
                 style = MaterialTheme.typography.bodyLarge,

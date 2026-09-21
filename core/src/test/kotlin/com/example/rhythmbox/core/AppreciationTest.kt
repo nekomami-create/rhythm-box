@@ -230,6 +230,21 @@ class AppreciationTest {
     }
 
     @Test
+    fun `the status shows the phrase position as Aメロ Bメロ サビ Cメロ, cycling every 4 blocks`() {
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(11))
+        val expected = listOf(
+            SongBuilder.Section.A_MELODY,
+            SongBuilder.Section.B_MELODY,
+            SongBuilder.Section.CHORUS,
+            SongBuilder.Section.C_MELODY,
+        )
+        repeat(12) { i ->
+            assertEquals("${i + 1} ブロック目", expected[i % expected.size], stream.status.section)
+            stream.grow()
+        }
+    }
+
+    @Test
     fun `blocksIntoEra counts up and resets when the scene changes`() {
         // ジャンルは始まってから変わらないので、ここでは調で「場面が変わったか」を見分ける
         // （次の場面がたまたま同じ調を引く、ごく小さな確率は許容する）。
