@@ -30,10 +30,13 @@ import com.example.rhythmbox.core.MelodyDensity
 import com.example.rhythmbox.core.MelodyGenerator
 import com.example.rhythmbox.core.MidiExporter
 import com.example.rhythmbox.core.MusicKey
+import com.example.rhythmbox.core.NoteRole
+import com.example.rhythmbox.core.noteRole
 import com.example.rhythmbox.core.OfflineRenderer
 import com.example.rhythmbox.core.PadRecorder
 import com.example.rhythmbox.core.Pattern
 import com.example.rhythmbox.core.RoomSize
+import com.example.rhythmbox.core.Voice
 import com.example.rhythmbox.core.PatternGenerator
 import com.example.rhythmbox.core.PlaybackPlan
 import com.example.rhythmbox.core.ROW_BASS
@@ -121,7 +124,12 @@ data class RhythmUiState(
      * 休符は null。下の可視化（[AppreciationScreen]）が線で描くのに使う。
      * 再生していなければ空。
      */
-    val appreciationLeadTrail: List<Int?> = emptyList(),
+    val appreciationLeadTrail: List<LeadTrailPoint?> = emptyList(),
+    /**
+     * 鑑賞モードで、直前のキック / スネアからどれだけ経ったかを表す 0〜1。
+     * 叩いた瞬間に 1、そこから毎ティック減衰する。可視化の脈動に使う。
+     */
+    val appreciationDrumPulse: Float = 0f,
     /**
      * 鳴っているところに画面を合わせるか（本人の設定）。
      *
@@ -228,6 +236,12 @@ data class RhythmUiState(
     /** 編集中のパターンを試聴するときのコード。 */
     val patternChord: Chord get() = song.patternChord(selectedPattern)
 }
+
+/**
+ * 鑑賞モードの軌跡の 1 点。[role] は、そのとき鳴っていたコード・調に対して
+ * この音がどういう立場だったか（[AppreciationScreen] が線の色分けに使う）。
+ */
+data class LeadTrailPoint(val midi: Int, val role: NoteRole)
 
 class RhythmViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -410,8 +424,22 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 appreciation = null,
                 appreciationChord = null,
                 appreciationLeadTrail = emptyList(),
+                appreciationDrumPulse = 0f,
             )
         }
+    }
+
+    /**
+     * 鑑賞モードのテンポを聴きながら自分で決める。場面（ジャンル・調）は
+     * 変えない。プランは作り直さず、エンジンのテンポだけをその場で差し替える
+     * （[Appreciation.Stream.plan] の再構築はコードや旋律には関係無いので、
+     * 呼ぶだけ無駄に重い）。
+     */
+    fun setAppreciationBpm(bpm: Int) {
+        val stream = appreciationStream ?: return
+        stream.setBpm(bpm)
+        engine.config = engine.config.copy(bpm = stream.status.bpm)
+        _uiState.update { it.copy(appreciation = stream.status) }
     }
 
     /**
@@ -443,24 +471,32 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
                 if (grew) pushAppreciationPlan(stream)
                 // playingBar/playingStep は使わない。開いている曲の画面（曲構成の
                 // 再生位置表示など）が、無関係な鑑賞モードの位置で光ってしまうため。
-                // ここだけの専用の値として、いま鳴っている和音・リードを直接持たせる。
+                // ここだけの専用の値として、いま鳴っている和音・リード・ドラムを
+                // 直接持たせる。
                 var chord: Chord? = null
-                var pitch: Int? = null
+                var point: LeadTrailPoint? = null
+                var drumHit = false
                 val plan = currentPlan
                 if (position != null && plan != null && position.bar in plan.bars.indices) {
-                    chord = plan.chordAt(position.bar, position.step)
+                    val currentChord = plan.chordAt(position.bar, position.step)
+                    chord = currentChord
                     // タイ（音を伸ばす記号）を解決した、実際に鳴っている高さ。
                     // PlaybackEngine が音を鳴らすときと同じ引き方（patternBarAt を挟む）。
                     val pattern = plan.patternAt(position.bar)
-                    pitch = pattern.soundingLead(plan.patternBarAt(position.bar), position.step)
+                    val pitch = pattern.soundingLead(plan.patternBarAt(position.bar), position.step)
                         .takeIf(Pattern::isNote)
+                    point = pitch?.let { LeadTrailPoint(it, noteRole(it, currentChord, stream.status.key)) }
+                    drumHit = pattern.isOn(Voice.KICK.ordinal, position.step) ||
+                        pattern.isOn(Voice.SNARE.ordinal, position.step)
                 }
                 _uiState.update {
                     it.copy(
                         appreciation = stream.status,
                         appreciationChord = chord,
-                        appreciationLeadTrail = (it.appreciationLeadTrail + pitch)
+                        appreciationLeadTrail = (it.appreciationLeadTrail + point)
                             .takeLast(APPRECIATION_TRAIL_CAPACITY),
+                        // 叩いた瞬間に 1 まで戻り、そこから毎ティック減衰する。
+                        appreciationDrumPulse = if (drumHit) 1f else it.appreciationDrumPulse * DRUM_PULSE_DECAY,
                     )
                 }
                 delay(POSITION_POLL_MS)
@@ -1835,6 +1871,13 @@ class RhythmViewModel(private val container: AppContainer) : ViewModel() {
          * 何件まで持つか。[POSITION_POLL_MS] 刻みなので、200 件でだいたい 4.8 秒ぶん。
          */
         private const val APPRECIATION_TRAIL_CAPACITY = 200
+
+        /**
+         * 鑑賞モードのドラムの脈動（[RhythmUiState.appreciationDrumPulse]）が
+         * ティックごとに弱まる比率。[POSITION_POLL_MS] 刻みで、この値だと
+         * 半分に減るまでおよそ 100ms。
+         */
+        private const val DRUM_PULSE_DECAY = 0.85f
 
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { RhythmViewModel(container) }

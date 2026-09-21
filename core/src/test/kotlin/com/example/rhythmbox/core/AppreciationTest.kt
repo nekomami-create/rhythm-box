@@ -61,16 +61,18 @@ class AppreciationTest {
     }
 
     @Test
-    fun `the same seed always gives the same music, even across a genre change`() {
+    fun `the same seed always gives the same music, even across a scene change`() {
+        // ジャンルは始まってから変わらないので、「場面が変わった」は
+        // blocksIntoEra が 1 に戻ることで見分ける。
         val a = Appreciation.Stream(null, null, random = Random(55))
         val b = Appreciation.Stream(null, null, random = Random(55))
-        val genresA = mutableListOf(a.status.genre)
+        var sawSceneChange = false
         repeat(200) {
             a.grow()
             b.grow()
-            if (a.status.genre != genresA.last()) genresA += a.status.genre
+            if (a.status.blocksIntoEra == 1) sawSceneChange = true
         }
-        assertTrue("200 ブロックのうちに一度も場面が変わらなかった", genresA.size > 1)
+        assertTrue("200 ブロックのうちに一度も場面が変わらなかった", sawSceneChange)
         val planA = a.plan()
         val planB = b.plan()
         assertEquals(planA.barCount, planB.barCount)
@@ -81,14 +83,19 @@ class AppreciationTest {
     }
 
     @Test
-    fun `a chosen genre and key hold for at least the first era`() {
+    fun `a chosen genre never changes, and a chosen key holds until the next scene`() {
         val stream = Appreciation.Stream(Genre.HARD_ROCK, MusicKey(9, Scale.NATURAL_MINOR), random = Random(6))
         assertEquals(Genre.HARD_ROCK, stream.status.genre)
         assertEquals(MusicKey(9, Scale.NATURAL_MINOR), stream.status.key)
-        // 場面が変わるまでは、選んだ軸がそのまま保たれる。
-        while (stream.status.genre == Genre.HARD_ROCK) {
-            assertEquals(MusicKey(9, Scale.NATURAL_MINOR), stream.status.key)
+        var previous = stream.status
+        repeat(200) {
             stream.grow()
+            val now = stream.status
+            assertEquals("ジャンルは始まってから変わらない", Genre.HARD_ROCK, now.genre)
+            if (now.blocksIntoEra != 1) {
+                assertEquals("同じ場面の間は調も変わらない", previous.key, now.key)
+            }
+            previous = now
         }
     }
 
@@ -145,9 +152,10 @@ class AppreciationTest {
         for (seed in 1..15) {
             val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(seed.toLong()))
             val homeKey = stream.status.key
-            val startGenre = stream.status.genre
+            // ジャンルは変わらないので、ここでは調で「まだ同じ場面か」を見分ける
+            // （次の場面がたまたま同じ調を引く、ごく小さな確率は許容する）。
             var blockIndex = 0
-            while (stream.status.genre == startGenre && blockIndex < 20) {
+            while (stream.status.key == homeKey && blockIndex < 20) {
                 val phraseBlock = blockIndex % 4
                 val plan = stream.plan()
                 val firstBar = blockIndex * Appreciation.BLOCK
@@ -179,10 +187,12 @@ class AppreciationTest {
         // でしか変わらず、しかもその最後の 2 小節が V7 → I に着地することを確かめる。
         val stream = Appreciation.Stream(Genre.HARD_ROCK, MusicKey(9, Scale.NATURAL_MINOR), random = Random(6))
         val startKey = stream.status.key
+        // ジャンルは変わらないので、場面転換は blocksIntoEra が 1 に戻ることで見分ける。
         var blocksGrown = 0
-        while (stream.status.genre == Genre.HARD_ROCK) {
+        while (true) {
             stream.grow()
             blocksGrown++
+            if (stream.status.blocksIntoEra == 1) break
         }
         assertEquals("句（4 ブロック）の区切りでしか変わらない", 0, blocksGrown % 4)
 
@@ -221,26 +231,44 @@ class AppreciationTest {
 
     @Test
     fun `blocksIntoEra counts up and resets when the scene changes`() {
+        // ジャンルは始まってから変わらないので、ここでは調で「場面が変わったか」を見分ける
+        // （次の場面がたまたま同じ調を引く、ごく小さな確率は許容する）。
         val stream = Appreciation.Stream(null, null, random = Random(7))
         var previous = stream.status
         assertEquals(1, previous.blocksIntoEra)
         repeat(150) {
             stream.grow()
             val now = stream.status
-            if (now.genre == previous.genre) {
-                // 場面が変わっても、たまたま同じジャンルを引き直すことがある
-                // （Genre.entries.random は前のジャンルを避けない）。その場合も
-                // 1 から数え直すのが正しいので、genre の一致だけでは
-                // 「同じ場面が続いている」と決め切れない。
-                assertTrue(
-                    "genre が同じ: 数え続けるか、たまたま同じ genre で 1 から",
-                    now.blocksIntoEra == previous.blocksIntoEra + 1 || now.blocksIntoEra == 1,
-                )
+            if (now.key == previous.key) {
+                assertEquals(previous.blocksIntoEra + 1, now.blocksIntoEra)
             } else {
                 assertEquals(1, now.blocksIntoEra)
             }
             previous = now
         }
+    }
+
+    @Test
+    fun `setBpm overrides the tempo and it survives a scene change`() {
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(13))
+        stream.setBpm(200)
+        assertEquals(200, stream.status.bpm)
+        var sawSceneChange = false
+        repeat(100) {
+            stream.grow()
+            if (stream.status.blocksIntoEra == 1) sawSceneChange = true
+            assertEquals("場面が変わってもテンポの指定は残る", 200, stream.status.bpm)
+        }
+        assertTrue("場面が変わらないと、引き継がれる確認にならない", sawSceneChange)
+    }
+
+    @Test
+    fun `setBpm clamps to the valid range`() {
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(14))
+        stream.setBpm(10000)
+        assertEquals(Song.MAX_BPM, stream.status.bpm)
+        stream.setBpm(-5)
+        assertEquals(Song.MIN_BPM, stream.status.bpm)
     }
 
     @Test

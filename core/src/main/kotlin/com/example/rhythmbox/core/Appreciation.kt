@@ -18,12 +18,15 @@ import kotlin.random.Random
  * 毎回よそへ飛んでしまう。4 ブロック（16 小節）を起承転結の 1 組として、
  * 転だけ別の進行に変え、結で起の進行へ戻す（[Stream.grow] を参照）。
  *
- * 場面（ジャンル・調・テンポ）は一定のブロック数ごとに移り変わる。
- * ずっと同じ場面のままだと単調になるが、毎ブロック変えると逆に
- * 「曲」として聴けなくなるので、数十秒〜数分単位の「場面」で区切る。
- * 切り替わるのは句（起承転結）の区切りだけで、しかもそこは必ず V7 → I の
- * 終止に着地させてから次の場面へ渡す。句の途中でいきなり別ジャンルへ
- * 飛ぶと、曲が終止しないまま断ち切られたように聞こえるため。
+ * 場面（調・テンポ）は一定のブロック数ごとに移り変わる。ずっと同じ場面の
+ * ままだと単調になるが、毎ブロック変えると逆に「曲」として聴けなくなる
+ * ので、数十秒〜数分単位の「場面」で区切る。切り替わるのは句（起承転結）
+ * の区切りだけで、しかもそこは必ず V7 → I の終止に着地させてから次の
+ * 場面へ渡す。句の途中でいきなり別ジャンルへ飛ぶと、曲が終止しないまま
+ * 断ち切られたように聞こえるため。
+ *
+ * ジャンルだけは、始まってからは変わらない（最初に選んだ・おまかせで
+ * 引いたジャンルのまま）。テンポは [Stream.setBpm] で聴きながら自分で動かせる。
  */
 object Appreciation {
 
@@ -137,6 +140,13 @@ object Appreciation {
         private var era: Era = newEra(genre, key, scene)
         private var previousLead: List<Int>? = null
 
+        /**
+         * 聴きながら自分で決めたテンポ。null ならジャンルのテンポ帯から
+         * おまかせで決まる（[Era.bpm]）。一度決めたら、場面が変わっても
+         * （ジャンルは変わらないので）そのまま引き継がれる。
+         */
+        private var bpmOverride: Int? = null
+
         // パターンもブロックごとに 1 つ増やし続ける。スロットを使い回すと、
         // 先のブロックが後で同じ場所を上書きしたとき、もう鳴らし終えたはずの
         // 昔の小節まで中身が変わって見えてしまう（再生は前にしか進まないので
@@ -150,7 +160,7 @@ object Appreciation {
 
         /** いまの場面のスナップショット。 */
         val status: Status
-            get() = Status(era.genre, era.key, era.bpm, era.blocksPlayed, era.recipe)
+            get() = Status(era.genre, era.key, bpmOverride ?: era.bpm, era.blocksPlayed, era.recipe)
 
         init {
             grow()
@@ -158,6 +168,14 @@ object Appreciation {
 
         /** 今の音声エンジンにそのまま渡せる再生プラン。 */
         fun plan(): PlaybackPlan = PlaybackPlan(mutablePatterns.toList(), mutableBars.toList())
+
+        /**
+         * テンポを自分で決める。次に作るブロックから、以降ずっとこのテンポで
+         * 鳴る（場面が変わってもジャンルは変わらないので、引き直されない）。
+         */
+        fun setBpm(bpm: Int) {
+            bpmOverride = bpm.coerceIn(Song.MIN_BPM, Song.MAX_BPM)
+        }
 
         /**
          * もう 1 ブロック作って、鳴らせる範囲を伸ばす。
@@ -174,7 +192,9 @@ object Appreciation {
             // 断ち切られたように聞こえるため、句の途中では blocksLeft が尽きていても
             // 待つ（結を待つ間、blocksLeft はマイナスまで進む。害はない）。
             val phraseBlock = era.blocksPlayed % PHRASE_BLOCKS
-            if (phraseBlock == 0 && era.blocksLeft <= 0) era = newEra(null, null, null)
+            // ジャンルは引き継ぐ（始まってから変わらない）。調とテンポだけ
+            // おまかせで引き直す。
+            if (phraseBlock == 0 && era.blocksLeft <= 0) era = newEra(era.genre, null, null)
             // 場面の最後の結かどうか。ここだけは進行の終わりに関係なく、
             // しっかり主和音へ着地させる（下の cadence）。
             val endsEra = phraseBlock == CODA_BLOCK && era.blocksLeft <= 1
