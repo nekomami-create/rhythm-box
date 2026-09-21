@@ -101,6 +101,9 @@ class AppreciationTest {
         val plan = stream.plan()
         var sawMovement = false
         for (bar in 0 until plan.barCount - 1) {
+            // ブロック最後の小節は「次の小節」ではなく「ブロック最初」に戻る、
+            // 別の仕組み（下の別テストで確認する）。ここでは対象外にする。
+            if ((bar + 1) % Appreciation.BLOCK == 0) continue
             val head = plan.chordAt(bar, 0)
             val secondHalf = plan.chordAt(bar, STEPS_PER_BAR / 2)
             if (secondHalf != head) {
@@ -109,6 +112,64 @@ class AppreciationTest {
             }
         }
         assertTrue("30 ブロックのうちに一度も小節内で和音が動かなかった", sawMovement)
+    }
+
+    @Test
+    fun `the last bar of a block can also move mid-way, wrapping back to the block's own first chord`() {
+        // 最後の小節だけは次のブロックの頭を先読みできないので、
+        // 差し替え先はそのブロック最初の和音に戻る形にしてある。
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(5))
+        repeat(60) { stream.grow() }
+        val plan = stream.plan()
+        var sawWrap = false
+        var blockStart = 0
+        while (blockStart + Appreciation.BLOCK <= plan.barCount) {
+            val lastBar = blockStart + Appreciation.BLOCK - 1
+            val head = plan.chordAt(blockStart, 0)
+            val lastBarHead = plan.chordAt(lastBar, 0)
+            val secondHalf = plan.chordAt(lastBar, STEPS_PER_BAR / 2)
+            if (secondHalf != lastBarHead) {
+                sawWrap = true
+                assertEquals("最後の小節の後半はブロック最初の和音に戻る", head, secondHalf)
+            }
+            blockStart += Appreciation.BLOCK
+        }
+        assertTrue("60 ブロックのうちに一度も最後の小節が半分で動かなかった", sawWrap)
+    }
+
+    @Test
+    fun `turn sometimes visits a nearby key, but 起承結 always stay in the scene's key`() {
+        // 転だけ、ある確率で属調・下属調・平行調へ寄り道する。起・承・結は
+        // 常に場面の調のまま（度数がその調の音階から外れない）ことを確かめる。
+        var sawForeignRoot = false
+        for (seed in 1..15) {
+            val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(seed.toLong()))
+            val homeKey = stream.status.key
+            val startGenre = stream.status.genre
+            var blockIndex = 0
+            while (stream.status.genre == startGenre && blockIndex < 20) {
+                val phraseBlock = blockIndex % 4
+                val plan = stream.plan()
+                val firstBar = blockIndex * Appreciation.BLOCK
+                if (firstBar + Appreciation.BLOCK <= plan.barCount) {
+                    for (i in 0 until Appreciation.BLOCK) {
+                        val chord = plan.chordAt(firstBar + i, 0)
+                        val diatonic = homeKey.degreeOf(chord) != null
+                        if (phraseBlock == 2) {
+                            if (!diatonic) sawForeignRoot = true
+                        } else {
+                            assertTrue(
+                                "起承結は元の調のまま (seed=$seed block=$blockIndex bar=$i)",
+                                diatonic,
+                            )
+                        }
+                    }
+                }
+                blockIndex++
+                stream.grow()
+            }
+        }
+        assertTrue("15 系列も回したのに一度も転で調から外れなかった", sawForeignRoot)
     }
 
     @Test
@@ -167,7 +228,14 @@ class AppreciationTest {
             stream.grow()
             val now = stream.status
             if (now.genre == previous.genre) {
-                assertEquals(previous.blocksIntoEra + 1, now.blocksIntoEra)
+                // 場面が変わっても、たまたま同じジャンルを引き直すことがある
+                // （Genre.entries.random は前のジャンルを避けない）。その場合も
+                // 1 から数え直すのが正しいので、genre の一致だけでは
+                // 「同じ場面が続いている」と決め切れない。
+                assertTrue(
+                    "genre が同じ: 数え続けるか、たまたま同じ genre で 1 から",
+                    now.blocksIntoEra == previous.blocksIntoEra + 1 || now.blocksIntoEra == 1,
+                )
             } else {
                 assertEquals(1, now.blocksIntoEra)
             }

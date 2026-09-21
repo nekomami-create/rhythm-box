@@ -59,6 +59,25 @@ object Appreciation {
     private const val MID_BAR_CHANCE = 0.3
 
     /**
+     * ブロック最後の小節も、後半だけ差し替える確率。
+     *
+     * こちらは他の 3 小節（[MID_BAR_CHANCE]）より控えめにしてある。次の
+     * ブロックの頭の和音は乱数の並びを崩さずには先読みできないので、
+     * 差し替え先はそのブロック最初の和音（[withMidBarMovement] 参照）。
+     * 毎回だと不自然なので、頻度を落として時々だけにしている。
+     */
+    private const val LAST_BAR_WRAP_CHANCE = 0.1
+
+    /**
+     * 転で、近い調へ寄り道する確率。
+     *
+     * 起・承・結は場面の調のまま、転だけこの確率で属調・下属調・平行調の
+     * いずれかへ実際に転調する。結では必ず元の進行（[Era.mainProgression]）・
+     * 元の調に戻るので、転はあくまで一時的な寄り道になる。
+     */
+    private const val MODULATION_CHANCE = 0.4
+
+    /**
      * 場面が移り変わるまでのブロック数の範囲。
      *
      * 常に同じ数だと切り替わりが規則的に聞こえてしまうので、幅を持たせて
@@ -163,7 +182,9 @@ object Appreciation {
             era.blocksPlayed++
 
             val recipe = era.recipe
-            val key = era.key
+            // 転だけ、ある確率で近い調へ一時的に転調する。起・承・結は
+            // 場面の調（era.key）のまま。結では必ずここへ戻ってくる。
+            val key = if (phraseBlock == TURN_BLOCK) modulationKeyFor(era.key) else era.key
             val progression = if (phraseBlock == TURN_BLOCK) era.turnProgression else era.mainProgression
             val coloured = Harmony.enrichSevenths(
                 progression.chords(key),
@@ -203,10 +224,9 @@ object Appreciation {
         private fun blockName(index: Int): String = "#${index + 1}"
 
         /**
-         * ブロックの中の小節（最後の小節を除く）を、ときどき半分だけ次の
-         * 小節の和音に差し替える。「打ち込みにコードを置く」と同じ仕組み
-         * （[Pattern.withChordAt]）にそのまま乗せるので、鳴らす側は普段の
-         * 打ち込みと区別せずに引ける。
+         * ブロックの中の小節を、ときどき半分だけ差し替える。「打ち込みに
+         * コードを置く」と同じ仕組み（[Pattern.withChordAt]）にそのまま
+         * 乗せるので、鳴らす側は普段の打ち込みと区別せずに引ける。
          *
          * 旋律（[MelodyGenerator]）は 1 小節に 1 和音のままにしてある。
          * 半小節ごとに旋律まで作り直すのは大掛かりになるうえ、先取りする
@@ -223,7 +243,32 @@ object Appreciation {
                     result = result.withChordAt(bar, STEPS_PER_BAR / 2, next)
                 }
             }
+            // 最後の小節だけは「次」が無い（次のブロックの頭は、乱数の並びを
+            // 崩さずには先読みできない）。そのブロック最初の和音へ一度だけ
+            // 戻す形にする。句の起がまた同じところから始まる感覚に近い。
+            val last = BLOCK - 1
+            if (chords[last] != chords[0] && random.nextDouble() < LAST_BAR_WRAP_CHANCE) {
+                result = result.withChordAt(last, STEPS_PER_BAR / 2, chords[0])
+            }
             return result
+        }
+
+        /**
+         * 転のときだけ、ある確率で [from] の近い調（属調・下属調・平行調）
+         * へ寄り道する。外れたとき・寄り道先が無いときは [from] のまま。
+         */
+        private fun modulationKeyFor(from: MusicKey): MusicKey {
+            if (random.nextDouble() >= MODULATION_CHANCE) return from
+            val candidates = buildList {
+                add(MusicKey((from.tonic + 7).mod(12), from.scale)) // 属調（5 度上）
+                add(MusicKey((from.tonic + 5).mod(12), from.scale)) // 下属調（4 度上）
+                when (from.scale) {
+                    Scale.MAJOR -> add(MusicKey((from.tonic + 9).mod(12), Scale.NATURAL_MINOR)) // 平行短調
+                    Scale.NATURAL_MINOR -> add(MusicKey((from.tonic + 3).mod(12), Scale.MAJOR)) // 平行長調
+                    else -> Unit
+                }
+            }
+            return candidates.random(random)
         }
 
         /**
