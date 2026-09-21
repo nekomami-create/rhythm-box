@@ -21,8 +21,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -237,8 +237,11 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            // タブが 6 つに増えたので、labelMedium のままだと「パターン」が折り返す。
-            TabRow(selectedTabIndex = screen.ordinal) {
+            // タブが 6 つに増え、名前の長さもばらばら（パターン/鑑賞など）。
+            // 均等割りの TabRow だと長い名前が収まりきらず切れるので、
+            // タブごとに中身の幅で伸び縮みする ScrollableTabRow にしてある
+            // （6 個ぶんなら大抵の画面幅でスクロールなしに収まる）。
+            ScrollableTabRow(selectedTabIndex = screen.ordinal, edgePadding = 0.dp) {
                 Screen.entries.forEach { entry ->
                     Tab(
                         selected = screen == entry,
@@ -248,7 +251,7 @@ fun RhythmBoxRoot(viewModel: RhythmViewModel) {
                                 text = entry.label,
                                 maxLines = 1,
                                 softWrap = false,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelMedium,
                             )
                         },
                     )

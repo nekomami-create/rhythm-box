@@ -841,7 +841,7 @@ private fun TrackRow(track: Int, label: String, song: Song, actions: MixerAction
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // 音色は 16 種類あるので、当然 1 行には入らない。
+        // 音色は 17 種類あるので、当然 1 行には入らない。
         // 折り返しは OptionChips が面倒を見る。
         OptionChips(
             label = "音色",
