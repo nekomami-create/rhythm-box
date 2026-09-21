@@ -80,7 +80,7 @@ object Appreciation {
      *
      * こちらは他の 3 小節（[MID_BAR_CHANCE]）より控えめにしてある。次の
      * ブロックの頭の和音は乱数の並びを崩さずには先読みできないので、
-     * 差し替え先はそのブロック最初の和音（[withMidBarMovement] 参照）。
+     * 差し替え先はそのブロック最初の和音（[pickMidBarMovements] 参照）。
      * 毎回だと不自然なので、頻度を落として時々だけにしている。
      */
     private const val LAST_BAR_WRAP_CHANCE = 0.1
@@ -93,6 +93,9 @@ object Appreciation {
      * 元の調に戻るので、転はあくまで一時的な寄り道になる。
      */
     private const val MODULATION_CHANCE = 0.4
+
+    /** 小節の途中で和音を切り替えない、という決定（[BLOCK] 個ぶんの null）。 */
+    private val NO_MOVEMENTS: List<MelodyGenerator.ChordChange?> = List(BLOCK) { null }
 
     /**
      * 場面が移り変わるまでのブロック数の範囲。
@@ -245,7 +248,13 @@ object Appreciation {
             var pattern = generated
                 .withBarCount(BLOCK)
                 .withRhythmAt(BLOCK - 1, PatternGenerator.fill(generated, random))
-                .let { if (endsEra) it else withMidBarMovement(it, chords, random) }
+
+            // 小節の途中で和音が変わるかどうかを、旋律より先に決めておく。
+            // 旋律も同じ切り替えを見て書けるようにするため（下の generateBars）。
+            val movements = if (endsEra) NO_MOVEMENTS else pickMidBarMovements(chords, random)
+            movements.forEachIndexed { bar, move ->
+                if (move != null) pattern = pattern.withChordAt(bar, move.atStep, move.chord)
+            }
 
             val leads = MelodyGenerator.generateBars(
                 chords = chords,
@@ -253,6 +262,7 @@ object Appreciation {
                 random = random,
                 density = recipe.melodyDensity,
                 previous = previousLead,
+                chordChanges = movements,
             )
             pattern = pattern.withLeads(leads)
             previousLead = leads.lastOrNull()
@@ -268,33 +278,33 @@ object Appreciation {
         private fun blockName(index: Int): String = "#${index + 1}"
 
         /**
-         * ブロックの中の小節を、ときどき半分だけ差し替える。「打ち込みに
-         * コードを置く」と同じ仕組み（[Pattern.withChordAt]）にそのまま
-         * 乗せるので、鳴らす側は普段の打ち込みと区別せずに引ける。
+         * ブロックの中の小節を、ときどき半分だけ差し替えるかどうかを決める。
+         * 決めるだけで、パターン・旋律のどちらにもまだ触らない
+         * （呼び出し側で両方に同じ決定を反映する。[MelodyGenerator.ChordChange]）。
          *
-         * 旋律（[MelodyGenerator]）は 1 小節に 1 和音のままにしてある。
-         * 半小節ごとに旋律まで作り直すのは大掛かりになるうえ、先取りする
-         * 和音はどのみち次の小節でそのまま鳴る和音なので、後半だけ
-         * コード楽器が先に動くのは、旋律が向かう先を軽く先取りする形に
-         * 聞こえて破綻しない。
+         * パターン側は「打ち込みにコードを置く」と同じ仕組み
+         * （[Pattern.withChordAt]）にそのまま乗るので、鳴らす側は普段の
+         * 打ち込みと区別せずに引ける。旋律側も同じ切り替えを見て、後半は
+         * 差し替え先の和音の構成音に着地するので、コードと旋律が食い違って
+         * ぶつかることはない。
          */
-        private fun withMidBarMovement(pattern: Pattern, chords: List<Chord>, random: Random): Pattern {
-            var result = pattern
+        private fun pickMidBarMovements(chords: List<Chord>, random: Random): List<MelodyGenerator.ChordChange?> {
+            val movements = MutableList<MelodyGenerator.ChordChange?>(BLOCK) { null }
             for (bar in 0 until BLOCK - 1) {
                 val next = chords[bar + 1]
                 if (chords[bar] == next) continue
                 if (random.nextDouble() < MID_BAR_CHANCE) {
-                    result = result.withChordAt(bar, STEPS_PER_BAR / 2, next)
+                    movements[bar] = MelodyGenerator.ChordChange(next, STEPS_PER_BAR / 2)
                 }
             }
             // 最後の小節だけは「次」が無い（次のブロックの頭は、乱数の並びを
-            // 崩さずには先読みできない）。そのブロック最初の和音へ一度だけ
-            // 戻す形にする。句の起がまた同じところから始まる感覚に近い。
+            // 崩さずには先読みできない）。差し替え先はそのブロック最初の和音へ
+            // 一度だけ戻す形にする。句の起がまた同じところから始まる感覚に近い。
             val last = BLOCK - 1
             if (chords[last] != chords[0] && random.nextDouble() < LAST_BAR_WRAP_CHANCE) {
-                result = result.withChordAt(last, STEPS_PER_BAR / 2, chords[0])
+                movements[last] = MelodyGenerator.ChordChange(chords[0], STEPS_PER_BAR / 2)
             }
-            return result
+            return movements
         }
 
         /**

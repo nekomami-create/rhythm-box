@@ -41,6 +41,12 @@ object MelodyGenerator {
         ),
     )
 
+    /**
+     * 小節の途中で和音が切り替わること。[atStep] から先は、拍の頭の音を
+     * [chord] の構成音に合わせて選ぶ（[generate] 参照）。
+     */
+    data class ChordChange(val chord: Chord, val atStep: Int)
+
     fun generate(
         chord: Chord,
         key: MusicKey,
@@ -49,10 +55,22 @@ object MelodyGenerator {
         previous: List<Int>? = null,
         /** 音の詰め込み具合。ジャンルによって変える。 */
         density: MelodyDensity = MelodyDensity.NORMAL,
+        /**
+         * 小節の途中で和音が変わる場合はここに渡す。無ければ小節じゅう
+         * [chord] のまま。呼び出し側（コード/ベースの打ち込み）と食い違うと
+         * 拍の頭で「合わせたはずの構成音」が別の和音とぶつかって聞こえる。
+         */
+        chordChange: ChordChange? = null,
     ): List<Int> {
         val positions = pickPositions(density, random)
         val scale = pitchClasses(key)
         val chordTones = chord.voicing().map { it.mod(12) }.toSet()
+        val laterChordTones = chordChange?.chord?.voicing()?.map { it.mod(12) }?.toSet()
+
+        // 拍の頭・終わりに使う構成音。切り替わりのステップ以降は、後から
+        // 鳴っている和音のほうに合わせる（そちらが実際に鳴っているため）。
+        fun chordTonesAt(step: Int): Set<Int> =
+            if (laterChordTones != null && step >= chordChange!!.atStep) laterChordTones else chordTones
 
         val lead = MutableList(STEPS_PER_BAR) { Pattern.REST }
         // 出だしは前の小節の最後の音の近くから。無ければ真ん中あたり。
@@ -63,13 +81,13 @@ object MelodyGenerator {
             val strongBeat = step % 4 == 0
             val last = index == positions.lastIndex
             // 拍の頭と終わりの音はコードの構成音に置いて、響きを外さないようにする。
-            val pool = if (strongBeat || last) chordTones else scale
+            val pool = if (strongBeat || last) chordTonesAt(step) else scale
             val next = pickPitch(pool, current, sameCount, random)
             sameCount = if (next == current) sameCount + 1 else 0
             current = next
             lead[step] = next
         }
-        holdLongNotes(lead, positions)
+        holdLongNotes(lead, positions, chordChange?.atStep)
         return lead
     }
 
@@ -78,12 +96,21 @@ object MelodyGenerator {
      *
      * 伸ばさないと 1 拍で切れてしまい、間の広い旋律がぶつ切りに聞こえる。
      * 1 拍未満の空きはそのまま残して、歯切れの良さを保つ。
+     *
+     * [chordChangeStep] より前で鳴り始めた音は、そこをまたいでは伸ばさない。
+     * 伸ばしたままだと、選んだときには無かった別の和音の上で鳴り続けて
+     * ぶつかって聞こえる。
      */
-    private fun holdLongNotes(lead: MutableList<Int>, positions: List<Int>) {
+    private fun holdLongNotes(lead: MutableList<Int>, positions: List<Int>, chordChangeStep: Int? = null) {
         positions.forEachIndexed { index, step ->
             val until = positions.getOrElse(index + 1) { STEPS_PER_BAR }
-            if (until - step < HOLD_MIN_STEPS) return@forEachIndexed
-            for (tie in (step + 1) until until) lead[tie] = Pattern.TIE
+            val limit = if (chordChangeStep != null && step < chordChangeStep) {
+                minOf(until, chordChangeStep)
+            } else {
+                until
+            }
+            if (limit - step < HOLD_MIN_STEPS) return@forEachIndexed
+            for (tie in (step + 1) until limit) lead[tie] = Pattern.TIE
         }
     }
 
@@ -100,10 +127,12 @@ object MelodyGenerator {
         random: Random = Random.Default,
         density: MelodyDensity = MelodyDensity.NORMAL,
         previous: List<Int>? = null,
+        /** [chords] と同じ並びの、小節ごとの [ChordChange]（無ければ渡さない）。 */
+        chordChanges: List<ChordChange?>? = null,
     ): List<List<Int>> {
         var last = previous
-        return chords.map { chord ->
-            val bar = generate(chord, key, random, last, density)
+        return chords.mapIndexed { index, chord ->
+            val bar = generate(chord, key, random, last, density, chordChanges?.getOrNull(index))
             last = bar
             bar
         }

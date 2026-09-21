@@ -122,6 +122,45 @@ class AppreciationTest {
     }
 
     @Test
+    fun `when a bar moves mid-way, the lead follows the chord instead of clashing with it`() {
+        // 和音だけ半小節先取りして旋律をそのままにすると、後半は旧い和音の
+        // ために選んだ音が新しい和音の上で鳴ってぶつかる。旋律も同じ
+        // 切り替えを見て書くようになったことを、実際の生成結果で確かめる。
+        var sawMovement = false
+        for (seed in 0 until 40) {
+            val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(seed))
+            repeat(20) { stream.grow() }
+            val plan = stream.plan()
+            for (bar in 0 until plan.barCount) {
+                val pattern = plan.patternAt(bar)
+                val patternBar = plan.patternBarAt(bar)
+                val head = plan.chordAt(bar, 0)
+                val secondHalf = plan.chordAt(bar, STEPS_PER_BAR / 2)
+                if (secondHalf == head) continue
+                sawMovement = true
+                val newTones = secondHalf.voicing().map { it.mod(12) }.toSet()
+                // 後半の強拍（4 の倍数）の音は、新しい和音の構成音に着地する。
+                for (step in (STEPS_PER_BAR / 2) until STEPS_PER_BAR step 4) {
+                    val midi = pattern.soundingLead(patternBar, step)
+                    if (Pattern.isNote(midi)) {
+                        assertTrue(
+                            "bar=$bar step=$step ${midiName(midi)} は ${secondHalf.name} の構成音ではない",
+                            midi.mod(12) in newTones,
+                        )
+                    }
+                }
+                // 切り替わりの瞬間をまたいで音が伸び続けている（旧い和音のための
+                // 音が新しい和音の上でまだ鳴っている）ことも無い。
+                assertTrue(
+                    "bar=$bar: 切り替わりをまたいで音が伸びている",
+                    pattern.leadAt(patternBar, STEPS_PER_BAR / 2) != Pattern.TIE,
+                )
+            }
+        }
+        assertTrue("一度も小節内で和音が動かなかった", sawMovement)
+    }
+
+    @Test
     fun `the last bar of a block can also move mid-way, wrapping back to the block's own first chord`() {
         // 最後の小節だけは次のブロックの頭を先読みできないので、
         // 差し替え先はそのブロック最初の和音に戻る形にしてある。

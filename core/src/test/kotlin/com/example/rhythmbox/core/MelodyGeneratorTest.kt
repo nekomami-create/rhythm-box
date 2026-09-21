@@ -11,6 +11,8 @@ class MelodyGeneratorTest {
     private val cMajor = MusicKey(0, minor = false)
     private val c = Chord(0, ChordQuality.MAJOR)
     private val am = Chord(9, ChordQuality.MINOR)
+    /** C と構成音がまったく重ならない和音（切り替わりの確認を紛れなくするため）。 */
+    private val fSharp = Chord(6, ChordQuality.MAJOR)
 
     private fun notesOf(lead: List<Int>) = lead.filter { Pattern.isNote(it) }
 
@@ -142,6 +144,63 @@ class MelodyGeneratorTest {
                     if (step % 4 == 0) assertTrue("$density ${midiName(midi)}", midi.mod(12) in tones)
                 }
             }
+        }
+    }
+
+    // --- 小節の途中で和音が変わるとき（鑑賞モードの先取り） ------------------
+
+    @Test
+    fun `strong beats at or after a mid-bar chord change land on the new chord's tones`() {
+        val newTones = fSharp.voicing().map { it.mod(12) }.toSet()
+        val change = MelodyGenerator.ChordChange(fSharp, atStep = 8)
+        repeat(80) { seed ->
+            val lead = MelodyGenerator.generate(c, cMajor, Random(seed), chordChange = change)
+            lead.forEachIndexed { step, midi ->
+                if (Pattern.isNote(midi) && step % 4 == 0 && step >= 8) {
+                    assertTrue(
+                        "seed=$seed step=$step ${midiName(midi)} は ${fSharp.name} の構成音ではない",
+                        midi.mod(12) in newTones,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `strong beats before a mid-bar chord change still land on the original chord's tones`() {
+        val oldTones = c.voicing().map { it.mod(12) }.toSet()
+        val change = MelodyGenerator.ChordChange(fSharp, atStep = 8)
+        repeat(80) { seed ->
+            val lead = MelodyGenerator.generate(c, cMajor, Random(seed), chordChange = change)
+            lead.forEachIndexed { step, midi ->
+                if (Pattern.isNote(midi) && step % 4 == 0 && step < 8) {
+                    assertTrue(
+                        "seed=$seed step=$step ${midiName(midi)} は ${c.name} の構成音ではない",
+                        midi.mod(12) in oldTones,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a note is never held across a mid-bar chord change`() {
+        // 切り替わりをまたいで伸ばすと、前の和音のために選んだ音が
+        // 後ろの和音の上で鳴り続けてぶつかってしまう。
+        val change = MelodyGenerator.ChordChange(fSharp, atStep = 8)
+        repeat(80) { seed ->
+            val lead = MelodyGenerator.generate(c, cMajor, Random(seed), chordChange = change)
+            assertTrue("seed=$seed", lead[8] != Pattern.TIE)
+        }
+    }
+
+    @Test
+    fun `without a chord change, nothing about the melody changes`() {
+        repeat(30) { seed ->
+            assertEquals(
+                MelodyGenerator.generate(c, cMajor, Random(seed)),
+                MelodyGenerator.generate(c, cMajor, Random(seed), chordChange = null),
+            )
         }
     }
 
