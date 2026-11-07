@@ -12,16 +12,17 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    // :web（Kotlin/JS）のビルドに Node.js 本体が要る。Kotlin Gradle Plugin は
+    // 内部で https://nodejs.org/dist をリポジトリとして登録するが、これは
+    // FAIL_ON_PROJECT_REPOS だと「無断追加」として常に弾かれる（下に同じ
+    // 取得先を明示的に宣言しても、プラグイン自身の登録がある時点で落ちる）。
+    // PREFER_SETTINGS にして、代わりに同じ取得先をここで明示的に宣言して
+    // おくことで、プラグインの無断登録は黙って無視されつつ、実際の解決は
+    // ここで宣言したほうで行われる（Kotlin Gradle Plugin が示す定石の回避策）。
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
-        // :web（Kotlin/JS）のビルドに Node.js 本体が要る。Kotlin Gradle Plugin は
-        // 内部で https://nodejs.org/dist をリポジトリとして登録するが、
-        // FAIL_ON_PROJECT_REPOS はそれも「無断追加」として弾いてしまう
-        // （PREFER_SETTINGS に緩めると今度は無視されて依存解決に失敗する）。
-        // ここで同じリポジトリを明示的に宣言しておけば、プラグイン側の登録と
-        // 競合せずに解決できる（Kotlin Gradle Plugin が示す定石の回避策）。
         ivy("https://nodejs.org/dist") {
             name = "Node Distributions at https://nodejs.org/dist"
             patternLayout { artifact("v[revision]/[artifact](-v[revision]-[classifier]).[ext]") }
