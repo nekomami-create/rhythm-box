@@ -103,6 +103,8 @@ class AppreciationTest {
     fun `a bar that moves mid-way anticipates the next bar's chord`() {
         // 1 小節に 1 和音のままだと進行がずっと同じ速さでしか動かない。
         // ときどき後半だけ次の小節の和音を先取りすることを確かめる。
+        // 動く位置そのものにも幅を持たせたので、真ん中固定ではなく
+        // 実際に切り替わったステップを都度 nextChangeStepAt で読む。
         val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(3))
         repeat(30) { stream.grow() }
         val plan = stream.plan()
@@ -111,19 +113,19 @@ class AppreciationTest {
             // ブロック最後の小節は「次の小節」ではなく「ブロック最初」に戻る、
             // 別の仕組み（下の別テストで確認する）。ここでは対象外にする。
             if ((bar + 1) % Appreciation.BLOCK == 0) continue
-            val head = plan.chordAt(bar, 0)
-            val secondHalf = plan.chordAt(bar, STEPS_PER_BAR / 2)
-            if (secondHalf != head) {
-                sawMovement = true
-                assertEquals("後半は次の小節の和音を先取りする", plan.chordAt(bar + 1, 0), secondHalf)
-            }
+            val changeStep = plan.nextChangeStepAt(bar, 0)
+            if (changeStep == STEPS_PER_BAR) continue
+            sawMovement = true
+            assertTrue("後半でだけ動く (step=$changeStep)", changeStep >= STEPS_PER_BAR / 2)
+            val afterChange = plan.chordAt(bar, changeStep)
+            assertEquals("後半は次の小節の和音を先取りする", plan.chordAt(bar + 1, 0), afterChange)
         }
         assertTrue("30 ブロックのうちに一度も小節内で和音が動かなかった", sawMovement)
     }
 
     @Test
     fun `when a bar moves mid-way, the lead follows the chord instead of clashing with it`() {
-        // 和音だけ半小節先取りして旋律をそのままにすると、後半は旧い和音の
+        // 和音だけ先取りして旋律をそのままにすると、切り替わり以降は旧い和音の
         // ために選んだ音が新しい和音の上で鳴ってぶつかる。旋律も同じ
         // 切り替えを見て書くようになったことを、実際の生成結果で確かめる。
         var sawMovement = false
@@ -134,17 +136,17 @@ class AppreciationTest {
             for (bar in 0 until plan.barCount) {
                 val pattern = plan.patternAt(bar)
                 val patternBar = plan.patternBarAt(bar)
-                val head = plan.chordAt(bar, 0)
-                val secondHalf = plan.chordAt(bar, STEPS_PER_BAR / 2)
-                if (secondHalf == head) continue
+                val changeStep = plan.nextChangeStepAt(bar, 0)
+                if (changeStep == STEPS_PER_BAR) continue
                 sawMovement = true
-                val newTones = secondHalf.voicing().map { it.mod(12) }.toSet()
-                // 後半の強拍（4 の倍数）の音は、新しい和音の構成音に着地する。
-                for (step in (STEPS_PER_BAR / 2) until STEPS_PER_BAR step 4) {
+                val newChord = plan.chordAt(bar, changeStep)
+                val newTones = newChord.voicing().map { it.mod(12) }.toSet()
+                // 切り替わり以降の強拍（4 の倍数）の音は、新しい和音の構成音に着地する。
+                for (step in (0 until STEPS_PER_BAR step 4).filter { it >= changeStep }) {
                     val midi = pattern.soundingLead(patternBar, step)
                     if (Pattern.isNote(midi)) {
                         assertTrue(
-                            "bar=$bar step=$step ${midiName(midi)} は ${secondHalf.name} の構成音ではない",
+                            "bar=$bar step=$step ${midiName(midi)} は ${newChord.name} の構成音ではない",
                             midi.mod(12) in newTones,
                         )
                     }
@@ -153,7 +155,7 @@ class AppreciationTest {
                 // 音が新しい和音の上でまだ鳴っている）ことも無い。
                 assertTrue(
                     "bar=$bar: 切り替わりをまたいで音が伸びている",
-                    pattern.leadAt(patternBar, STEPS_PER_BAR / 2) != Pattern.TIE,
+                    pattern.leadAt(patternBar, changeStep) != Pattern.TIE,
                 )
             }
         }
@@ -172,15 +174,30 @@ class AppreciationTest {
         while (blockStart + Appreciation.BLOCK <= plan.barCount) {
             val lastBar = blockStart + Appreciation.BLOCK - 1
             val head = plan.chordAt(blockStart, 0)
-            val lastBarHead = plan.chordAt(lastBar, 0)
-            val secondHalf = plan.chordAt(lastBar, STEPS_PER_BAR / 2)
-            if (secondHalf != lastBarHead) {
+            val changeStep = plan.nextChangeStepAt(lastBar, 0)
+            if (changeStep != STEPS_PER_BAR) {
                 sawWrap = true
-                assertEquals("最後の小節の後半はブロック最初の和音に戻る", head, secondHalf)
+                assertTrue("後半でだけ動く (step=$changeStep)", changeStep >= STEPS_PER_BAR / 2)
+                assertEquals("最後の小節の後半はブロック最初の和音に戻る", head, plan.chordAt(lastBar, changeStep))
             }
             blockStart += Appreciation.BLOCK
         }
         assertTrue("60 ブロックのうちに一度も最後の小節が半分で動かなかった", sawWrap)
+    }
+
+    @Test
+    fun `the mid-bar movement doesn't always land on the exact same step`() {
+        // タイミングそのものにも幅を持たせたので、同じステップに固定
+        // されていないことを確かめる。
+        val steps = mutableSetOf<Int>()
+        val stream = Appreciation.Stream(Genre.JPOP, MusicKey(0, Scale.MAJOR), random = Random(3))
+        repeat(200) { stream.grow() }
+        val plan = stream.plan()
+        for (bar in 0 until plan.barCount) {
+            val changeStep = plan.nextChangeStepAt(bar, 0)
+            if (changeStep != STEPS_PER_BAR) steps += changeStep
+        }
+        assertTrue("切り替わりのタイミングがいつも同じ ($steps)", steps.size > 1)
     }
 
     @Test

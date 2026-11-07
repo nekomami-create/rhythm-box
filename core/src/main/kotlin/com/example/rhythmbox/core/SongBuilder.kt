@@ -104,21 +104,6 @@ object SongBuilder {
     fun normalizeBars(bars: Int): Int =
         (bars / BLOCK * BLOCK).coerceIn(MIN_BARS, MAX_BARS)
 
-    /**
-     * 幕ごとに進行の「出だし」をずらして、曲としての展開を付ける。
-     *
-     * 同じ 1 本の進行（[cycleSize] 個の和音の繰り返し）を、幕の役割ごとに
-     * 4 分の 1 周ずつずらした違う位置から始める（進行の長さが 4 の倍数の
-     * ことが多いので、だいたい重ならずに散らばる）。サビ・まとめは半周ぶん
-     * ずらして、Aメロといちばん遠い・対照的な出だしにする。
-     */
-    private fun chordOffsetFor(section: Section, cycleSize: Int): Int = when (section) {
-        Section.A_MELODY -> 0
-        Section.B_MELODY -> cycleSize / 4
-        Section.CHORUS, Section.OUTRO -> cycleSize / 2
-        Section.C_MELODY -> cycleSize * 3 / 4
-    }
-
     fun build(
         base: Song,
         recipe: GenreRecipe,
@@ -131,41 +116,57 @@ object SongBuilder {
         val total = normalizeBars(bars)
         val slots = sections(total)
         val layout = slots.flatMap { slot -> List(slot.blocks) { slot.patternIndex } }
-        // 幕を全部組めるだけの長さがある曲だけ、幕ごとに進行の出だしを変える。
+        // 幕を全部組めるだけの長さがある曲だけ、幕ごとに進行そのものを選び直す。
         // 短い曲は今までどおり 1 本の進行を頭から敷くだけにする。
         val structured = layout.size >= SECTION_TEMPLATE.size
-        val progression = recipe.pickProgression(random)
-        // 味付けは「進行 1 周ぶん」に掛けてから敷き詰める。
-        //
-        // 小節ごとにばらばらに掛けると、同じパターンが後半で戻ってきたときに
-        // コードだけが変わってしまい、そのパターンのために作った旋律が合わなくなる。
-        // 旋律はパターンごとに 1 回しか作らないので、ここが崩れると直しようがない。
+
+        // パターン番号ごとの、その幕で敷く 1 ブロック（[BLOCK] 小節）ぶんの和音。
+        // 幕の最初の出番だけで決め、同じパターン番号が後から出てきても
+        // 使い回す（[getOrPut]）ので、あとで何度使い回してもコードが食い違わない。
         //
         // 旋律を作る前に済ませるのも大事で、あとから足すと旋律が元のコードの
         // 3 度を歌ってしまい、預けたはずの音とぶつかる。
         // 7th の色付けが先。あとから掛けると、sus4 にして 3 度を預けた和音に
         // また 3 度が戻ってくる（7th は 3 度の上に積む音なので）。
-        val coloured = Harmony.enrichSevenths(
-            progression.chords(key),
-            progression.keyFor(key),
-            recipe.seventhChance,
-            random,
-        )
-        val cycle = Harmony.sprinkleSus4(coloured, random)
-
-        // パターン番号ごとの、その幕で敷く 1 ブロック（[BLOCK] 小節）ぶんの和音。
-        // 幕の最初の出番だけで決め、同じパターン番号が後から出てきても
-        // 使い回す（[getOrPut]）ので、あとで何度使い回してもコードが食い違わない。
-        // 曲としてのまとまりを持たせるには短すぎる曲（[structured] が false）は、
-        // 進行を頭から 1 本の流れのまま敷く（今までどおりの振る舞い）。
         val chordsByPattern = LinkedHashMap<Int, List<Chord>>()
-        var barCursor = 0
-        for (slot in slots) {
-            val offset = if (structured) chordOffsetFor(slot.section, cycle.size) else barCursor % cycle.size
-            chordsByPattern.getOrPut(slot.patternIndex) {
-                List(BLOCK) { cycle[(offset + it).mod(cycle.size)] }
+        if (structured) {
+            // 幕ごとに進行をまるごと選び直す。曲のどこを切っても同じ数本の
+            // 進行を使い回すだけだと曲の中での「幅」が出ないので、パターン
+            // （＝幕の役割）が初めて出てくるたびに別の進行を引き、出だしの
+            // 位置もその進行の中からランダムに決める。
+            for (slot in slots) {
+                chordsByPattern.getOrPut(slot.patternIndex) {
+                    val progression = recipe.pickProgression(random)
+                    val coloured = Harmony.enrichSevenths(
+                        progression.chords(key),
+                        progression.keyFor(key),
+                        recipe.seventhChance,
+                        random,
+                    )
+                    val cycle = Harmony.sprinkleSus4(coloured, random)
+                    val offset = random.nextInt(cycle.size)
+                    List(BLOCK) { cycle[(offset + it).mod(cycle.size)] }
+                }
             }
-            barCursor += slot.blocks * BLOCK
+        } else {
+            // 曲としてのまとまりを持たせるには短すぎる曲は、進行を 1 本だけ選び、
+            // 頭から流れのまま敷く（今までどおりの振る舞い）。
+            val progression = recipe.pickProgression(random)
+            val coloured = Harmony.enrichSevenths(
+                progression.chords(key),
+                progression.keyFor(key),
+                recipe.seventhChance,
+                random,
+            )
+            val cycle = Harmony.sprinkleSus4(coloured, random)
+            var barCursor = 0
+            for (slot in slots) {
+                val offset = barCursor % cycle.size
+                chordsByPattern.getOrPut(slot.patternIndex) {
+                    List(BLOCK) { cycle[(offset + it).mod(cycle.size)] }
+                }
+                barCursor += slot.blocks * BLOCK
+            }
         }
         val chords = layout.flatMap { patternIndex -> chordsByPattern.getValue(patternIndex) }
         val style = recipe.pickRhythm(random)

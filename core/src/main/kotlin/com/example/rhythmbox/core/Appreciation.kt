@@ -86,6 +86,14 @@ object Appreciation {
     private const val LAST_BAR_WRAP_CHANCE = 0.1
 
     /**
+     * 小節の途中で和音を差し替えるときに選べる位置（小節の後半のみ）。
+     *
+     * 毎回ちょうど真ん中（8 ステップ目）だと、切り替わりの間隔そのものが
+     * 単調に聞こえる。後半のうちどこで動くかにも幅を持たせる。
+     */
+    private val MID_BAR_STEPS = listOf(STEPS_PER_BAR / 2, STEPS_PER_BAR * 5 / 8, STEPS_PER_BAR * 3 / 4)
+
+    /**
      * 転で、近い調へ寄り道する確率。
      *
      * 起・承・結は場面の調のまま、転だけこの確率で属調・下属調・平行調の
@@ -294,7 +302,7 @@ object Appreciation {
                 val next = chords[bar + 1]
                 if (chords[bar] == next) continue
                 if (random.nextDouble() < MID_BAR_CHANCE) {
-                    movements[bar] = MelodyGenerator.ChordChange(next, STEPS_PER_BAR / 2)
+                    movements[bar] = MelodyGenerator.ChordChange(next, MID_BAR_STEPS.random(random))
                 }
             }
             // 最後の小節だけは「次」が無い（次のブロックの頭は、乱数の並びを
@@ -302,7 +310,7 @@ object Appreciation {
             // 一度だけ戻す形にする。句の起がまた同じところから始まる感覚に近い。
             val last = BLOCK - 1
             if (chords[last] != chords[0] && random.nextDouble() < LAST_BAR_WRAP_CHANCE) {
-                movements[last] = MelodyGenerator.ChordChange(chords[0], STEPS_PER_BAR / 2)
+                movements[last] = MelodyGenerator.ChordChange(chords[0], MID_BAR_STEPS.random(random))
             }
             return movements
         }

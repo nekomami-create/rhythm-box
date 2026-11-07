@@ -259,6 +259,23 @@ class SongBuilderTest {
     }
 
     @Test
+    fun `sections often draw their root notes from entirely different progressions`() {
+        // 前は曲全体で 1 本の進行を選んで回すだけだったので、幕が違っても
+        // 根音の集合（4 和音をセットで見たもの）は同じ進行を回しているだけ
+        // で、たいてい一致していた（型の長さが 4 なら、頭を変えても
+        // 1 周ぶんの集合は変わらないため）。幕ごとに進行を選び直すことで、
+        // 集合そのものが違う組み合わせが多く出るようになったはず。
+        var differ = 0
+        repeat(40) { seed ->
+            val song = SongBuilder.build(base(), Genre.HARD_ROCK.recipe(), key, 64, Random(seed))
+            val verseRoots = song.arrangement.first { it.patternIndex == 0 }.chords.map { it.root }.toSet()
+            val chorusRoots = song.arrangement.first { it.patternIndex == 2 }.chords.map { it.root }.toSet()
+            if (verseRoots != chorusRoots) differ++
+        }
+        assertTrue("40 回中 $differ 回しか根音の集合が違わない", differ >= 20)
+    }
+
+    @Test
     fun `a repeated pattern still fits the chords wherever it comes back`() {
         // 同じパターンが後半にもう一度出てくるとき、そのブロックのコードが
         // 最初のブロックと同じでないと、作った旋律が合わなくなる。
