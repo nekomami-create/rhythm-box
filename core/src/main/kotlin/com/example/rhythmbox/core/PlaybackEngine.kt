@@ -1,5 +1,6 @@
 package com.example.rhythmbox.core
 
+import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
@@ -230,7 +231,7 @@ class PlaybackEngine(
             } else {
                 frames - i
             }
-            java.util.Arrays.fill(out, i * CHANNELS, (i + chunk) * CHANNELS, 0f)
+            out.fill(0f, i * CHANNELS, (i + chunk) * CHANNELS)
             renderDrums(out, i, chunk, cfg)
             renderTones(out, i, chunk, cfg)
             // 残響は曲の音にだけ掛ける。メトロノームは目印なので、
@@ -610,12 +611,12 @@ class PlaybackEngine(
 
     /** 先頭のステップから鳴らし直す。フレーム数の通し番号は保ったままにする。 */
     private fun rewind() {
-        java.util.Arrays.fill(slotVoice, -1)
-        java.util.Arrays.fill(slotPos, 0.0)
-        java.util.Arrays.fill(slotRate, 1.0)
-        java.util.Arrays.fill(slotGain, 1f)
+        slotVoice.fill(-1)
+        slotPos.fill(0.0)
+        slotRate.fill(1.0)
+        slotGain.fill(1f)
         // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
-        java.util.Arrays.fill(hitCount, 0)
+        hitCount.fill(0)
         clickSample = null
         // 前に鳴らしたぶんの尾を持ち越さない（頭から鳴らせば必ず同じ音になる）。
         reverb.clear()
@@ -631,12 +632,12 @@ class PlaybackEngine(
      * 出力先を作り直したとき（音声スレッドが止まっている間）にだけ呼ぶ。
      */
     fun resetFrameClock() {
-        java.util.Arrays.fill(slotVoice, -1)
-        java.util.Arrays.fill(slotPos, 0.0)
-        java.util.Arrays.fill(slotRate, 1.0)
-        java.util.Arrays.fill(slotGain, 1f)
+        slotVoice.fill(-1)
+        slotPos.fill(0.0)
+        slotRate.fill(1.0)
+        slotGain.fill(1f)
         // 頭から鳴らせば必ず同じ揺らぎになるよう、通し番号も戻す。
-        java.util.Arrays.fill(hitCount, 0)
+        hitCount.fill(0)
         clickSample = null
         // 前に鳴らしたぶんの尾を持ち越さない（頭から鳴らせば必ず同じ音になる）。
         reverb.clear()

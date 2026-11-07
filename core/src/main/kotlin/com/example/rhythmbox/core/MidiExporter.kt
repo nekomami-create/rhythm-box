@@ -241,7 +241,7 @@ object MidiExporter {
     }
 
     private fun trackName(name: String): List<Byte> {
-        val bytes = name.toByteArray(Charsets.UTF_8).take(127)
+        val bytes = name.encodeToByteArray().take(127)
         return listOf<Byte>(0, 0xFF.toByte(), 0x03) + variableLength(bytes.size) + bytes
     }
 
@@ -262,13 +262,13 @@ object MidiExporter {
 
     private fun file(tracks: List<ByteArray>): ByteArray {
         val out = mutableListOf<Byte>()
-        out += "MThd".toByteArray().toList()
+        out += "MThd".encodeToByteArray().toList()
         out += intBytes(6)
         out += shortBytes(1) // フォーマット 1（パートごとにトラックを分ける）
         out += shortBytes(tracks.size)
         out += shortBytes(TICKS_PER_QUARTER)
         for (track in tracks) {
-            out += "MTrk".toByteArray().toList()
+            out += "MTrk".encodeToByteArray().toList()
             out += intBytes(track.size)
             out += track.toList()
         }

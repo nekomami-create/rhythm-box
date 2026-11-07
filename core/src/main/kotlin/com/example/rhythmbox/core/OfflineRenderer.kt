@@ -90,7 +90,7 @@ object OfflineRenderer {
         while (written < total) {
             engine.render(block)
             val count = minOf(BLOCK, total - written)
-            System.arraycopy(block, 0, output, written * CHANNELS, count * CHANNELS)
+            block.copyInto(output, written * CHANNELS, 0, count * CHANNELS)
             written += count
             onProgress?.invoke(written.toFloat() / total)
         }

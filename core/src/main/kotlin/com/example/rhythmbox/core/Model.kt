@@ -1171,7 +1171,7 @@ fun secondsPerStep(bpm: Int): Double = 60.0 / (bpm.coerceAtLeast(1) * 4.0)
 /** 秒数を m:ss 表記にする。 */
 fun formatDuration(seconds: Double): String {
     val total = seconds.toInt().coerceAtLeast(0)
-    return "%d:%02d".format(total / 60, total % 60)
+    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
 }
 
 /** MIDI ノート番号を "C4" のような名前にする。 */

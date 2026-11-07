@@ -1,5 +1,7 @@
 package com.example.rhythmbox.core
 
+import kotlin.concurrent.Volatile
+
 /**
  * 「何フレーム目にどのステップが鳴ったか」の履歴を持つリングバッファ。
  * 音声はバッファ経由でスピーカーに届くため、UI はここに実際の再生位置
