@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BreakBox Web</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>BreakBox <span class="sub">Web</span></h1>
+  <nav id="nav">
+    <button data-screen="song" class="nav-btn active" type="button">曲構成</button>
+    <button data-screen="appreciate" class="nav-btn" type="button">鑑賞モード</button>
+    <button data-screen="help" class="nav-btn" type="button">ヘルプ</button>
+  </nav>
+</header>
+
+<main>
+  <section id="screen-song" class="screen active">
+    <h2>曲構成（オート作曲）</h2>
+    <p class="hint">ジャンル・調・長さを選んで、1 曲まるごと自動で組み立てます。</p>
+    <div class="form-row">
+      <label>ジャンル<select id="song-genre"></select></label>
+      <label>調（ルート）<select id="song-key-root"></select></label>
+      <label>調（種類）<select id="song-key-scale"></select></label>
+      <label>長さ（小節）<select id="song-bars"></select></label>
+    </div>
+    <button id="song-generate" class="primary" type="button">生成して聴く</button>
+    <p id="song-status" class="status"></p>
+    <div id="song-result" class="result hidden">
+      <audio id="song-audio" controls></audio>
+      <a id="song-download" class="download-link" download="breakbox-song.mp3">MP3 をダウンロード</a>
+    </div>
+  </section>
+
+  <section id="screen-appreciate" class="screen">
+    <h2>鑑賞モード</h2>
+    <p class="hint">ジャンル・調・長さを選ぶと、起承転結を繰り返しながら曲を作り続けます（終わりなく生成する元の仕組みを、指定した長さぶんまとめて作って再生する形にしています）。</p>
+    <div class="form-row">
+      <label>ジャンル<select id="appr-genre"></select></label>
+      <label>調（ルート）<select id="appr-key-root"></select></label>
+      <label>調（種類）<select id="appr-key-scale"></select></label>
+      <label>長さ<select id="appr-minutes"></select></label>
+    </div>
+    <button id="appr-generate" class="primary" type="button">生成</button>
+    <p id="appr-status" class="status"></p>
+    <div id="appr-result" class="result hidden">
+      <canvas id="appr-canvas" width="640" height="180"></canvas>
+      <div id="appr-info" class="appr-info"></div>
+      <audio id="appr-audio" controls></audio>
+      <a id="appr-download" class="download-link" download="breakbox-appreciation.mp3">MP3 をダウンロード</a>
+    </div>
+  </section>
+
+  <section id="screen-help" class="screen">
+    <h2>ヘルプ</h2>
+    <div id="help-content"></div>
+  </section>
+</main>
+<!-- MP3 書き出し用。lamejs の npm パッケージは配布バンドルしか単体で
+     動かないので、静的ファイルとして同梱して script タグで読み込む
+     （Mp3.kt 参照）。 -->
+<script src="lame.min.js"></script>
+<script src="breakbox-web.js"></script>
+</body>
+</html>

@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "BreakBox"
 include(":app")
 include(":core")
+include(":web")

@@ -1,0 +1,56 @@
+name: Web CI/CD
+
+on:
+  push:
+    branches: ["main", "web-port"]
+    paths:
+      - "web/**"
+      - "core/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # :web は core の Kotlin ソースをそのまま使う（core/build.gradle.kts は
+      # 変えていないので :app の Android ビルドには影響しない）。
+      - name: Build the web bundle
+        run: ./gradlew :web:jsBrowserDistribution --no-daemon
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/build/dist/js/productionExecutable
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
