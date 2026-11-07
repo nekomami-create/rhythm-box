@@ -29,6 +29,14 @@ dependencyResolutionManagement {
             metadataSources { artifact() }
             content { includeModule("org.nodejs", "node") }
         }
+        // webpack（JS バンドラ）を揃えるのに Yarn も要る。同じ理由で同じ形の
+        // 明示宣言が必要（Node.js だけで済まなかった）。
+        ivy("https://github.com/yarnpkg/yarn/releases/download") {
+            name = "Yarn Distributions at https://github.com/yarnpkg/yarn/releases/download"
+            patternLayout { artifact("v[revision]/yarn-v[revision].tar.gz") }
+            metadataSources { artifact() }
+            content { includeModule("com.yarnpkg", "yarn") }
+        }
     }
 }
 
